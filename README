@@ -1,0 +1,52 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=3647
+
+NOTE: Currently, VimLite is not stable enough.
+NOTE2: Currently, VimLite only support Linux(or Unix like?) OS.
+NOTE3: Currently, VimLite need Gvim.
+
+Please report bugs here http://code.google.com/p/vimlite/issues/list.
+
+SIMPLE USER GUIDE:
+1. Project Manager:
+Run this to start.
+:VLWorkspaceOpen 
+or
+:VLWorkspaceOpen <.workspace file>
+
+VimLite can load CodeLite's .workspace and .project files.
+
+After open the VLWorkspace buffer, you can go the the buffer window and hit . (dot) or mouse release key to popup a menu.
+All commands are in the pupup menu. And please watch help info around.
+
+
+2. Code Completion:
+Currently, VimLite have two code completion engine: 
+(1). Omnicpp code completion based on CodeLite's modified version of ctags; 
+(2). Clang code completion.
+
+The former will be faster and not 100% accurate, the latter will be slower and at most 100% accurate.
+Default use the former, you can change this.
+
+The Omnicpp code completion need a tags database to support completion, you need parse the workspace before start code completion. Put the cursor on workspace name line in VLWorkspace buffer window, popup the menu, select "Parse Workspace (Quick)".
+
+The Clang code completion will auto work, but need the current build configuration of the project is not a custom build.
+VimLite need version of clang >= 2.9 to work.
+On ubuntu 10.04, you can download the deb package here http://code.google.com/p/vimlite/downloads/list.
+
+
+3. Debugger Integration:
+VimLite integrate pyclewn in it. 
+Start to debug the active projcet, just run :VLWDbgStart or press the icon on toolbar.
+These are commonly used commands:
+VLWDbgStop, VLWDbgStepIn, VLWDbgNext, VLWDbgStepOut, VLWDbgContinue, VLWDbgToggleBp
+
+Please run :h pyclewn for more commands and info.
+
+
+4. Customize:
+Will be coming soon.
+
+
+Screen shots:
+http://forum.ubuntu.org.cn/download/file.php?id=135903&mode=view/cltest02.png
+http://forum.ubuntu.org.cn/download/file.php?id=136304&mode=view/Screenshot.png

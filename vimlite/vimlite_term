@@ -1,0 +1,34 @@
+#!/bin/bash 
+
+## A wrapper script around the gnome-terminal utility 
+## which allows codelite to export LD_LIBRARY_PATH into the gnome-terminal
+## shell
+
+TERMPROG=""
+TITLESWITCH=""
+CMDSWITCH=""
+
+if [ -x "`which gnome-terminal 2>/dev/null`" ]; then
+	TERMPROG=gnome-terminal
+	TITLESWITCH="-t"
+	CMDSWITCH="-x"
+else
+	TERMPROG=xterm
+	TITLESWITCH="-T"
+	CMDSWITCH="-e"
+fi
+
+if [ $# -ne 2 ]; then
+	echo "usage: vimlite_term '<Title>' '<Program>'"
+	exit 1
+fi
+
+program_title=$1
+if [ "${LD_LIBRARY_PATH}" = "" ]; then
+	## LD_LIBRARY_PATH is not defined OR empty
+	## Run gnome-terminal without the bash wrapper
+	$TERMPROG $TITLESWITCH "$program_title" $CMDSWITCH $2 2> /dev/null
+else
+	$TERMPROG $TITLESWITCH "$program_title" $CMDSWITCH /bin/bash -c 'export LD_LIBRARY_PATH=$0;shift;$@' $LD_LIBRARY_PATH $@ 2> /dev/null
+fi
+
