@@ -23,12 +23,17 @@ class ProjectSettings:
                 if i.nodeName == 'Configuration':
                     configName = XmlUtils.ReadString(i, 'Name')
                     self.configs[configName] = BuildConfig.BuildConfig(i)
+                    # 若此设置的项目类型为空, 赋值为项目总的类型, 以免为空
+                    if not self.configs[configName].projectType:
+                        self.configs[configName].projectType = self.projectType
                 elif i.nodeName == 'GlobalSettings':
                     self.globalSettings = BuildConfig.BuildConfigCommon(
                         i, 'GlobalSettings')
         else:
             # create new settings with default values
-            self.projectType = str(Project.Project.STATIC_LIBRARY)
+            # 默认为可运行类型项目
+            #self.projectType = str(Project.Project.STATIC_LIBRARY)
+            self.projectType = str(Project.Project.EXECUTABLE)
             self.configs['Debug'] = BuildConfig.BuildConfig()
         
         # Create global settings if it's not been loaded or by default

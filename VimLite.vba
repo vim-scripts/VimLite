@@ -306,7 +306,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-3577
+3612
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -344,7 +344,7 @@ endfunction
 call s:InitVariable("g:VLWorkspaceHasStarted", 0)
 call s:InitVariable("g:VLWorkspaceWinSize", 30)
 call s:InitVariable("g:VLWorkspaceWinPos", "left")
-call s:InitVariable("g:VLWorkspaceBufName", '--VLWorkspace--')
+call s:InitVariable("g:VLWorkspaceBufName", '==VLWorkspace==')
 call s:InitVariable("g:VLWorkspaceShowLineNumbers", 0)
 call s:InitVariable("g:VLWorkspaceHighlightCursorline", 1)
 call s:InitVariable("g:VLWorkspaceTemplatesPath", 
@@ -371,7 +371,7 @@ call s:InitVariable("g:VLWorkspaceUseClangCC", 0)
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 1)
 
 "命令导出
-command! -nargs=? -complete=file -bar VLWorkspaceOpen 
+command! -nargs=? -complete=file VLWorkspaceOpen 
             \call <SID>InitVLWorkspace('<args>')
 
 command! -nargs=? VLWInitCscopeDatabase 
@@ -379,21 +379,23 @@ command! -nargs=? VLWInitCscopeDatabase
 command! -nargs=? VLWUpdateCscopeDatabase 
             \call <SID>UpdateVLWCscopeDatabase(<f-args>)
 
-command! -nargs=0 VLWBuildActiveProject call <SID>BuildActiveProject()
-command! -nargs=0 VLWCleanActiveProject call <SID>CleanActiveProject()
-command! -nargs=0 VLWRunActiveProject   call <SID>RunActiveProject()
+command! -nargs=0 -bar VLWBuildActiveProject    call <SID>BuildActiveProject()
+command! -nargs=0 -bar VLWCleanActiveProject    call <SID>CleanActiveProject()
+command! -nargs=0 -bar VLWRunActiveProject      call <SID>RunActiveProject()
 
 command! -nargs=* -complete=file VLWParseFiles  call <SID>ParseFiles(<f-args>)
-command! -nargs=0 VLWParseCurrentFile           call <SID>ParseCurrentFile(0)
-command! -nargs=0 VLWDeepParseCurrentFile       call <SID>ParseCurrentFile(1)
+command! -nargs=0 -bar VLWParseCurrentFile      call <SID>ParseCurrentFile(0)
+command! -nargs=0 -bar VLWDeepParseCurrentFile  call <SID>ParseCurrentFile(1)
 
-command! -nargs=0 VLWDbgStart       silent! call <SID>DbgStart()
-command! -nargs=0 VLWDbgStop        call <SID>DbgStop()
-command! -nargs=0 VLWDbgStepIn      call <SID>DbgStepIn()
-command! -nargs=0 VLWDbgNext        call <SID>DbgNext()
-command! -nargs=0 VLWDbgStepOut     call <SID>DbgStepOut()
-command! -nargs=0 VLWDbgContinue    call <SID>DbgContinue()
-command! -nargs=0 VLWDbgToggleBp    call <SID>DbgToggleBreakpoint()
+command! -nargs=0 -bar VLWDbgStart      silent! call <SID>DbgStart()
+command! -nargs=0 -bar VLWDbgStop       call <SID>DbgStop()
+command! -nargs=0 -bar VLWDbgStepIn     call <SID>DbgStepIn()
+command! -nargs=0 -bar VLWDbgNext       call <SID>DbgNext()
+command! -nargs=0 -bar VLWDbgStepOut    call <SID>DbgStepOut()
+command! -nargs=0 -bar VLWDbgContinue   call <SID>DbgContinue()
+command! -nargs=0 -bar VLWDbgToggleBp   call <SID>DbgToggleBreakpoint()
+
+command! -nargs=0 -bar VLWTagsSetttings call <SID>TagsSettings()
 
 
 function! g:VLWGetAllFiles() "{{{2
@@ -846,11 +848,14 @@ endfunction
 
 
 function! s:InstallMenuBarMenu() "{{{2
-	anoremenu 200.10 &VimLite.Environment\ Settings\.\.\. <Nop>
-	anoremenu 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
-	anoremenu 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
-	anoremenu 200.20 &VimLite.Tags\ Settings\.\.\. 
-                \:call <SID>TagsSettings()<CR>
+    "anoremenu 200.10 &VimLite.Environment\ Settings\.\.\. <Nop>
+    "anoremenu 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
+    "anoremenu 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
+
+    if !g:VLWorkspaceUseClangCC
+        anoremenu 200.20 &VimLite.Tags\ Settings\.\.\. 
+                    \:call <SID>TagsSettings()<CR>
+    endif
 endfunc
 
 
@@ -1712,7 +1717,7 @@ function! s:SaveTagsSettingsCbk(dlg, data) "{{{2
 endfunction
 
 function! s:CreateTagsSettingsDialog() "{{{2
-    let dlg = g:VimDialog.New('--Workspace Settings--')
+    let dlg = g:VimDialog.New('==Tags Settings==')
     py ins = TagsSettingsST.Get()
 
 "===============================================================================
@@ -1730,6 +1735,8 @@ function! s:CreateTagsSettingsDialog() "{{{2
     for includePath in includePaths
         call ctl.AddLineByValues(includePath)
     endfor
+    call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
+    call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
     call dlg.AddControl(ctl)
     call dlg.AddBlankline()
 
@@ -2218,8 +2225,27 @@ function! s:SaveWspSettingsCbk(dlg, data) "{{{2
     py ws.InitOmnicppTypesVar()
 endfunction
 
+function! s:AddSearchPathCbk(ctl, data) "{{{2
+    echohl Character
+    let input = input("Add Parser Search Path:\n")
+    echohl None
+    if input != ''
+        call a:ctl.AddLineByValues(input)
+    endif
+endfunction
+
+function! s:EditSearchPathCbk(ctl, data) "{{{2
+    let value = a:ctl.GetSelectedLine()[0]
+    echohl Character
+    let input = input("Edit Search Path:\n", value)
+    echohl None
+    if input != '' && input != value
+        call a:ctl.SetCellValue(a:ctl.selection, 1, input)
+    endif
+endfunction
+
 function! s:CreateWspSettingsDialog() "{{{2
-    let wspSettingsDlg = g:VimDialog.New('--Workspace Settings--')
+    let wspSettingsDlg = g:VimDialog.New('==Workspace Settings==')
 
 "===============================================================================
     "1.Include Files
@@ -2236,6 +2262,8 @@ function! s:CreateWspSettingsDialog() "{{{2
     for includePath in includePaths
         call ctl.AddLineByValues(includePath)
     endfor
+    call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
+    call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankline()
 
@@ -2514,54 +2542,54 @@ endfunction
 
 
 function! s:GetAvailableMacrosHelpText() "{{{2
-	let vimliteHelp = '===== Available Macros: =====' . "\n"
-	let vimliteHelp .= "$(ProjectPath)           "
-				\."Expand to the project path" . "\n"
+    let vimliteHelp = '===== Available Macros: =====' . "\n"
+    let vimliteHelp .= "$(ProjectPath)           "
+                \."Expand to the project path" . "\n"
 
-	let vimliteHelp .= "$(WorkspacePath)         "
-				\."Expand to the workspace path" . "\n"
+    let vimliteHelp .= "$(WorkspacePath)         "
+                \."Expand to the workspace path" . "\n"
 
-	let vimliteHelp .= "$(ProjectName)           "
-				\."Expand to the project name" . "\n"
+    let vimliteHelp .= "$(ProjectName)           "
+                \."Expand to the project name" . "\n"
 
-	let vimliteHelp .= "$(IntermediateDirectory) "
-				\."Expand to the project intermediate directory path, " . "\n"
-				\.repeat(' ', 25)."as set in the project settings" . "\n"
+    let vimliteHelp .= "$(IntermediateDirectory) "
+                \."Expand to the project intermediate directory path, " . "\n"
+                \.repeat(' ', 25)."as set in the project settings" . "\n"
 
-	let vimliteHelp .= "$(ConfigurationName)     "
-				\."Expand to the current project selected configuration" . "\n"
+    let vimliteHelp .= "$(ConfigurationName)     "
+                \."Expand to the current project selected configuration" . "\n"
 
-	let vimliteHelp .= "$(OutDir)                "
-				\."An alias to $(IntermediateDirectory)" . "\n"
+    let vimliteHelp .= "$(OutDir)                "
+                \."An alias to $(IntermediateDirectory)" . "\n"
 
-	let vimliteHelp .= "$(CurrentFileName)       "
-				\."Expand to current file name (without extension and " . "\n"
-				\.repeat(' ', 25)."path)"."\n"
+    let vimliteHelp .= "$(CurrentFileName)       "
+                \."Expand to current file name (without extension and " . "\n"
+                \.repeat(' ', 25)."path)"."\n"
 
-	let vimliteHelp .= "$(CurrentFilePath)       "
-				\."Expand to current file path" . "\n"
+    let vimliteHelp .= "$(CurrentFilePath)       "
+                \."Expand to current file path" . "\n"
 
-	let vimliteHelp .= "$(CurrentFileFullPath)   "
-				\."Expand to current file full path (path and full name)" . "\n"
+    let vimliteHelp .= "$(CurrentFileFullPath)   "
+                \."Expand to current file full path (path and full name)" . "\n"
 
-	let vimliteHelp .= "$(User)                  "
-				\."Expand to logged-in user as defined by the OS" . "\n"
+    let vimliteHelp .= "$(User)                  "
+                \."Expand to logged-in user as defined by the OS" . "\n"
 
-	let vimliteHelp .= "$(Date)                  "
-				\."Expand to current date" . "\n"
+    let vimliteHelp .= "$(Date)                  "
+                \."Expand to current date" . "\n"
 
-	let vimliteHelp .= "$(ProjectFiles)          "
-				\."A space delimited string containing all of the " . "\n"
-				\.repeat(' ', 25)."project files "
-				\."in a relative path to the project file" . "\n"
+    let vimliteHelp .= "$(ProjectFiles)          "
+                \."A space delimited string containing all of the " . "\n"
+                \.repeat(' ', 25)."project files "
+                \."in a relative path to the project file" . "\n"
 
-	let vimliteHelp .= "$(ProjectFilesAbs)       "
-				\."A space delimited string containing all of the " . "\n"
-				\.repeat(' ', 25)."project files in an absolute path" . "\n"
+    let vimliteHelp .= "$(ProjectFilesAbs)       "
+                \."A space delimited string containing all of the " . "\n"
+                \.repeat(' ', 25)."project files in an absolute path" . "\n"
 
-	let vimliteHelp .= "`expression`             "
-				\."Evaluates the expression inside the backticks into a " . "\n"
-				\.repeat(' ', 25)."string" . "\n"
+    let vimliteHelp .= "`expression`             "
+                \."Evaluates the expression inside the backticks into a " . "\n"
+                \.repeat(' ', 25)."string" . "\n"
     return vimliteHelp
 endfunction
 
@@ -2572,7 +2600,7 @@ function! s:CreateProjectSettingsDialog(projName) "{{{2
     endif
 
     call s:InitProjectSettingsGlobalVars(a:projName, '')
-    let l:dialog = g:VimDialog.New("--ProjectSettings--")
+    let l:dialog = g:VimDialog.New("==ProjectSettings==")
     call l:dialog.SetExtraHelpContent(s:GetAvailableMacrosHelpText())
 python << PYTHON_EOF
 def ProjectSettings():
@@ -3166,6 +3194,10 @@ class VimLiteWorkspace():
             'Workspace Build Configuration...', 
             'Workspace Settings...' ]
 
+        if vim.eval('g:VLWorkspaceUseClangCC') != '0':
+            self.popupMenuW.remove('Parse Workspace (Full)')
+            self.popupMenuW.remove('Parse Workspace (Quick)')
+
         # 项目右键菜单列表
         self.popupMenuP = ['Please select an operation:', 
 #            'Import Files From Directroy... (Unrealized)', 
@@ -3183,6 +3215,9 @@ class VimLiteWorkspace():
             'Remove Project', 
             'Edit PCH Header For Clang...', 
             'Settings...' ]
+
+        if vim.eval('g:VLWorkspaceUseClangCC') == '0':
+            self.popupMenuP.remove('Edit PCH Header For Clang...')
 
         # 虚拟目录右键菜单列表
         self.popupMenuV = ['Please select an operation:', 
@@ -8673,7 +8708,7 @@ FUNCTIONS
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:et:cole=0
 autoload/omnicpp/resolvers.vim	[[[1
-1564
+1562
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -10171,27 +10206,25 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
     set noignorecase
 
     " TODO: 这个函数比较慢
-    let lStopPos = s:GetStopPosForLocalDeclSearch(1)
-    let lCurPos = lStopPos[:]
+    let lStopPos = s:GetStopPosForLocalDeclSearch(0)
+    let lCurPos = getpos('.')[1:2]
     while lCurPos != [0, 0]
         " 1. 往下搜索不超过起始位置的同名符号, 解析 tokens
         " 2. 若为无效的声明, 重复, 否则结束
-        " " TODO: 是否应该反转方向搜索? 因为现在是外层变量声明覆盖了内层
-        let lCurPos = searchpos('\C\<'. a:sVariable .'\>', 'W')
+        let lCurPos = searchpos('\C\<'. a:sVariable .'\>', 'Wb')
 
-        " TODO: 这两个函数很慢
+        " TODO: 这两个函数很慢. 禁用的话无法排除其他块中同名变量的干扰
         " 原因是, 前面或者后面嵌套的大括号太多, 想办法优化
         if 0
-            if s:CmpPos(omnicpp#scopes#GetCurBlockEndPos(), lOrigPos) < 0
-                " 肯定进入了其他的 {} 块, 或者在函数参数中
-                if s:CmpPos(omnicpp#scopes#GetCurBlockStartPos(), lStopPos) > 0
-                    " 肯定进入了其他的 {} 块
-                    continue
-                endif
+            if s:CmpPos(omnicpp#scopes#GetCurBlockStartPos(), lStopPos) > 0 
+                        \&& s:CmpPos(omnicpp#scopes#GetCurBlockEndPos(), 
+                        \            lOrigPos) < 0
+                " 肯定进入了其他的 {} 块
+                continue
             endif
         endif
 
-        if lCurPos != [0, 0] && s:CmpPos(lCurPos, lOrigPos) < 0
+        if lCurPos != [0, 0] && s:CmpPos(lCurPos, lStopPos) > 0
             " TODO: 验证是否有效的声明
             " 搜索 foo 声明行应该为 Foo foo;
             " TestCase:
@@ -10208,7 +10241,7 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
             " 若为操作符, 则只可以是 '&', '*', '>'
             if !empty(lTokens)
                 if lTokens[-1].kind == 'cppOperatorPunctuator' 
-                            \&& lTokens[-1].value =~# '\V.\|->\|('
+                            \&& lTokens[-1].value =~# '\V.\|->\|(\|='
                             "\&& lTokens[-1].value =~# '\V.\|->'
                     " 无效的声明, 继续
                     continue
@@ -10239,7 +10272,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-533
+544
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -10510,8 +10543,19 @@ function! s:GetCalltips(lTags, sFuncName) "{{{2
                         \|| (dTag.kind ==# 'f' && !has_key(dTag, 'class'))
                         \|| (dTag.kind ==# 'f' && has_key(dTag, 'class') 
                         \    && has_key(dTag, 'access'))
-                call add(lCalltips, printf("%s %s%s", dTag.qualifiers, 
-                            \              dTag.path, dTag.signature))
+                let sName = dTag.path
+                " 首先尝试在模式中查找限定词, 
+                " 若查找失败才用 tag 中的 qualifiers 域, 因为这个域的解析不完善
+                let sQualifiers = matchstr(dTag.cmd[2:-3], 
+                            \'\C\s*\zs[^;]\{-}\ze' . sFuncName)
+                if sQualifiers ==# ''
+                    let sQualifiers = dTag.qualifiers . ' '
+                endif
+                if sQualifiers =~# '::\s*$'
+                    let sName = sFuncName
+                endif
+                call add(lCalltips, printf("%s%s%s", sQualifiers, 
+                            \              sName, dTag.signature))
             endif
         endif
     endfor
