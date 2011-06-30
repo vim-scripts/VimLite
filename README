@@ -1,5 +1,20 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3647
 
+VimLite is a C/C++ IDE.
+VimLite consists mainly of the following three modules: 
+1.Project Manager:
+    The project management module is compatible CodeLite. It auto generate makefile for you. 
+2.Code Completion:
+    An enhanced OmniCpp plugin and a clang code completion.
+        OmniCpp support the following completion: namespace, structure, class member, using, using namespace, class template, stl, etc.
+        Clang code completion support all but is slower than OmniCpp.
+3.Debugger Integration. 
+    Gdb integration, by pyclewn.
+
+If you need more features, you can search other plugins.
+Such as taglist, tagbar, NERD_commenter, snipmate, etc.
+
+
 NOTE: Currently, VimLite is not stable enough.
 NOTE2: Currently, VimLite only support Linux(or Unix like?) platform.
 NOTE3: Currently, VimLite need Gvim.
@@ -7,7 +22,10 @@ NOTE3: Currently, VimLite need Gvim.
 Please report bugs here http://code.google.com/p/vimlite/issues/list.
 
 SIMPLE USER GUIDE:
+
+
 These are commonly used commands:
+
 VLWorkspaceOpen [.workspace]
 
 VLWInitCscopeDatabase [0|1]
@@ -57,6 +75,7 @@ NOTES about OmniCpp
 3. Does not support friend. Solution is just displaying all class members.
 4. Does not support complex typedef (eg. typedef typename _Alloc::template rebind<value_type>::other _Pair_alloc_type;). Solution is configuring corresponding type replacement.
 5. Does not support overload functions with different return types.
+6. Does not support function template.
 
 
 The Clang code completion will auto work, but need the current build configuration of the project is not a custom build.

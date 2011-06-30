@@ -29,7 +29,7 @@ high def link dbgIgnore	    Ignore
 let b:current_syntax = "dbgvar"
 
 plugin/calltips.vim	[[[1
-256
+262
 " Description:  vim script for display function calltips
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 Jun 18
@@ -38,6 +38,8 @@ plugin/calltips.vim	[[[1
 let s:InitVariable = function('g:InitVariable')
 
 function! g:InitCalltips() "{{{1
+    call s:InitVariable('g:VLW_EnableSyntaxTest', 1)
+
     call s:InitVariable('g:VLW_DispCalltipsKey', '<A-p>')
     call s:InitVariable('g:VLW_NextCalltipsKey', '<A-j>')
     call s:InitVariable('g:VLW_PrevCalltipsKey', '<A-k>')
@@ -51,7 +53,6 @@ function! g:InitCalltips() "{{{1
 endfunction
 "}}}
 
-let s:bEnableSyntaxTest = 1
 
 let s:lCalltips = [] "保存函数原型或者原型形参信息的列表(C++ 重载)
 let s:nCurIndex = 0 "当前函数原型的索引
@@ -225,34 +226,38 @@ function! s:DisplayCalltips() "{{{2
 endfunction
 
 function! s:GetArgIndex() "{{{2
-    "精确地确定光标所在位置所属的函数参数索引
-    "不在括号内，返回 -2，函数名为空，返回 -1
+    " 精确地确定光标所在位置所属的函数参数索引
+    " 不在括号内，返回 -2，函数名为空，返回 -1
 
-    "确定函数括号开始的位置
-    let lStartPos = searchpairpos('(', '', ')', 'nWb', 
-            \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
-    "如果刚好在括号内，加 'c' 参数
-    let lEndPos = searchpairpos('(', '', ')', 'nWc', 
-            \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
+    " 确定函数括号开始的位置
+    if g:VLW_EnableSyntaxTest
+        let sSkipExpr = 'synIDattr(synID(line("."), col("."), 0), "name") '
+                    \. '=~? "string\\|character"'
+    else
+        let sSkipExpr = ''
+    endif
+    let lStartPos = searchpairpos('(', '', ')', 'nWb', sSkipExpr)
+    " 如果刚好在括号内，加 'c' 参数
+    let lEndPos = searchpairpos('(', '', ')', 'nWc', sSkipExpr)
     let lCurPos = [line('.'), col('.')]
 
-    "不在括号内
+    " 不在括号内
     if lStartPos[0] == 0 && lStartPos[1] == 0
         return -2
     endif
 
     "let lines = getline(lStartPos[0], lEndPos[0])
 
-    "获取函数名称和名称开始的列，暂时只处理 '(' "与函数名称同行的情况，
-    "允许之间有空格
-    "TODO: 处理更复杂的情况: 1.函数名称与 ( 不在同行 2.函数名称前有逗号
+    " 获取函数名称和名称开始的列，暂时只处理 '(' "与函数名称同行的情况，
+    " 允许之间有空格
+    " TODO: 处理更复杂的情况: 1.函数名称与 ( 不在同行 2.函数名称前有逗号
     let sStartLine = getline(lStartPos[0])
     let sFuncName = matchstr(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
     let nFuncIdx = match(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
 
     let nArgIdx = -1
     if sFuncName != ''
-        "计算光标所在的位置所属的函数参数索引(从 0 开始)
+        " 计算光标所在的位置所属的函数参数索引(从 0 开始)
         let nArgIdx = 0
 
         for nLine in range(lStartPos[0], lCurPos[0])
@@ -261,16 +266,17 @@ function! s:GetArgIndex() "{{{2
             let nEnd = len(sLine)
 
             if nLine == lCurPos[0]
-                "光标所在行
+                " 光标所在行
                 let nEnd = lCurPos[1] - 1 "(a,b|,c)
             endif
 
             while nStart < nEnd
                 let nStart = stridx(sLine, ',', nStart)
                 if nStart != -1 && nStart < nEnd
-                    "排除字符串里的逗号
-                    if !(synIDattr(synID(nLine, nStart + 1, 0), "name") 
-                                \=~? "string")
+                    " 确保不是字符串里的逗号
+                    if !(g:VLW_EnableSyntaxTest 
+                                \&& synIDattr(synID(nLine, nStart + 1, 0), 
+                                \             "name") =~? 'string\|character')
                         let nArgIdx += 1
                     endif
                 else
@@ -3920,7 +3926,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLUtils.vim	[[[1
-199
+201
 " Vim script utilities for VimLite
 " Last Change: 2011 Apr 11
 " Maintainer: fanhe <fanhed@163.com>
@@ -4074,6 +4080,8 @@ function g:EchoSyntaxStack() "{{{2
 		call add(names, synIDattr(id, 'name'))
 	endfor
 	echo join(names, ', ')
+
+	return ''
 endfunction
 
 
@@ -8708,7 +8716,7 @@ FUNCTIONS
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:et:cole=0
 autoload/omnicpp/resolvers.vim	[[[1
-1562
+1569
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -9247,14 +9255,17 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dMember.name)
 
                 if has_key(dTmpTag, 'typeref')
-                    " 变量为无名容器的成员, 直接设置 SearchScopes 然后跳过这一步
+                    " 变量可能是无名容器的成员, 如果是无名容器成员,
+                    " 直接设置 SearchScopes 然后跳过这一步
                     " 因为不会存在无名容器的 path
                     let lTyperef = split(dTmpTag.typeref, '\w\zs:\ze\w')
-                    let kind = lTyperef[0]
-                    let anon = lTyperef[1]
-                    let lSearchScopes = [anon]
-                    let idx += 1
-                    continue
+                    let sKind = lTyperef[0]
+                    let sAnon = lTyperef[1]
+                    if sAnon =~# '^__anon\d\+'
+                        let lSearchScopes = [sAnon]
+                        let idx += 1
+                        continue
+                    endif
                 endif
 
                 if !empty(dTmpTag)
@@ -9681,6 +9692,10 @@ endfunc
 "}}}
 " 从限定词中解析变量类型
 function! s:GetVariableTypeInfoFromQualifiers(sQualifiers) "{{{2
+
+    return s:GetVariableTypeInfo(a:sQualifiers, '')
+
+    " 下面的基本不能使用
     let dTypeInfo = s:NewTypeInfo()
     let bak_ic = &ic
     set noic
@@ -9839,9 +9854,9 @@ function! omnicpp#resolvers#ResolveTag(dTag, ...) "{{{2
             "let lTagScopes += omnicpp#resolvers#ResolveTag(lTags[0])
         "endif
         let lSearchScopeStack = s:GetSearchScopeStackFromPath(dTag.scope)
-        let dTag = s:GetFirstMatchTag(lSearchScopeStack, parent, 'c', 's')
-        if !empty(dTag)
-            let lTagScopes += omnicpp#resolvers#ResolveTag(dTag)
+        let dTmpTag = s:GetFirstMatchTag(lSearchScopeStack, parent, 'c', 's')
+        if !empty(dTmpTag)
+            let lTagScopes += omnicpp#resolvers#ResolveTag(dTmpTag)
         endif
     endfor
 
@@ -10272,7 +10287,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-544
+559
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -10334,29 +10349,35 @@ function! s:CheckIfSetOpts()
     return ''
 endfunction
 "}}}
-function! s:ShouldComplete() "{{{2
-    if (getline('.') =~ '#\s*\(include\|import\)')
-        "写头文件，忽略
+function! s:CanComplete() "{{{2
+    if (getline('.') =~ '#\s*include')
+        " 写头文件，忽略
         return 0
     else
-        "检测光标所在的区块，如果在注释、双引号、浮点数？时，忽略
+        " 检测光标所在的位置，如果在注释、双引号、浮点数时，忽略
         let nLine = line('.')
-        let nCol = col('.') - 1
+        let nCol = col('.') - 1 " 是前一列 eg. ->|
         if nCol < 1
+            " TODO: 支持续行的补全
             return 0
         endif
-        for nId in synstack(nLine, nCol)
-            if match(synIDattr(nId, 'name'), '\CComment\|String\|Number')
-                        \ != -1
-                return 0
-            endif
-        endfor
+        if g:VLOmniCpp_EnableSyntaxTest
+            for nID in synstack(nLine, nCol)
+                if synIDattr(nID, 'name') 
+                            \=~? 'comment\|string\|float\|character'
+                    return 0
+                endif
+            endfor
+        else
+            " TODO
+        endif
+
         return 1
     endif
 endfunction
 "}}}
-function! s:LaunchOmnicppCompletion() "{{{2
-    if s:ShouldComplete()
+function! s:LaunchOmniCppCompletion() "{{{2
+    if s:CanComplete()
         return "\<C-x>\<C-o>"
     else
         return ''
@@ -10365,18 +10386,18 @@ endfunction
 "}}}
 function! s:CompleteByChar(sChar) "{{{2
     if a:sChar ==# '.'
-        return a:sChar . s:LaunchOmnicppCompletion()
+        return a:sChar . s:LaunchOmniCppCompletion()
     elseif a:sChar ==# '>'
         if getline('.')[col('.') - 2] != '-'
             return a:sChar
         else
-            return a:sChar . s:LaunchOmnicppCompletion()
+            return a:sChar . s:LaunchOmniCppCompletion()
         endif
     elseif a:sChar ==# ':'
         if getline('.')[col('.') - 2] != ':'
             return a:sChar
         else
-            return a:sChar . s:LaunchOmnicppCompletion()
+            return a:sChar . s:LaunchOmniCppCompletion()
         endif
     endif
 endfunction
@@ -10453,7 +10474,7 @@ function! omnicpp#complete#Init() "{{{2
 
     inoremap <script> <Plug>SmartComplete 
                 \<C-r>=<SID>CheckIfSetOpts()<CR>
-                \<C-r>=<SID>LaunchOmnicppCompletion()<CR>
+                \<C-r>=<SID>LaunchOmniCppCompletion()<CR>
                 \<C-r>=<SID>RestoreOpts()<CR>
 
     "显示函数 calltips 的快捷键
@@ -10468,13 +10489,13 @@ function! omnicpp#complete#Init() "{{{2
     else
         "inoremap <silent> <buffer> <C-n> 
                     "\<C-r>=<SID>SetOpts()<CR>
-                    "\<C-r>=<SID>LaunchOmnicppCompletion()<CR>
+                    "\<C-r>=<SID>LaunchOmniCppCompletion()<CR>
                     "\<C-r>=<SID>RestoreOpts()<CR>
     endif
 endfunction
 "}}}
-function! s:RequestCalltips(...) "可选参数标识是否刚在补全后发出请求 {{{2
-    if a:0 > 0 && a:1 "从全能补全菜单选择条目后，使用上次的输出
+function! s:RequestCalltips(...) " 可选参数标识是否刚在补全后发出请求 {{{2
+    if a:0 > 0 && a:1 " 从全能补全菜单选择条目后，使用上次的输出
         let sLine = getline('.')
         let nCol = col('.')
         if sLine[nCol-3:] =~ '^()'
@@ -10484,14 +10505,21 @@ function! s:RequestCalltips(...) "可选参数标识是否刚在补全后发出�
             let lCalltips = s:GetCalltips(s:lTags, sFuncName)
             call g:DisplayCalltips(lCalltips, 0)
         endif
-    else "普通情况，请求 calltips
-        "确定函数括号开始的位置
+    else " 普通情况，请求 calltips
+        " 确定函数括号开始的位置
         let lOrigCursor = getpos('.')
-        let lStartPos = searchpairpos('(', '', ')', 'nWb', 
-                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
+        " 返回 1 则跳过此匹配. 手册有误, 说返回 0 就跳过!
+        if g:VLOmniCpp_EnableSyntaxTest
+            " 跳过字符串中和注释中的匹配
+            let sSkipExpr = 'synIDattr(synID(line("."), col("."), 0), "name") '
+                        \. '=~? "character\\|string\\|comment"'
+        else
+            " 空则不跳过任何匹配
+            let sSkipExpr = ''
+        endif
+        let lStartPos = searchpairpos('(', '', ')', 'nWb', sSkipExpr)
         "考虑刚好在括号内，加 'c' 参数
-        let lEndPos = searchpairpos('(', '', ')', 'nWc', 
-                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
+        let lEndPos = searchpairpos('(', '', ')', 'nWc', sSkipExpr)
         let lCurPos = lOrigCursor[1:2]
 
         "不在括号内
@@ -10546,7 +10574,9 @@ function! s:GetCalltips(lTags, sFuncName) "{{{2
                 let sName = dTag.path
                 " 首先尝试在模式中查找限定词, 
                 " 若查找失败才用 tag 中的 qualifiers 域, 因为这个域的解析不完善
-                let sQualifiers = matchstr(dTag.cmd[2:-3], 
+                " FIXME: python 的字典转为 vim 字典时, \t 全部丢失
+                let sQualifiers = substitute(dTag.cmd[2:-3], '\\t', ' ', 'g')
+                let sQualifiers = matchstr(sQualifiers, 
                             \'\C\s*\zs[^;]\{-}\ze' . sFuncName)
                 if sQualifiers ==# ''
                     let sQualifiers = dTag.qualifiers . ' '
@@ -10818,37 +10848,24 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-509
+467
 " Description:	Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
 " License:      GPLv2
 
 
-" 过滤所有有 class, struct, union, namespace 键值的项
-" 如果是枚举, 只过滤枚举值不匹配 '^\w\+$' 的项
-" Note: 用数据库是应该不需要
-let g:omnicpp#utils#szFilterGlobalScope = "(!has_key(v:val, 'class') "
-            \."&& !has_key(v:val, 'struct') "
-            \."&& !has_key(v:val, 'union') "
-            \."&& !has_key(v:val, 'namespace')"
-let g:omnicpp#utils#szFilterGlobalScope .= " && (!has_key(v:val, 'enum') "
-            \."|| (has_key(v:val, 'enum') && v:val.enum =~ '^\\w\\+$')))"
-
 " Expression used to ignore comments
 " Note: this expression drop drastically the performance
-" 检查语法项目真的这么慢吗?
-"let omnicpp#utils#expIgnoreComments = 
-            "\'match(synIDattr(synID(line("."), col("."), 1), "name"), '
-            "\'"\CcComment")!=-1'
+"let omnicpp#utils#sCommentSkipExpr = 
+            "\"synIDattr(synID(line('.'), col('.'), 0), 'name') "
+            "\"=~? 'comment\\|string\\|character'"
 " This one is faster but not really good for C comments
-let omnicpp#utils#reIgnoreComment = escape('\/\/\|\/\*\|\*\/', '*/\')
-let omnicpp#utils#expIgnoreComments = 
-            \'getline(".") =~ g:omnicpp#utils#reIgnoreComment'
-
-" Characters to escape in a filename for vimgrep
-"TODO: Find more characters to escape
-let omnicpp#utils#szEscapedCharacters = ' %#'
+" 匹配了以下字符串后则认为在注释中, 近似测试
+" //, /*, */
+" BUG: 不知道为什么, 下面的表达式无法工作
+let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
+let omnicpp#utils#sCommentSkipExpr = ''
 
 " 比较两个光标位置 
 function! omnicpp#utils#CmpPos(pos1, pos2) "{{{2
@@ -11001,14 +11018,10 @@ endfunc
 "}}}
 " Check if the cursor is in comment or string
 " 根据语法检测光标是否在注释或字符串中或 include 预处理中
-" FIXME: 真的需要检查预处理?!
 function! omnicpp#utils#IsCursorInCommentOrString() "{{{2
     " FIXME: case. |"abc" . 判定为在字符串中
-    "return match(synIDattr(synID(line("."), col(".")-1, 1), "name"), 
-				"\'\C\<cComment\|\<cCppString\|\<cIncluded') >= 0
-    for id in synstack(line('.'), col('.'))
-        if match(synIDattr(id, 'name'), 
-                    \'\CComment\|String\|Included') != -1
+    for nID in synstack(line('.'), col('.'))
+        if synIDattr(nID, 'name') =~? 'comment\|string\|character'
             return 1
         endif
     endfor
@@ -11184,31 +11197,6 @@ function! omnicpp#utils#BuildParenthesisGroups(tokens)
     return reverse(tokens)
 endfunc
 
-" Determine if tokens represent a C cast
-" @return
-"   - itemCast
-"   - itemCppCast
-"   - itemVariable
-"   - itemThis
-function! omnicpp#utils#GetCastType(tokens)
-    " Note: a:tokens is not modified
-    let tokens = omnicpp#utils#SimplifyParenthesis(
-				\omnicpp#utils#BuildParenthesisGroups(a:tokens))
-
-    if tokens[0].value == '('
-        return 'itemCast' 
-    elseif index(['static_cast', 'dynamic_cast', 'reinterpret_cast', 
-                \'const_cast'], tokens[0].value)>=0
-        return 'itemCppCast'
-    else
-        for token in tokens
-            if token.value=='this'
-                return 'itemThis'
-            endif
-        endfor
-        return 'itemVariable' 
-    endif
-endfunc
 
 " Remove useless parenthesis
 " 剔除不必要的括号. 主要用于解析强制类型转换的 tokens
@@ -11329,7 +11317,7 @@ endfunc
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
-370
+375
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 13
@@ -11386,7 +11374,7 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
     while lEndPos != [0, 0]
         " {} 块的 { 位置
         let lEndPos = searchpairpos('{', '', '}', 'bW', 
-                    \g:omnicpp#utils#expIgnoreComments)
+                    \g:omnicpp#utils#sCommentSkipExpr)
 
         " 单独处理 for ( A; B; C ) 的情形
         let lTmpCursor = getpos('.')
@@ -11395,10 +11383,15 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
         let lTmpPos = searchpos(')\s*$\|)\s*{\s*$', 'Wb')
         " 只考虑 ) 和 { 相隔不超过一行
         if lTmpPos != [0, 0] && lTmpCursor[1] - lTmpPos[0] <= 1
-            let sSkip ='synIDattr(synID(line("."), col("."), 0), "name") ' . 
-                        \'=~?  "string\\|character\\|singlequote\\|comment"'
-            let sSkip = ''
-            call searchpair('(', '', ')', 'bW', sSkip)
+            let sSkipExpr = ''
+            "if g:VLOmniCpp_EnableSyntaxTest
+                "let sSkipExpr = 
+                            "\'synIDattr(synID(line("."), col("."), 0), "name") '
+                            "\. '=~? "string\\|character\\|comment"'
+            "else
+                "let sSkipExpr = ''
+            "endif
+            call searchpair('(', '', ')', 'bW', sSkipExpr)
             if getline('.')[:col('.')-1] =~# 'for\s*($'
                 " 找到了 for
                 let dCurScope = s:NewScope()
@@ -11417,7 +11410,7 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
         let sReStartPos = '[;{}]\|\%^'
 		"搜索 {} 块前的语句的开始位置, 用于获取之间的文本以分析
         let lStartPos = searchpairpos(sReStartPos, '', '{', 'bWn', 
-                    \g:omnicpp#utils#expIgnoreComments)
+                    \g:omnicpp#utils#sCommentSkipExpr)
 
         " If the file starts with a comment so the lStartPos can be [0,0]
         " we change it to [1,1]
@@ -11680,7 +11673,7 @@ function! omnicpp#scopes#GetCurBlockStartPos(...) "{{{2
         let sFlag = 'bWn'
     endif
     let lStartPos = searchpairpos('{', '', '}', sFlag, 
-                \g:omnicpp#utils#expIgnoreComments)
+                \g:omnicpp#utils#sCommentSkipExpr)
     return lStartPos
 endfunc
 "}}}
@@ -11694,14 +11687,14 @@ function! omnicpp#scopes#GetCurBlockEndPos(...) "{{{2
         let sFlag = 'Wn'
     endif
     let lStartPos = searchpairpos('{', '', '}', sFlag, 
-                \g:omnicpp#utils#expIgnoreComments)
+                \g:omnicpp#utils#sCommentSkipExpr)
     return lStartPos
 endfunc
 "}}}
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/settings.vim	[[[1
-72
+49
 " Description:  Omnicpp completion init settings
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -11718,44 +11711,27 @@ endfunction
 "}}}2
 
 function! omnicpp#settings#Init() "{{{1
-    " Sets the namespace search method
-    "   0 = disabled
-    "   1 = search namespaces in the current file
-    "   2 = search namespaces in the current file and included files
-    call s:InitVariable('g:VLOmniCpp_NamespaceSearch', 1)
+    " Show all class members (static, public, protected and private)
+    call s:InitVariable('g:VLOmniCpp_ShowAllClassMember', 0)
 
-    " Set the class scope completion mode
-    "   0 = auto
-    "   1 = show all members (static, public, protected and private)
-    call s:InitVariable('g:VLOmniCpp_DisplayMode', 0)
+    " Show the access symbol (+,#,-)
+    call s:InitVariable('g:VLOmniCpp_ShowAccessSymbol', 1)
 
-    " Set if the parent is displayed in the abbr column of the popup
-    "   0 = no
-    "   1 = yes
-    call s:InitVariable('g:VLOmniCpp_ShowParentInAbbr', 0)
-
-    " Set if the access (+,#,-) is displayed
-    "   0 = no
-    "   1 = yes
-    call s:InitVariable('g:VLOmniCpp_ShowAccess', 1)
-
-    " Set MayComplete to '.'
-    "   0 = disabled
-    "   1 = enabled
-    "   default = 1
+    " MayComplete to '.'
     call s:InitVariable('g:VLOmniCpp_MayCompleteDot', 1)
 
-    " Set MayComplete to '->'
-    "   0 = disabled
-    "   1 = enabled
-    "   default = 1
+    " MayComplete to '->'
     call s:InitVariable('g:VLOmniCpp_MayCompleteArrow', 1)
 
-    " Set MayComplete to '::'
-    "   0 = disabled
-    "   1 = enabled
-    "   default = 2
+    " MayComplete to '::'
     call s:InitVariable('g:VLOmniCpp_MayCompleteColon', 1)
+
+    " 启用语法测试(速度相当慢), 若感觉太慢, 可关闭, 代价是补全分析正确率下降
+    call s:InitVariable('g:VLOmniCpp_EnableSyntaxTest', 1)
+
+    " 把回车映射为: 
+    " 在补全菜单中选择并结束补全时, 若选择的是函数, 自动显示函数参数提示
+    call s:InitVariable('g:VLOmniCpp_MapReturnToDispCalltips', 1)
 
     " When completeopt does not contain longest option, this setting 
     " controls the behaviour of the popup menu selection 
@@ -11765,12 +11741,6 @@ function! omnicpp#settings#Init() "{{{1
     "   2 = select first item (without inserting it to the text)
     "   default = 2
     call s:InitVariable('g:VLOmniCpp_ItemSelectionMode', 2)
-
-    " 启用语法测试(速度相当慢), 若感觉太慢, 可关闭, 代价是补全分析正确率下降
-    call s:InitVariable('g:VLOmniCpp_EnableSyntaxTest', 1)
-
-    " 把回车映射为: 在补全菜单中选择并结束补全, 若为函数, 自动显示参数提示
-    call s:InitVariable('g:VLOmniCpp_MapReturnToDispCalltips', 1)
 endfunc
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
@@ -12069,7 +12039,7 @@ function! s:GetIncludeListFromFile(szFilePath) "{{{2
     let s:CACHE_INCLUDES[szAbsFilePath] = []
     let s:CACHE_FILEMTIME[szAbsFilePath] = getftime(szAbsFilePath)
 
-    let szFixedPath = escape(szAbsFilePath, g:omnicpp#utils#szEscapedCharacters)
+    let szFixedPath = escape(szAbsFilePath, ' %#')
     execute 'silent! lvimgrep /\C\('.s:rePreprocIncludeFile.'\)/gj '.szFixedPath
 
     let listQuickFix = getloclist(0)
