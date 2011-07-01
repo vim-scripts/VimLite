@@ -312,7 +312,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-3612
+3614
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -2486,13 +2486,14 @@ function! s:SelProjConfCbk(ctl, data) "{{{2
 endfunction
 
 
-function! s:SaveProjectSettings(arg) "{{{2
+function! s:SaveProjectSettings(dlg, ...) "{{{2
     " 想要保存设置，只能调用这个函数，而不是 Project 的 Save()
     py project.SetSettings(settings)
-    py del project
-    py del settings
-    py del bldConf
-    py del glbBldConf
+    echo 1
+    "py del project
+    "py del settings
+    "py del bldConf
+    "py del glbBldConf
     return 0
 endfunction
 
@@ -3091,7 +3092,8 @@ PYTHON_EOF
 
 "===============================================================================
 
-    call l:dialog.AddCallback(s:GetSFuncRef("s:SaveProjectSettings"))
+    "call l:dialog.AddCallback(s:GetSFuncRef("s:SaveProjectSettings"))
+    call l:dialog.ConnectSaveCallback(s:GetSFuncRef("s:SaveProjectSettings"), 0)
     return l:dialog
 "    call l:dialog.Display()
 endfunction
@@ -4129,7 +4131,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1
 plugin/vimdialog.vim	[[[1
-2918
+2919
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -6226,7 +6228,7 @@ function! g:VimDialog.DisplayHelp() "{{{2
 		let text .= g:VimDialogToggleExtraHelpKey . ': Toggle Extra Help ; '
 		if !self.asTextCtrl
 			let text .= g:VimDialogNextEditableCtlKey . ': Goto Next Control; '
-			let text .= g:VimDialogPrevEditableCtlKey . ': Goto Next Control '
+			let text .= g:VimDialogPrevEditableCtlKey . ': Goto Prev Control '
 		endif
 		call add(texts, text)
 
@@ -6557,15 +6559,16 @@ function! g:VimDialog.Save() "{{{2
 		return
 	endif
 
-	if has_key(self, 'saveCallback')
-		call self.saveCallback(self, self.saveCallbackData)
-	endif
-
 	for i in self.controls
 		if has_key(i, "UpdateBindVar")
 			call i.UpdateBindVar()
 		endif
 	endfor
+
+	if has_key(self, 'saveCallback')
+		call self.saveCallback(self, self.saveCallbackData)
+	endif
+
 	echohl PreProc
 	echo "All have been saved."
 	echohl None
@@ -8716,7 +8719,7 @@ FUNCTIONS
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:et:cole=0
 autoload/omnicpp/resolvers.vim	[[[1
-1569
+1659
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -8801,6 +8804,12 @@ endfunc
 " 判断 cast 的开始: 1. )单词, 2. )(
 " 判断 precast: 从 )( 匹配的结束位置寻找匹配的 ), 如果匹配的 ')' 右边也为 ')'
 " 判断 postcast: 从 )( 匹配的结束位置寻找匹配的 ), 如果匹配的 ')' 右边不为 ')'
+" TODO: 
+" 1. A<B>::C<D, E>::F g; g.|
+" 2. A<B>::C<D, E>::F.g.| (g 为静态变量)
+"
+" 1 的方法, 需要记住整条路径每个作用域的 til
+" 2 的方法, OmniInfo 增加 til 域
 function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
     if a:0 > 0
         if type(a:1) == type('')
@@ -8997,6 +9006,32 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                     if dTmpToken.value == ']'
                         let tmp += 1
                     elseif dTmpToken.value == '['
+                        let tmp -= 1
+                        if tmp == 0
+                            break
+                        endif
+                    endif
+                    let j += 1
+                endwhile
+                let dToken = dPrevToken " 保持 dPrevToken
+                let idx = j
+            else
+                echom 'syntax error: ' . dToken.value
+                let lOmniSS = []
+                break
+            endif
+        elseif dToken.kind == 'cppOperatorPunctuator' && dToken.value == '>'
+            " 处理模板实例化
+            " eg. A<B, C>::|
+            if nState == 1 "期待单词时遇到 '>'
+                " 跳到匹配的 '<'
+                let j = idx + 1
+                let tmp = 1
+                while j < nLen
+                    let dTmpToken = lRevTokens[j]
+                    if dTmpToken.value == '>'
+                        let tmp += 1
+                    elseif dTmpToken.value == '<'
                         let tmp -= 1
                         if tmp == 0
                             break
@@ -9228,16 +9263,34 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
             endif
         elseif dMember.kind == 'variable'
             if idx == 0
+                let lSearchScopes = lOrigScopes
                 " 第一次进入, 因为 ctags 不支持局部变量, 
                 " 所以如果起点为变量时, 需要分析是否在当前局部作用域内定义了
                 let dTypeInfo = omnicpp#resolvers#ResolveFirstVariable(
-                            \lOrigScopes, dMember.name)
+                            \lSearchScopes, dMember.name)
+
+                if len(dTypeInfo.types) >= 2
+                    let lTmpName = substitute(dTypeInfo.name, '::\w\+$', '', '')
+                    let dCtnTag = s:GetFirstMatchTag(lSearchScopes, lTmpName)
+                    let lCtnTil = dTypeInfo.types[-2].til
+                    let dReplTypeInfo = s:ResolveFirstVariableTypeReplacement(
+                                \dTypeInfo.name, dCtnTag, lCtnTil)
+                    if !empty(dReplTypeInfo)
+                        " 先展开搜索域
+                        let lSearchScopes = s:ExpandSearchScopes(
+                                    \[dTypeInfo.name] + lSearchScopes)
+                        " 再替换类型信息
+                        call extend(dTypeInfo, dReplTypeInfo, 'force')
+                    endif
+                endif
+
                 if dTypeInfo.name =~# '^::\w\+'
                     let dTypeInfo.name = dTypeInfo.name[2:]
                     "修正搜索域为仅搜索全局作用域
                     let lOrigScopes = dScopeInfo.global
+                    let lSearchScopes = lOrigScopes
                 endif
-                let dTmpTag = s:GetFirstMatchTag(lOrigScopes, dTypeInfo.name)
+                let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dTypeInfo.name)
                 let dMember.typeinfo = dTypeInfo
                 let dMember.tag = dTmpTag
                 if !empty(dTmpTag)
@@ -9369,13 +9422,15 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                             \s:GetTemplatePrmtInfoList(dCtnInfo.tag.qualifiers)
                 let dTmpMap = {}
                 for nTmpIdx in range(len(dCtnInfo.typeinfo.til))
-                    let dTmpMap[lPrmtInfo[nTmpIdx].name] 
-                                \= dCtnInfo.typeinfo.til[nTmpIdx]
+                    let dTmpMap[lPrmtInfo[nTmpIdx].name] = 
+                                \dCtnInfo.typeinfo.til[nTmpIdx]
                 endfor
                 for nTmpIdx in range(len(dReplTypeInfo.til))
-                    if has_key(dTmpMap, dReplTypeInfo.til[nTmpIdx])
-                        let dReplTypeInfo.til[nTmpIdx] 
-                                    \= dTmpMap[dReplTypeInfo.til[nTmpIdx]]
+                    let dReplTilTI = omnicpp#utils#GetVariableType(
+                                \dReplTypeInfo.til[nTmpIdx])
+                    if has_key(dTmpMap, dReplTilTI.name)
+                        let dReplTypeInfo.til[nTmpIdx] = 
+                                    \dTmpMap[dReplTilTI.name]
                     endif
                 endfor
             else
@@ -9385,8 +9440,8 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                             \s:GetTemplatePrmtInfoList(dCtnInfo.tag.qualifiers)
                 let dTmpMap = {}
                 for nTmpIdx in range(len(dCtnInfo.typeinfo.til))
-                    let dTmpMap[lPrmtInfo[nTmpIdx].name] 
-                                \= dCtnInfo.typeinfo.til[nTmpIdx]
+                    let dTmpMap[lPrmtInfo[nTmpIdx].name] = 
+                                \dCtnInfo.typeinfo.til[nTmpIdx]
                 endfor
                 if has_key(dTmpMap, dReplTypeInfo.name)
                     let dReplTypeInfo.name = dTmpMap[dReplTypeInfo.name]
@@ -9406,6 +9461,68 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
     endwhile
 
     return lSearchScopes
+endfunc
+"}}}
+" 处理类型替换
+" Param1: sTypeName, 当前需要替换的类型名, 绝对路径. eg. std::map::iterator
+" Param2: dCtnInfo, 需要处理的类型所属容器的信息, 主要用到它的 tag 和 typeinfo
+"         相当于上一个 MemberStack
+" Return: 替换后的类型信息 TypeInfo
+" 这个替换不完善, 只对以下情况有效
+" eg. std::map::iterator=pair<_Key, _Tp>
+" 替换的类型中的模板初始化列表对应原始类型的 scope 的模板初始化列表
+" 对于更复杂的情况, 不予支持
+function! s:ResolveFirstVariableTypeReplacement(
+            \sTypeName, dCtnTag, lCtnTil) "{{{2
+    let sTypeName = a:sTypeName
+    let dCtnTag = a:dCtnTag
+    let lCtnTil = a:lCtnTil
+    let dResult = {}
+    " 处理硬替换类型
+    if sTypeName !=# '' && has_key(g:dOCppTypes, sTypeName)
+        let sReplacement = g:dOCppTypes[sTypeName]
+        let dReplTypeInfo = s:GetVariableTypeInfo(sReplacement, '')
+
+        if !empty(dReplTypeInfo.til)
+            " 处理模版, 当前成员所属容器的声明列表和实例化列表修正 til
+            " eg.
+            " template <typename A, typename B> class C {
+            "     typedef Z Y;
+            " }
+            " C<a, b>
+            " Types:    C::Y =  X<B, A>
+            " Result:   C::Y -> X<b, a>
+            let lPrmtInfo = 
+                        \s:GetTemplatePrmtInfoList(dCtnTag.qualifiers)
+            let dTmpMap = {}
+            for nTmpIdx in range(len(lCtnTil))
+                let dTmpMap[lPrmtInfo[nTmpIdx].name] = lCtnTil[nTmpIdx]
+            endfor
+            for nTmpIdx in range(len(dReplTypeInfo.til))
+                let dReplTilTI = omnicpp#utils#GetVariableType(
+                            \dReplTypeInfo.til[nTmpIdx])
+                if has_key(dTmpMap, dReplTilTI.name)
+                    let dReplTypeInfo.til[nTmpIdx] = 
+                                \dTmpMap[dReplTilTI.name]
+                endif
+            endfor
+        else
+            " 无模版的变量替换
+            let lPrmtInfo = 
+                        \s:GetTemplatePrmtInfoList(dCtnTag.qualifiers)
+            let dTmpMap = {}
+            for nTmpIdx in range(len(lCtnTil))
+                let dTmpMap[lPrmtInfo[nTmpIdx].name] = lCtnTil[nTmpIdx]
+            endfor
+            if has_key(dTmpMap, dReplTypeInfo.name)
+                let dReplTypeInfo.name = dTmpMap[dReplTypeInfo.name]
+            endif
+        endif
+
+        let dResult = dReplTypeInfo
+    endif
+
+    return dResult
 endfunc
 "}}}
 " 展开搜索域, 深度优先
@@ -9681,10 +9798,9 @@ function! s:GetVariableTypeInfo(sDecl, sVar) "{{{2
 
     " FIXME: python 的字典转为 vim 字典时, \t 全部丢失
     let sDecl = substitute(a:sDecl, '\\t', ' ', 'g')
+    let sVar = a:sVar
 
-    let dTypeInfo.name = omnicpp#utils#GetVariableType(sDecl)
-    let sInstDecl = matchstr(sDecl, '<\s*\w\+.*>')
-    let dTypeInfo.til = s:GetTemplateInstList(sInstDecl)
+    let dTypeInfo = omnicpp#utils#GetVariableType(sDecl, sVar)
 
     let &ic = bak_ic
     return dTypeInfo
@@ -9692,28 +9808,7 @@ endfunc
 "}}}
 " 从限定词中解析变量类型
 function! s:GetVariableTypeInfoFromQualifiers(sQualifiers) "{{{2
-
     return s:GetVariableTypeInfo(a:sQualifiers, '')
-
-    " 下面的基本不能使用
-    let dTypeInfo = s:NewTypeInfo()
-    let bak_ic = &ic
-    set noic
-
-    let sQualifiers = a:sQualifiers
-    if sQualifiers == ''
-        return dTypeInfo
-    endif
-
-    " FIXME: python 的字典转为 vim 字典时, \t 全部丢失
-    let sQualifiers = substitute(sQualifiers, '\\t', ' ', 'g')
-
-    let dTypeInfo.name = matchstr(sQualifiers, '\w\+\ze\s*\%\(\**\|&\)$')
-    "let sInstDecl = matchstr(sQualifiers, '<\s*\w\+.*>')
-    "let dTypeInfo.til = s:GetTemplateInstList(sInstDecl)
-
-    let &ic = bak_ic
-    return dTypeInfo
 endfunc
 "}}}
 " 剔除配对的字符里面(包括配对的字符)的内容
@@ -9806,7 +9901,7 @@ function! omnicpp#resolvers#ResolveTag(dTag, ...) "{{{2
             " 从模式中提取类型信息
             let sDecl = matchstr(dTag.cmd[2:-3], '\Ctypedef\s\+\zs.\+')
             let sDecl = matchstr(sDecl, '\C.\{-1,}\ze\s\+\<' . dTag.name . '\>')
-            let dTmpTypeInfo = s:GetVariableTypeInfo(sDecl, '')
+            let dTmpTypeInfo = s:GetVariableTypeInfo(sDecl, dTag.name)
 
             " 修正 TypeInfo
             let dTypeInfo.name = dTmpTypeInfo.name
@@ -10267,12 +10362,10 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
             endif
 
             " 解析声明
-            " FIXME: 如果为原始类型, 如 int, short, 返回空字符串!
-            let dTypeInfo.name = omnicpp#utils#GetVariableType(lTokens)
-
-            let sCurStmt = omnicpp#utils#GetCurStatementBeforeCursor()
-            let dTypeInfo.til = s:GetTemplateInstList(sCurStmt)
-            break
+            let dTypeInfo = omnicpp#utils#GetVariableType(lTokens)
+            if dTypeInfo.name !=# ''
+                break
+            endif
         else
             " 搜索失败
             break
@@ -10848,7 +10941,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-467
+525
 " Description:	Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -10866,6 +10959,24 @@ autoload/omnicpp/utils.vim	[[[1
 " BUG: 不知道为什么, 下面的表达式无法工作
 let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
 let omnicpp#utils#sCommentSkipExpr = ''
+
+let s:dCppBuiltinTypes = {
+            \'bool': 1, 
+            \'char': 1, 
+            \'double': 1, 
+            \'float': 1, 
+            \'int': 1, 
+            \'long': 1, 
+            \'short': 1, 
+            \'signed': 1, 
+            \'unsigned': 1, 
+            \'void': 1, 
+            \'wchar_t': 1, 
+            \'short int': 1, 
+            \'long long': 1, 
+            \'long double': 1, 
+            \'long long int': 1, 
+            \}
 
 " 比较两个光标位置 
 function! omnicpp#utils#CmpPos(pos1, pos2) "{{{2
@@ -11044,10 +11155,16 @@ function! omnicpp#utils#TokenizeStatementBeforeCursor(...) "{{{2
     let startPos = searchpos('[;{}]\|\%^', 'bWn')
     let curPos = getpos('.')[1:2]
     " We don't want the character under the cursor
-    let column = curPos[1]-1
-    let curPos[1] = (column < 1) ? 1 : column
+    let column = curPos[1] - 1
+    let curPos[1] = column
     " Note: [1:] 剔除了上一条语句的结束符
-    let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:] . szAppendText
+    if curPos[1] < 1
+        let curPos[1] = 1
+        " 当光标在第一列的时候, 会包含第一列的字符. 剔除之.
+        let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:-2] . szAppendText
+    else
+        let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:] . szAppendText
+    endif
     if bSimplify
         let szCode = omnicpp#utils#SimplifyCodeForOmni(szCode)
     endif
@@ -11143,178 +11260,212 @@ function! s:StripFuncArgs(szOmniCode) "{{{2
 	return szResult
 endfunc
 "}}}
-" Tokenize the current instruction until the word under the cursor.
-" @return list of tokens
-function! omnicpp#utils#TokenizeCurrentInstructionUntilWord()
-    let startPos = searchpos('[;{}]\|\%^', 'bWn')
-
-    " Saving the current cursor pos
-    let originalPos = getpos('.')
-
-    " We go at the end of the word
-    execute 'normal gee'
-    let curPos = getpos('.')[1:2]
-
-    " Restoring the original cursor pos
-    call setpos('.', originalPos)
-
-    let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:]
-    return omni#cpp#tokenizer#Tokenize(szCode)
-endfunc
-
-" Build parenthesis groups
-" add a new key 'group' in the token
-" where value is the group number of the parenthesis
-" eg: (void*)(MyClass*)
-"      group1  group0
-" if a parenthesis is unresolved the group id is -1      
-" Return: a copy of a:tokens with parenthesis group
-function! omnicpp#utils#BuildParenthesisGroups(tokens)
-    let tokens = copy(a:tokens)
-    let kinds = {'(': '()', ')' : '()', '[' : '[]', ']' : '[]', '<' : '<>', 
-				\'>' : '<>', '{': '{}', '}': '{}'}
-    let unresolved = {'()' : [], '[]': [], '<>' : [], '{}' : []}
-    let groupId = 0
-
-    " Note: we build paren group in a backward way
-    " because we can often have parenthesis unbalanced statement
-    " eg: doSomething(_member.get()->
-    for token in reverse(tokens)
-        if index([')', ']', '>', '}'], token.value) >= 0
-            let token['group'] = groupId
-            call extend(unresolved[kinds[token.value]], [token])
-            let groupId += 1
-        elseif index(['(', '[', '<', '{'], token.value)>=0
-            if len(unresolved[kinds[token.value]])
-                let tokenResolved = remove(unresolved[kinds[token.value]], -1)
-                let token['group'] = tokenResolved.group
-            else
-                let token['group'] = -1
-            endif
-        endif
-    endfor
-
-    return reverse(tokens)
-endfunc
-
-
-" Remove useless parenthesis
-" 剔除不必要的括号. 主要用于解析强制类型转换的 tokens
-function! omnicpp#utils#SimplifyParenthesis(tokens)
-    "Note: a:tokens is not modified
-    let tokens = a:tokens
-    " We remove useless parenthesis eg: (((MyClass)))
-    if len(tokens)>2
-        while tokens[0].value == '(' 
-					\&& tokens[-1].value == ')' 
-					\&& tokens[0].group == tokens[-1].group
-            let tokens = tokens[1:-2]
-        endwhile
-    endif
-    return tokens
-endfunc
-
-
-" Extract type from tokens.
-" eg: examples of tokens format
-"   'const MyClass&'
-"   'const map < int, int >&'
-"   'MyNs::MyClass'
-"   '::MyClass**'
-"   'MyClass a, *b = NULL, c[1] = {};
-"   'hello(MyClass a, MyClass* b'
-" @return the type info string eg: ::std::map
-" can be empty
-function! omnicpp#utils#GetVariableType(tokens)
-    if type(a:tokens) == type('')
-        let tokens = omnicpp#tokenizer#Tokenize(a:tokens)
+" 从一条语句中获取变量信息, 无法判断是否非法声明
+" eg1. const MyClass&
+" eg2. const map < int, int >&
+" eg3. MyNs::MyClass
+" eg4. ::MyClass**
+" eg5. MyClass a, *b = NULL, c[1] = {};
+" eg6. A<B>::C::D<E, F>::G g;
+" eg7. hello(MyClass1 a, MyClass2* b
+" eg8. Label: A a;
+function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
+    if type(a:sDecl) == type('')
+        let lTokens = omnicpp#tokenizer#Tokenize(a:sDecl)
     else
-        let tokens = a:tokens
+        let lTokens = a:sDecl
     endif
 
-    let szResult = ''
-    let state = 0
-
-    let tokens = omnicpp#utils#BuildParenthesisGroups(tokens)
-
-    " If there is an unbalanced parenthesis we are in a parameter list
-    let bParameterList = 0
-    for token in tokens
-        if token.value == '(' && token.group==-1
-            let bParameterList = 1
-            break
-        endif
-    endfor
-
-    if bParameterList
-        let tokens = reverse(tokens)
-        let state = 0
-        let parenGroup = -1
-        for token in tokens
-            if state == 0
-                if token.value == '>'
-                    let parenGroup = token.group
-                    let state = 1
-                elseif token.kind == 'cppWord'
-                    let szResult = token.value.szResult
-                    let state = 2
-                elseif index(['*', '&'], token.value)<0
-                    break
-                endif
-            elseif state == 1
-                if token.value == '<' && token.group == parenGroup
-                    let state=0
-                endif
-            elseif state == 2
-                if token.value == '::'
-                    let szResult = token.value.szResult
-                    let state=3
-                else
-                    break
-                endif
-            elseif state == 3
-                if token.kind == 'cppWord'
-                    let szResult = token.value.szResult
-                    let state = 2
-                else
-                    break
-                endif
-            endif
-        endfor
-        return szResult
+    let sVarName = ''
+    if a:0 > 0
+        let sVarName = a:1
     endif
 
-    for token in tokens
-        if state == 0
-            if token.value == '::'
-                let szResult .= token.value
-                let state = 1
-            elseif token.kind == 'cppWord'
-                let szResult .= token.value
-                let state = 2
-                " Maybe end of token
+    let dTypeInfo = {'name': '', 'til': [], 'types': []}
+
+    let idx = 0
+    let nState = 0
+    " 0 -> 期望 '::' 和 单词, 作为解析的起点. eg1. |::A eg2. |A::B
+    " 1 -> 期望 单词. eg. A::|B
+    " 2 -> 期望 '::'. eg. A|::B 也可能是 A|<B>::C
+    while idx < len(lTokens)
+        let dCurToken = lTokens[idx]
+        if nState == 0
+            if dCurToken.value ==# '::'
+                " eg. ::A a
+                let dTypeInfo.name .= dCurToken.value
+                let dSingleType = {'name': '', 'til': []}
+                let dSingleType.name = '<global>'
+                call add(dTypeInfo.types, dSingleType)
+
+                let nState = 1
+            elseif dCurToken.kind == 'cppWord'
+                let dTypeInfo.name .= dCurToken.value
+                let dSingleType = {'name': '', 'til': []}
+                let dSingleType.name = dCurToken.value
+                call add(dTypeInfo.types, dSingleType)
+
+                let nState = 2
+            elseif dCurToken.kind == 'cppKeyword'
+                if has_key(s:dCppBuiltinTypes, dCurToken.value)
+                    let dTypeInfo.name .= dCurToken.value
+
+                    " short int
+                    " long long
+                    " long long int
+                    " long double
+                    if dCurToken.value ==# 'long'
+                        let idx = idx + 1
+                        while idx < len(lTokens)
+                            if lTokens[idx].value =~# 'long\|int\|double'
+                                let dTypeInfo.name .= 
+                                            \' ' . lTokens[idx].value
+                            else
+                                let idx -= 1
+                                break
+                            endif
+                            let idx += 1
+                        endwhile
+                    elseif dCurToken.value ==# 'short'
+                        if idx + 1 < len(lTokens) 
+                                    \&& lTokens[idx+1].value ==# 'int'
+                            let dTypeInfo.name .= 
+                                        \' ' . lTokens[idx+1].value
+                            let idx = idx + 1
+                        endif
+                    endif
+
+                    let dSingleType = {'name': '', 'til': []}
+                    let dSingleType.name = dTypeInfo.name
+                    call add(dTypeInfo.types, dSingleType)
+
+                    " 内置类型, 可能结束, 需要检查此语法是否有函数
+                    let nState = 2
+                endif
             endif
-        elseif state == 1
-            if token.kind == 'cppWord'
-                let szResult .= token.value
-                let state = 2
-                " Maybe end of token
+        elseif nState == 1
+            if dCurToken.kind == 'cppWord'
+                let dTypeInfo.name .= dCurToken.value
+                let dSingleType = {'name': '', 'til': []}
+                let dSingleType.name = dCurToken.value
+                call add(dTypeInfo.types, dSingleType)
+
+                let nState = 2
             else
+                " 有语法错误?
+                " eg. A::| *
                 break
             endif
-        elseif state == 2
-            if token.value == '::'
-                let szResult .= token.value
-                let state = 1
+        elseif nState == 2
+            if dCurToken.value ==# '::'
+                let dTypeInfo.name .= dCurToken.value
+                let nState = 1
+            elseif dCurToken.value ==# '<'
+                " 上一个解析完毕的标识符是模版类
+                let nTmpIdx = idx
+                let nTmpCount = 0
+                let sUnitType = ''
+                while nTmpIdx < len(lTokens)
+                    let dTmpToken = lTokens[nTmpIdx]
+                    if dTmpToken.value ==# '<'
+                        let nTmpCount += 1
+                        if nTmpCount == 1
+                            let sUnitType = ''
+                        else
+                            let sUnitType .= ' ' . dTmpToken.value
+                        endif
+                    elseif dTmpToken.value ==# '>'
+                        let nTmpCount -= 1
+                        if nTmpCount == 0
+                            call add(dTypeInfo.types[-1].til, sUnitType)
+                            break
+                        else
+                            let sUnitType .= ' ' . dTmpToken.value
+                        endif
+                    elseif dTmpToken.value ==# ','
+                        if nTmpCount == 1
+                            call add(dTypeInfo.types[-1].til, sUnitType)
+                            let sUnitType = ''
+                        else
+                            let sUnitType .= ' ' . dTmpToken.value
+                        endif
+                    else
+                        " 会有比较多多余的空格
+                        let sUnitType .= ' ' . dTmpToken.value
+                    endif
+                    let nTmpIdx += 1
+                endwhile
+
+                let idx = nTmpIdx
+            elseif dCurToken.value ==# '('
+                " 处理函数形参中的变量声明
+                " 之前分析的是函数, 重新再来
+                let dTypeInfo = {'name': '', 'til': [], 'types': []}
+                let nState = 0
+
+                let nRestartIdx = idx + 1
+                let nTmpIdx = nRestartIdx
+                let nTmpCount = 0 " 记录 '<' 的数量
+                while sVarName !=# '' && nTmpIdx < len(lTokens)
+                    let dTmpToken = lTokens[nTmpIdx]
+                    if dTmpToken.value ==# '<'
+                        let nTmpCount += 1
+                    elseif dTmpToken.value ==# '>'
+                        let nTmpCount -= 1
+                    elseif dTmpToken.value ==# ','
+                        if nTmpCount == 0
+                            let nRestartIdx = nTmpIdx + 1
+                        endif
+                    elseif dTmpToken.kind == 'cppWord' 
+                                \&& dTmpToken.value ==# sVarName
+                        break
+                    endif
+                    let nTmpIdx += 1
+                endwhile
+
+                let idx = nRestartIdx
+                continue
             else
-                break
+                " 期望 '::', 遇到了其他东东
+                if dCurToken.value ==# ':'
+                    " 遇到标签, 重新开始
+                    " eg. Label: A a;
+                    let dTypeInfo = {'name': '', 'til': [], 'types': []}
+                else
+                    " 检查是否有函数
+                    " eg. int |A(B b, C c)
+                    let nTmpIdx = idx + 1
+                    let nHasFunc = 0
+                    while nTmpIdx < len(lTokens)
+                        let dTmpToken = lTokens[nTmpIdx]
+                        if dTmpToken.value ==# '(' 
+                            " 有函数, 进入函数处理入口
+                            let idx = nTmpIdx
+                            let nHasFunc = 1
+                            break
+                        endif
+                        let nTmpIdx += 1
+                    endwhile
+
+                    if nHasFunc
+                        continue
+                    else
+                        break
+                    endif
+                endif
             endif
         endif
-    endfor
-    return szResult
-endfunc
 
+        let idx += 1
+    endwhile
 
+    if len(dTypeInfo.types)
+        let dTypeInfo.til = dTypeInfo.types[-1].til
+    endif
+
+    return dTypeInfo
+endfunction
+"}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
 375
