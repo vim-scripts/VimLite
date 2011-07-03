@@ -48,7 +48,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-3735
+3751
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -135,7 +135,7 @@ command! -nargs=* -complete=file VLWParseFiles  call <SID>ParseFiles(<f-args>)
 command! -nargs=0 -bar VLWParseCurrentFile      call <SID>ParseCurrentFile(0)
 command! -nargs=0 -bar VLWDeepParseCurrentFile  call <SID>ParseCurrentFile(1)
 
-command! -nargs=0 -bar VLWDbgStart          silent call <SID>DbgStart()
+command! -nargs=0 -bar VLWDbgStart          call <SID>DbgStart()
 command! -nargs=0 -bar VLWDbgStop           call <SID>DbgStop()
 command! -nargs=0 -bar VLWDbgStepIn         call <SID>DbgStepIn()
 command! -nargs=0 -bar VLWDbgNext           call <SID>DbgNext()
@@ -913,7 +913,9 @@ function! s:DbgStart() "{{{2
         endif
 
         silent Pyclewn
-        Cpwd "pyclewn 有 bug, 这命令会最后运行
+        " BUG:? 运行 ws.DebugActiveProject() 前必须运行一条命令,
+        " 否则出现灵异事件. 这条命令会最后才运行
+        Cpwd
 
         if filereadable(dbgProjFile)
             py ws.DebugActiveProject(True)
@@ -1347,7 +1349,7 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
     let l:incOpts = ''
     py vim.command("let l:wspName = '%s'" % ws.VLWIns.name)
     py l_ds = Globals.DirSaver()
-    py os.chdir(ws.VLWIns.dirName)
+    py if ws.VLWIns.dirName: os.chdir(ws.VLWIns.dirName)
     let l:csNameFile = l:wspName . g:VLWorkspaceCscpoeFilesFile
     let l:csDataFile = l:wspName . g:VLWorkspaceCscpoeOutFile
 
@@ -1576,7 +1578,8 @@ def GetVLWProjectCompileOpts(projName):
         return
 
     ds = Globals.DirSaver()
-    os.chdir(project.dirName)
+    if project.dirName
+        os.chdir(project.dirName)
 
     projSelConf = matrix.GetProjectSelectedConf(wspSelConf, project.GetName())
     bldConf = ws.VLWIns.GetProjBuildConf(project.GetName(), projSelConf)
@@ -1620,7 +1623,7 @@ function! s:InitVLWProjectClangPCH(projName) "{{{2
 
     py ds = Globals.DirSaver()
     py project = ws.VLWIns.FindProjectByName(vim.eval('a:projName'))
-    py if project: os.chdir(project.dirName)
+    py if project and project.dirName: os.chdir(project.dirName)
 
     py vim.command("let l:pchHeader = '%s'" 
                 \% (os.path.join(project.dirName, project.name) + '_VLWPCH.h'))
@@ -2956,7 +2959,8 @@ def GetTemplateDict(dir):
     from xml.dom import minidom
     from VLProject import VLProject
     ds = Globals.DirSaver()
-    os.chdir(dir)
+    if dir:
+        os.chdir(dir)
     templates = {}
     for dir in os.listdir(dir):
         projFile = os.path.join(dir, os.path.basename(dir) + '.project')
@@ -3420,10 +3424,14 @@ class VimLiteWorkspace():
             wspSelConfName, projName)
         bldConf = self.VLWIns.GetProjBuildConf(projName, confToBuild)
 
-        os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
+        try:
+            os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
+        except OSError:
+            pass
         wd = Globals.ExpandAllVariables(
             bldConf.workingDirectory, self.VLWIns, projName, confToBuild, '')
-        os.chdir(wd)
+        if wd:
+            os.chdir(wd)
         #print os.getcwd()
 
         prog = bldConf.GetCommand()
@@ -3440,11 +3448,12 @@ class VimLiteWorkspace():
             #vim.command("silent cd %s" % os.getcwd())
             #vim.command("silent Pyclewn")
             if not hasProjFile:
-                vim.command("silent Ccd %s" % os.getcwd())
-                vim.command("Cfile %s" % prog)
-                vim.command("silent cd -")
+                # NOTE: 不能处理目录名称的第一个字符为空格的情况
+                vim.command("silent Ccd %s/" % os.getcwd())
+                vim.command("Cfile '%s'" % prog)
             if args:
                 vim.command("Cset args %s" % args)
+            #vim.command("silent cd -")
             #if not hasProjFile:
                 #vim.command("Cstart")
 
@@ -3455,7 +3464,8 @@ class VimLiteWorkspace():
     def BuildProject(self, projName):
         bak = vim.eval('&more')
         ds = Globals.DirSaver()
-        os.chdir(self.VLWIns.dirName)
+        if self.VLWIns.dirName:
+            os.chdir(self.VLWIns.dirName)
 
         bldCmd = self.builder.GetBuildCommand(projName, '')
         if bldCmd:
@@ -3470,7 +3480,8 @@ class VimLiteWorkspace():
     def CleanProject(self, projName):
         bak = vim.eval('&more')
         ds = Globals.DirSaver()
-        os.chdir(self.VLWIns.dirName)
+        if self.VLWIns.dirName:
+            os.chdir(self.VLWIns.dirName)
 
         bldCmd = self.builder.GetCleanCommand(projName, '')
         if bldCmd:
@@ -3494,10 +3505,14 @@ class VimLiteWorkspace():
             wspSelConfName, projName)
         bldConf = self.VLWIns.GetProjBuildConf(projName, confToBuild)
 
-        os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
+        try:
+            os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
+        except OSError:
+            pass
         wd = Globals.ExpandAllVariables(
             bldConf.workingDirectory, self.VLWIns, projName, confToBuild, '')
-        os.chdir(wd)
+        if wd:
+            os.chdir(wd)
         #print os.getcwd()
 
         prog = bldConf.GetCommand()
@@ -3543,7 +3558,8 @@ class VimLiteWorkspace():
             wspSelConfName = matrix.GetSelectedConfigurationName()
             for project in self.VLWIns.projects.itervalues():
                 ds = Globals.DirSaver()
-                os.chdir(project.dirName)
+                if project.dirName:
+                    os.chdir(project.dirName)
                 projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, 
                                                                 project.name)
                 bldConf = self.VLWIns.GetProjBuildConf(project.name, 
