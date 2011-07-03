@@ -1173,8 +1173,8 @@ class VLWorkspace:
             datum['project'] = project
             return self.DoInsertProject(self.GetRootLineNum(0), datum)
         else:
-            print "A project with a similar name \
-                    '%s' already exists in the workspace" % (project.GetName(),)
+            print "A project with a similar name " \
+                    "'%s' already exists in the workspace" % (project.GetName(),)
             return False
 
     def RemoveProject(self, name):
