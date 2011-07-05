@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 ## A wrapper script around the gnome-terminal utility 
-## which allows codelite to export LD_LIBRARY_PATH into the gnome-terminal
+## which allows VimLite to export LD_LIBRARY_PATH into the gnome-terminal
 ## shell
 
 TERMPROG=""

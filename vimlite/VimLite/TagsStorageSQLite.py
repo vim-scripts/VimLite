@@ -474,11 +474,11 @@ class TagsStorageSQLite(ITagsStorage):
 
         return files
 
-    def GetFilesMap(self, partialName = ''):
+    def GetFilesMap(self, matchFiles = []):
         '''返回文件到文件条目的字典, 方便比较'''
         filesMap = {}
 
-        if not partialName:
+        if not matchFiles:
             try:
                 sql = "select * from files order by file"
                 res = self.db.execute(sql)
@@ -492,26 +492,15 @@ class TagsStorageSQLite(ITagsStorage):
                 pass
         else:
             try:
-                matchPath = partialName and partialName.endswith(os.sep)
-                tmpName = partialName.replace('_', '^_')
-                sql = "select * from files where file like '%%" + tmpName \
-                        + "%%' ESCAPE '^' "
+                sql = "select * from files where file in('%s')" \
+                        % "','".join(matchFiles)
                 res = self.db.execute(sql)
                 for row in res:
                     fe = FileEntry()
                     fe.SetId(row[0])
                     fe.SetFile(row[1])
                     fe.SetLastRetaggedTimestamp(row[2])
-
-                    fileName = fe.GetFile()
-                    match = os.path.basename(fileName)
-                    if matchPath:
-                        match = fileName
-
-                    # TODO: windows 下文件名全部保存为小写
-
-                    if match.startswith(partialName):
-                        filesMap[fe.GetFile()] = fe
+                    filesMap[fe.GetFile()] = fe
             except:
                 pass
 
@@ -1316,7 +1305,7 @@ def ParseFilesAndStore(files, storage, replacements = [], filterNonNeed = True,
 
     # 过滤不需要的. 通过比较时间戳
     if filterNonNeed:
-        filesMap = storage.GetFilesMap()
+        filesMap = storage.GetFilesMap(tmpFiles)
         mapLen = len(tmpFiles)
         idx = 0
         while idx < mapLen and filesMap:
@@ -1354,40 +1343,9 @@ def ParseFilesAndStore(files, storage, replacements = [], filterNonNeed = True,
 
 
 if __name__ == '__main__':
-    #print 'enter'
-    li = ['main.h', 'main.cpp']
-    #tags = ParseFiles(li)
-    #print '-' * 40
-    #print tags
-    #storage = TagsStorageSQLite()
-    #storage.OpenDatabase('TestTags2.db')
-    #storage.Store(tags)
-    replacements = [
-        "_GLIBCXX_BEGIN_NAMESPACE(%0)=namespace %0{", 
-        "_GLIBCXX_END_NAMESPACE=}", 
-    ]
-
-    li = ["/usr/include/c++/4.4.3/bits/stringfwd.h"]
-    li = ["GraphText.h"]
-    #print ParseFile("/usr/include/c++/4.4.3/bits/stringfwd.h", replacements)
-    tags = ParseFile("GraphText.h", replacements)
-    import chardet
-    #for tag in tags.split('\n'):
-        #print tag
-        #print chardet.detect(tag)
-    #print tags
-    #with open("cp936.txt", 'wb') as f:
-        #f.write(tags)
-
     storage = TagsStorageSQLite()
-    storage.OpenDatabase('cp936.db')
-    ParseFilesAndStore(li, storage, replacements)
-    ##print storage.GetTagsByScopeAndKind('DFoo', 'member')
-    #entries = storage.GetTagsByScopesAndKinds(
-        #['DFoo', 'Foo', 'Foo2'], ['member', 'function'])
-    #entries = storage.GetTagsByScopeAndName('DFoo', '', True)
-    #print len(entries)
-    #for entry in entries:
-        #entry.Print()
+    storage.OpenDatabase('')
+    print storage.GetFilesMap(['/usr/include/stdio.h', '/usr/include/stdlib.h'])
 
+    #storage.Store(tags)
 

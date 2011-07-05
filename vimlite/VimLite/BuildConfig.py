@@ -66,6 +66,8 @@ class BuildConfigCommon:
                         self.includePath += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
                     elif i.nodeName == 'Preprocessor':
                         self.preprocessor += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
+                self.includePath = self.includePath.strip(';')
+                self.preprocessor = self.preprocessor.strip(';')
                     
             # 读取链接器设置
             linkerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Linker')
@@ -76,6 +78,8 @@ class BuildConfigCommon:
                         self.libs += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
                     elif i.nodeName == 'LibraryPath':
                         self.libPath += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
+                self.libs = self.libs.strip(';')
+                self.libPath = self.libPath.strip(';')
             
             # 读取资源编译器设置
             resCmpNode = XmlUtils.FindFirstByTagName(xmlNode, 'ResourceCompiler')
@@ -83,7 +87,10 @@ class BuildConfigCommon:
                 self.resCompileOptions = XmlUtils.ReadString(resCmpNode, 'Options')
                 for i in resCmpNode.childNodes:
                     if i.nodeName == 'IncludePath':
-                        self.resCompileIncludePath += XmlUtils.ReadString(i, 'Value') + ';'
+                        self.resCompileIncludePath \
+                                += XmlUtils.ReadString(i, 'Value') + ';'
+                self.resCompileIncludePath \
+                        = self.resCompileIncludePath.strip(';')
         else:
             self.includePath += '.;'
             self.libPath += '.;'

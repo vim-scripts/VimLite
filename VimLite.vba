@@ -48,7 +48,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-3751
+3802
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -107,6 +107,8 @@ call s:InitVariable('g:VLWorkspacePopupMenuKey', '<RightRelease>')
 call s:InitVariable("g:VLWorkspaceUseClangCC", 0)
 "保存文件时自动解析文件, 仅对属于工作空间的文件有效
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 0)
+"自动解析保存的文件时, 仅解析头文件
+call s:InitVariable("g:VLWorkspaceNotParseSourceAfterSave", 0)
 
 
 "=======================================
@@ -333,7 +335,7 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
         augroup end
     endif
 
-    if g:VLWorkspaceParseFileAfterSave
+    if !g:VLWorkspaceUseClangCC && g:VLWorkspaceParseFileAfterSave
         augroup VLWorkspace
             au BufWritePost * call <SID>Autocmd_ParseCurrentFile()
         augroup end
@@ -388,8 +390,17 @@ function! s:Autocmd_ParseCurrentFile()
         let li = s:GetCurBufIncList()
         if has_key(s:CACHE_INCLUDES, fileName)
             if s:CACHE_INCLUDES[fileName] == li
+                " 包含的头文件没有修改
+                if g:VLWorkspaceNotParseSourceAfterSave 
+                            \&& index(['c', 'cpp', 'cxx', 'c++', 'cc'], 
+                            \expand('%:p:e')) != -1
+                    "不解析当前源文件
+                    return
+                endif
+
                 call s:ParseCurrentFile()
             else
+                "包含的头文件已经修改, 深度解析
                 let s:CACHE_INCLUDES[fileName] = li
                 call s:ParseCurrentFile(1)
             endif
@@ -398,7 +409,7 @@ function! s:Autocmd_ParseCurrentFile()
             py ws.ParseFiles([vim.eval("expand('%:p')")] 
                         \    + IncludeParser.GetIncludeFiles(
                         \        vim.eval("expand('%:p')")), 
-                        \False)
+                        \True)
         endif
     endif
 endfunction
@@ -678,7 +689,7 @@ function! s:InstallToolBarMenu() "{{{2
 endfunction
 
 
-function! s:ParseCurrentFile(...) "{{{2
+function! s:ParseCurrentFile(...) "可选参数为是否解析包含的头文件 {{{2
     let deep = 0
     if a:0 > 0
         let deep = a:1
@@ -1349,7 +1360,7 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
     let l:incOpts = ''
     py vim.command("let l:wspName = '%s'" % ws.VLWIns.name)
     py l_ds = Globals.DirSaver()
-    py if ws.VLWIns.dirName: os.chdir(ws.VLWIns.dirName)
+    py if os.path.exists(ws.VLWIns.dirName): os.chdir(ws.VLWIns.dirName)
     let l:csNameFile = l:wspName . g:VLWorkspaceCscpoeFilesFile
     let l:csDataFile = l:wspName . g:VLWorkspaceCscpoeOutFile
 
@@ -1464,8 +1475,11 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
         call writefile(l:files, l:csNameFile)
     endif
 
-    call system('cscope -bqkU -i ' . l:csNameFile
-                \. ' -f ' . l:csDataFile)
+    if g:VLWorkspaceCreateCscopeInvertedIndex
+        call system('cscope -bqkU -i ' . l:csNameFile . ' -f ' . l:csDataFile)
+    else
+        call system('cscope -bkU -i ' . l:csNameFile . ' -f ' . l:csDataFile)
+    endif
     exec 'silent! cs kill '.l:csDataFile
     exec 'cs add '.l:csDataFile
 endfunction
@@ -1578,8 +1592,10 @@ def GetVLWProjectCompileOpts(projName):
         return
 
     ds = Globals.DirSaver()
-    if project.dirName
+    try:
         os.chdir(project.dirName)
+    except OSError:
+        return
 
     projSelConf = matrix.GetProjectSelectedConf(wspSelConf, project.GetName())
     bldConf = ws.VLWIns.GetProjBuildConf(project.GetName(), projSelConf)
@@ -1623,7 +1639,7 @@ function! s:InitVLWProjectClangPCH(projName) "{{{2
 
     py ds = Globals.DirSaver()
     py project = ws.VLWIns.FindProjectByName(vim.eval('a:projName'))
-    py if project and project.dirName: os.chdir(project.dirName)
+    py if project and os.path.exists(project.dirName): os.chdir(project.dirName)
 
     py vim.command("let l:pchHeader = '%s'" 
                 \% (os.path.join(project.dirName, project.name) + '_VLWPCH.h'))
@@ -2959,8 +2975,10 @@ def GetTemplateDict(dir):
     from xml.dom import minidom
     from VLProject import VLProject
     ds = Globals.DirSaver()
-    if dir:
+    try:
         os.chdir(dir)
+    except OSError:
+        return {}
     templates = {}
     for dir in os.listdir(dir):
         projFile = os.path.join(dir, os.path.basename(dir) + '.project')
@@ -3427,11 +3445,14 @@ class VimLiteWorkspace():
         try:
             os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
         except OSError:
-            pass
+            return
         wd = Globals.ExpandAllVariables(
             bldConf.workingDirectory, self.VLWIns, projName, confToBuild, '')
-        if wd:
-            os.chdir(wd)
+        try:
+            if wd:
+                os.chdir(wd)
+        except OSError:
+            return
         #print os.getcwd()
 
         prog = bldConf.GetCommand()
@@ -3464,24 +3485,41 @@ class VimLiteWorkspace():
     def BuildProject(self, projName):
         bak = vim.eval('&more')
         ds = Globals.DirSaver()
-        if self.VLWIns.dirName:
+        try:
             os.chdir(self.VLWIns.dirName)
+        except OSError:
+            return
 
         bldCmd = self.builder.GetBuildCommand(projName, '')
         if bldCmd:
             if vim.eval("g:VLWorkspaceSaveAllBeforeBuild") != '0':
                 vim.command("wa")
             tempFile = vim.eval('tempname()')
-            vim.command("!%s 2>&1 | tee %s" % (bldCmd, tempFile))
-            vim.command('cgetfile %s' % tempFile)
+            if True:
+                vim.command("!%s 2>&1 | tee %s" % (bldCmd, tempFile))
+                vim.command('cgetfile %s' % tempFile)
+            else:
+                os.system("gnome-terminal -t 'make' -e "\
+                    "\"sh -c \\\"%s 2>&1 | tee '%s' "\
+                    "&& echo ========================================"\
+                    "&& echo -n This will close in 3 seconds... "\
+                    "&& read -t 3 i && echo Press ENTER to continue... "\
+                    "&& read i;"\
+                    "vim --servername '%s' "\
+                    "--remote-send '<C-\><C-n>:cgetfile %s "\
+                    "| echo \\\\\\\"Readed the error file.\\\\\\\"<CR>'\\\"\" &"
+                    % (bldCmd, tempFile, vim.eval('v:servername'), 
+                       tempFile.replace(' ', '\\ ')))
 
         vim.command('let &more = %d' % int(bak))
 
     def CleanProject(self, projName):
         bak = vim.eval('&more')
         ds = Globals.DirSaver()
-        if self.VLWIns.dirName:
+        try:
             os.chdir(self.VLWIns.dirName)
+        except OSError:
+            return
 
         bldCmd = self.builder.GetCleanCommand(projName, '')
         if bldCmd:
@@ -3492,7 +3530,15 @@ class VimLiteWorkspace():
         vim.command('let &more = %d' % int(bak))
 
     def RebuildProject(self, projName):
-        self.CleanProject(projName)
+        ds = Globals.DirSaver()
+        try:
+            os.chdir(self.VLWIns.dirName)
+        except OSError:
+            return
+        bldCmd = self.builder.GetCleanCommand(projName, '')
+        if bldCmd:
+            os.system("%s" % bldCmd)
+
         self.BuildProject(projName)
 
     def RunProject(self, projName):
@@ -3508,11 +3554,14 @@ class VimLiteWorkspace():
         try:
             os.chdir(self.VLWIns.FindProjectByName(projName).dirName)
         except OSError:
-            pass
+            return
         wd = Globals.ExpandAllVariables(
             bldConf.workingDirectory, self.VLWIns, projName, confToBuild, '')
-        if wd:
-            os.chdir(wd)
+        try:
+            if wd:
+                os.chdir(wd)
+        except OSError:
+            return
         #print os.getcwd()
 
         prog = bldConf.GetCommand()
@@ -3558,8 +3607,10 @@ class VimLiteWorkspace():
             wspSelConfName = matrix.GetSelectedConfigurationName()
             for project in self.VLWIns.projects.itervalues():
                 ds = Globals.DirSaver()
-                if project.dirName:
+                try:
                     os.chdir(project.dirName)
+                except OSError:
+                    return
                 projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, 
                                                                 project.name)
                 bldConf = self.VLWIns.GetProjBuildConf(project.name, 
@@ -3732,17 +3783,17 @@ class VimLiteWorkspace():
                     self.AddFileNode(row, name)
             elif choice == 'Add Existing Files...':
                 if useGui and vim.eval('has("browse")') != '0':
-                    if 0 and vim.eval("executable('zenity')") == '1':
+                    if vim.eval("executable('zenity')") == '1':
                         # zenity 返回的是绝对路径
                         names = vim.eval('system(\'zenity --file-selection ' \
-                                '--multiple --title="Add Existing Items"\')')
+                                '--multiple --title="Add Existing files"\')')
                         names = names[:-1].split('|')
                     else:
                         names = []
                         # NOTE: 返回的也有可能是相对于当前目录, 
                         # 不是参数的目录, 的相对路径
                         fileName = vim.eval(
-                            'browse("", "Add Existing Item", "%s", "")' 
+                            'browse("", "Add Existing file", "%s", "")' 
                             % project.dirName)
                         if fileName:
                             names.append(os.path.abspath(fileName))
@@ -3801,7 +3852,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLCalltips.vim	[[[1
-274
+293
 " Description:  vim script for display function calltips
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 Jun 18
@@ -3822,7 +3873,8 @@ endfunction
 "}}}
 
 function! g:InitVLCalltips() "{{{1
-    call s:InitVariable('g:VLCalltips_EnableSyntaxTest', 1)
+    call s:InitVariable('g:VLCalltips_IndicateArgument', 1)
+    call s:InitVariable('g:VLCalltips_EnableSyntaxTest', 0)
 
     call s:InitVariable('g:VLCalltips_DispCalltipsKey', '<A-p>')
     call s:InitVariable('g:VLCalltips_NextCalltipsKey', '<A-j>')
@@ -3962,6 +4014,20 @@ function! s:DisplayCalltips() "{{{2
     let nArgStartIdx = stridx(sCurCalltips, '(') + 1
     let nArgEndIdx = strridx(sCurCalltips, ')') - 1
 
+    if !g:VLCalltips_IndicateArgument
+        let sContent = sCurCalltips
+                    \. ' ('. (s:nCurIndex + 1) . '/' . nCalltipsCount . ')'
+        echohl Type
+        echo sContent[: nArgStartIdx-1]
+        echohl SpecialChar
+        echon sContent[nArgStartIdx : nArgEndIdx]
+        echohl Type
+        echon sContent[nArgEndIdx+1 :]
+        echohl None
+
+        return ''
+    endif
+
     let nHlStartIdx = nArgStartIdx
     let i = 0
     while i < s:nArgIndex
@@ -4028,6 +4094,10 @@ function! s:GetArgIndex() "{{{2
     " 不在括号内
     if lStartPos[0] == 0 && lStartPos[1] == 0
         return -2
+    else
+        if !g:VLCalltips_IndicateArgument
+            return 0
+        endif
     endif
 
     "let lines = getline(lStartPos[0], lEndPos[0])
@@ -8152,7 +8222,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-538
+542
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -8271,9 +8341,9 @@ Also, a project contains no information about the workspace, and thus one
 project can be part of multiple workspaces. The workspace holds pointers to
 the projects which are members of that workspace.
 
-The workspace information file is <workspace-name>.workspace
+The workspace information file is <workspace-name>.workspace.
 
-The project information file is <project-name>.project
+The project information file is <project-name>.project.
 
 Configurations~
 
@@ -8557,31 +8627,31 @@ for True.
 ------------------------------------------------------------------------------
 7.1. Project Manager Options            *VimLite-Options-ProjectManager*
 
-Workspace window width >
+Workspace window width. >
     let g:VLWorkspaceWinSize = 30
 
-Set the wrokspace buffer name >
+Set the wrokspace buffer name. >
     let g:VLWorkspaceBufName = '==VLWorkspace=='
 
-Highlight the workspace buffer cursor line >
+Highlight the workspace buffer cursor line. >
     let g:VLWrokspaceHighlightCursorline = 1
 
 If not 0, when the curser put on one source file buffer, the cursor of
 worksapce buffer's cursor will go the the corresponding source file line. >
     let g:VLWorkspaceLinkToEidtor = 1
 
-Will install a menu named 'VimLite' >
+Will install a menu named 'VimLite'. >
     let g:VLWorkspaceEnableMenuBarMenu = 1
 
-Will install some toolbar icons >
+Will install some toolbar icons. >
     let g:VLWorkspaceEnableToolBarMenu = 1
 
 Enable cscope, if this variable is 0, all about cscope features will be not
-worked >
+worked. >
     let g:VLWorkspaceEnableCscope = 1
 
 If not 0, VimLite will not initiative to create cscope database, but only
-connect an existing db >
+connect an existing db. >
     let g:VLWorkspaceJustConnectExistCscopeDb = 1
 
 Enable fast symbol lookup via an inverted index. This option causes cscope to
@@ -8590,25 +8660,25 @@ normal database. This allows a faster symbol search algorithm that provides
 noticeably faster lookup performance for large projects. >
     let g:VLWorkspaceCreateCscopeInvertedIndex = 0
 
-Highlight the .h/.hpp and .c/.cpp file >
+Highlight the .h/.hpp and .c/.cpp file. >
     let g:VLWorkspaceHighlightSourceFile = 1
 
-Insert worksapce name into title >
+Insert worksapce name into title. >
     let g:VLWorkspaceDispWspNameInTitle = 1
 
-Auto save all modified files before build projects >
+Auto save all modified files before build projects. >
     let g:VLWorkspaceSaveAllBeforeBuild = 0
 
-Use Clang code completion instead of OmniCpp which based on modified ctags >
+Use Clang code completion instead of OmniCpp which based on modified ctags. >
     let g:VLWorkspaceUseClangCC = 0
 
-The active project highlight group name >
+The active project highlight group name. >
     let g:VLWorkspaceActiveProjectHlGroup = 'SpecialKey'
 
-The key to popup general menu >
+The key to popup general menu. >
     let g:VLWorkspaceMenuKey = '.'
 
-The key to popup gui menu, this default value probably does not work >
+The key to popup gui menu, this default value probably does not work. >
     let g:VLWorkspacePopupMenuKey = '<RightRelease>'
 
 Auto parse the editing file when save it. 
@@ -8618,75 +8688,79 @@ Only work for files belong to workspace. >
 ------------------------------------------------------------------------------
 7.2. Calltips Options                   *VimLite-Options-Calltips*
 
-The key to trigger function calltips >
+The key to trigger function calltips. >
     let g:VLCalltips_DispCalltipsKey = '<A-p>'
 
-The key to display the next calltip >
+The key to display the next calltips. >
     let g:VLCalltips_NextCalltipsKey = '<A-j>'
 
-The key to display the prev calltip >
+The key to display the prev calltips. >
     let g:VLCalltips_PrevCalltipsKey = '<A-k>'
 
+Enable indicating which function argument is being edited. If you feel this
+feature is slow, you may set it to 0. >
+    let g:VLCalltips_IndicateArgument = 1
+
 Enable syntax testing. As well known, syntax testing in vim is very slow, if
-function calltips in your vim crash your speed, you may set this to 0. >
-    let g:VLCalltips_EnableSyntaxTest = 1
+function calltips in your vim crash your speed, you may not set this to 1. >
+    let g:VLCalltips_EnableSyntaxTest = 0
 
 ------------------------------------------------------------------------------
 7.3. OmniCpp Options                    *VimLite-Options-OmniCpp*
 
-Auto trigger code completion when input '.' (dot) >
+Auto trigger code completion when input '.' (dot). >
     let g:VLOmniCpp_MayCompleteDot = 1
 
-Auto trigger code completion when input '>' (right arrow) >
+Auto trigger code completion when input '>' (right arrow). >
     let g:VLOmniCpp_MayCompleteArrow = 1
 
-Auto trigger code completion when input ':' (colon) >
+Auto trigger code completion when input ':' (colon). >
     let g:VLOmniCpp_MayCompleteColon = 1
 
 When completeopt does not contain longest option, this setting controls the
-behaviour of the popup menu selection
-  * 0 -> don't select first item
-  * 1 -> select first item (inserting it to the text)
-  * 2 -> select first item (without inserting it to the text) >
+behaviour of the popup menu selection.
+  * 0 -> don't select first item.
+  * 1 -> select first item (inserting it to the text).
+  * 2 -> select first item (without inserting it to the text). >
     let g:VLOmniCpp_ItemSelectionMode = 2
 
 Map <CR> (return) key to auto trigger function calltips after select a
-function item in the code completion popup menu >
+function item in the code completion popup menu. >
     let g:VLOmniCpp_MapReturnToDispCalltips = 1
 
 ------------------------------------------------------------------------------
 7.4. Clang Options                      *VimLite-Options-Clang*
 
-Clang program >
+Clang program. >
     let g:VLCCC_ClangProgram = 'clang'
 
-Enable syntax check for C/C++ when trigger code completion >
+Enable syntax check for C/C++ when trigger code completion. >
     let g:VLCCC_IndicateError = 1
 
-Auto trigger code completion when input '.' (dot) >
+Auto trigger code completion when input '.' (dot). >
     let g:VLCCC_MayCompleteDot = 1
 
-Auto trigger code completion when input '>' (right arrow) >
+Auto trigger code completion when input '>' (right arrow). >
     let g:VLCCC_MayCompleteArrow = 1
 
-Auto trigger code completion when input ':' (colon) >
+Auto trigger code completion when input ':' (colon). >
     let g:VLCCC_MayCompleteColon = 1
 
 When completeopt does not contain longest option, this setting controls the
-behaviour of the popup menu selection
-  * 0 -> don't select first item
-  * 1 -> select first item (inserting it to the text)
-  * 2 -> select first item (without inserting it to the text) >
+behaviour of the popup menu selection.
+  * 0 -> don't select first item.
+  * 1 -> select first item (inserting it to the text).
+  * 2 -> select first item (without inserting it to the text). >
     let g:VLCCC_ItemSelectionMode = 2
 
 Map <CR> (return) key to auto trigger function calltips after select a
-function item in the code completion popup menu >
+function item in the code completion popup menu. >
     let g:VLCCC_MapReturnToDispCalltips = 1
 
 ------------------------------------------------------------------------------
 7.5. Debugger Options                   *VimLite-Options-Debugger*
 
-The frame sign background color, can be #xxxxxx format >
+The frame sign background color, can be #xxxxxx format. >
     let g:VLWDbgFrameSignBackground = 'DarkMagenta'
 
 ------------------------------------------------------------------------------
@@ -10209,8 +10283,30 @@ FUNCTIONS
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:et:cole=0
+after/syntax/qf.vim	[[[1
+20
+" Vim after syntax file
+" Language:     Quickfix window
+" Maintainer:   fanhe <fanhed@163.org>
+" Create:       2011-07-04
+
+setlocal nowrap
+
+" A bunch of useful C keywords
+syn match   qfFileName  "^[^|]*" nextgroup=qfSeparator
+syn match   qfSeparator "|" nextgroup=qfLineNr contained
+syn match   qfLineNr    "[^|]*|\s*"he=e-2 contained nextgroup=qfError,qfWarning
+syn match   qfError     "error:.\+" contained
+syn match   qfWarning   "warning:.\+" contained
+
+" The default highlighting.
+hi def link qfFileName  Directory
+hi def link qfLineNr    LineNr
+hi def link qfError     Error
+hi def link qfWarning   WarningMsg
+
 autoload/omnicpp/resolvers.vim	[[[1
-1654
+1656
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -11836,9 +11932,11 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
             " TODO: 使用 tokens 检查
             " 若为操作符, 则只可以是 '&', '*', '>'
             if !empty(lTokens)
+                " 暂时的方案是, 判断最后的 token, 若为以下操作符, 必然不是声明
+                " ., ->, (, =, -, +, &&, ||
                 if lTokens[-1].kind == 'cppOperatorPunctuator' 
-                            \&& lTokens[-1].value =~# '\V.\|->\|(\|='
-                            "\&& lTokens[-1].value =~# '\V.\|->'
+                            \&& lTokens[-1].value =~# 
+                            \   '\V.\|->\|(\|=\|-\|+\|&&\|||'
                     " 无效的声明, 继续
                     continue
                 endif
@@ -11943,7 +12041,7 @@ function! s:CanComplete() "{{{2
         if g:VLOmniCpp_EnableSyntaxTest
             for nID in synstack(nLine, nCol)
                 if synIDattr(nID, 'name') 
-                            \=~? 'comment\|string\|float\|character'
+                            \=~? 'comment\|string\|number\|float\|character'
                     return 0
                 endif
             endfor
@@ -13028,7 +13126,7 @@ endfunction
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
-375
+386
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 13
@@ -13183,6 +13281,16 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                                 \lSearchStartPos[0])
                     let lScopeStack = [dCurScope] + lScopeStack
                     break
+                elseif  dToken.kind == 'cppKeyword' && dToken.value ==# 'case'
+                    " case 条件语句
+                    " eg1. case 1: {
+                    let dCurScope = s:NewScope()
+                    let dCurScope.kind = 'other'
+                    let dCurScope.name = dToken.value
+                    let dCurScope.nsinfo = s:GetNamespaceInfo(
+                                \lSearchStartPos[0])
+                    let lScopeStack = [dCurScope] + lScopeStack
+                    break
                 elseif dToken.kind == 'cppOperatorPunctuator' 
                             \&& dToken.value == '::'
                     " 作用域类别
@@ -13258,6 +13366,7 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                     break
                 else
                     " TODO
+                    " 可能是一个无名块, 默认应该视为 other 类型
                 endif
 
                 let idx += 1

@@ -159,7 +159,7 @@ class VLWorkspace:
 
             self.GenerateFilesIndex()
         else:
-            # 默认的工作空间
+            # 默认的工作空间, fileName 为空
             self.doc = minidom.parseString('''\
 <?xml version="1.0" encoding="utf-8"?>
 <CodeLite_Workspace Name="DEFAULT_WORKSPACE" Database="">

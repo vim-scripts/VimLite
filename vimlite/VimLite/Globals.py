@@ -127,6 +127,21 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild, fileNa
 
     return output
 
+def IsSourceFile(fileName):
+    ext = os.path.splitext(fileName)[1][1:]
+    if ext in set(['c', 'cpp', 'cxx', 'c++', 'cc']):
+        return True
+    else:
+        return False
+
+def IsHeaderFile(fileName):
+    ext = os.path.splitext(fileName)[1][1:]
+    if ext in set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc']):
+        return True
+    else:
+        return False
+
+
 if __name__ == '__main__':
     
     def TestDirSaver():
@@ -141,6 +156,12 @@ if __name__ == '__main__':
     li = range(10)
 
     li.append(20)
+
+    print IsSourceFile('/a.c')
+    print IsSourceFile('./a.cxx')
+    print IsSourceFile('./a.cx')
+    print IsHeaderFile('b.h')
+    print IsHeaderFile('/homt/a.hxx')
     
     #print GetFileModificationTime(sys.argv[1])
 
