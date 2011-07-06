@@ -14,7 +14,9 @@ def TagEntry2Tag(tagEntry):
     #tag['name'] = tagEntry.GetPath()
     tag['name'] = tagEntry.GetName()
     tag['filename'] = tagEntry.GetFile()
-    tag['cmd'] = tagEntry.GetPattern()
+    # FIXME: 若模式中有单引号暂无办法安全传到 vim
+    # 即使替换成 vim 的双单引号转义, 最终显示的是 "\'\'", 无解!
+    tag['cmd'] = tagEntry.GetPattern().replace("'", " ")
     # 全称改为简称, 用命令参数控制
     tag['kind'] = tagEntry.GetAbbrKind()
     tag['static'] = 0 # 作用不明

@@ -211,7 +211,9 @@ class TagEntry():
         # pattern followed by ;"
         # or
         # line number followed by ;"
-        partStrList = strLine.partition(';"')
+        # 不准确, 必须带 '\t' 判断
+        # partStrList = strLine.partition(';"')
+        partStrList = strLine.partition(';"\t')
         if not partStrList[1]:
             # invalid pattern found
             return
@@ -219,12 +221,12 @@ class TagEntry():
         if strLine.startswith('/^'):
             # regular expression pattern found
             pattern = partStrList[0]
-            strLine = partStrList[2]
+            strLine = '\t' + partStrList[2]
         else:
             # line number pattern found, this is usually the case when
             # dealing with macros in C++
             pattern = partStrList[0].strip()
-            strLine = partStrList[2]
+            strLine = '\t' + partStrList[2]
             lineNumber = int(pattern)
 
         # next is the kind of the token
@@ -633,10 +635,12 @@ if __name__ == '__main__':
     FILE = 'cltagssort'
     FILE = 'ctagsWithClOpts.tags'
     FILE = 'TagsTest/tags'
+    FILE = 'xtags'
     with open(FILE) as f:
         for line in f.readlines():
-            if line.startswith('!'):
+            if line.startswith('!') or not line.strip():
                 continue
+            print line
             entry = TagEntry()
             entry.FromLine(line)
             entry.Print()

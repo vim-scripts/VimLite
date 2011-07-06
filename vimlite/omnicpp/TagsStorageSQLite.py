@@ -687,6 +687,7 @@ class TagsStorageSQLite(ITagsStorage):
             sql += " name ='" + name + "' "
 
         sql += 'order by name ASC'
+        sql += ' LIMIT ' + str(self.GetSingleSearchLimit())
 
         # get the tags
         return self.DoFetchTags(sql)

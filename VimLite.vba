@@ -48,7 +48,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-3802
+3815
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -208,13 +208,16 @@ endif
 
 function! s:OpenFile(file) "优雅地打开一个文件 {{{2
     let winnr = bufwinnr('^' . a:file . '$')
-    let bak_ei = &ei
-    "临时禁用一些自动命令，不能禁用全部，因为一些语法高亮必须自动命令
-    set eventignore+=BufWinEnter,BufEnter
     if winnr != -1
         "文件已经在某个窗口中打开，直接跳至那个窗口
         call s:exec(winnr . "wincmd w")
+        "激活进入缓冲区自动命令, 用于与 tagbar 配合
+        doautocmd BufEnter
     else
+        let bak_ei = &ei
+        "临时禁用一些自动命令，不能禁用全部，因为一些语法高亮必须自动命令
+        set eventignore+=BufWinEnter,BufEnter
+
         if !s:IsWindowUsable(winnr("#")) && s:GetFirstUsableWindow() == -1
             "仅存在工作空间窗口，需要分割窗口
             let bak_splitright = &splitright
@@ -241,8 +244,9 @@ function! s:OpenFile(file) "优雅地打开一个文件 {{{2
                 echo v:exception
             endtry
         endif
+
+        let &ei = bak_ei
     endif
-    let &ei = bak_ei
 endfunction
 
 
@@ -3780,6 +3784,15 @@ class VimLiteWorkspace():
                 name = vim.eval(
                     'inputdialog("\nEnter the File Name to be created:")')
                 if name:
+                    ds = Globals.DirSaver()
+                    try:
+                        # 若文件不存在, 创建之
+                        os.chdir(project.dirName)
+                        if not os.path.exists(name):
+                            os.mknod(name, 0644)
+                    except:
+                        pass
+                    del ds
                     self.AddFileNode(row, name)
             elif choice == 'Add Existing Files...':
                 if useGui and vim.eval('has("browse")') != '0':
@@ -4147,7 +4160,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLClangCodeCompletion.vim	[[[1
-763
+758
 " Vim global plugin for code-completion with clang
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -4435,11 +4448,6 @@ function! s:RequestCalltips(...) "{{{2
 
         "不在括号内
         if lStartPos ==# [0, 0]
-            return ''
-        endif
-
-        "暂时只处理 '(' 与光标同行的情况
-        if lCurPos[0] != lStartPos[0]
             return ''
         endif
 
@@ -10306,7 +10314,7 @@ hi def link qfError     Error
 hi def link qfWarning   WarningMsg
 
 autoload/omnicpp/resolvers.vim	[[[1
-1656
+1660
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -11930,13 +11938,17 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
             " C++ 关键词或单词
             " * 或 & 后 > 操作符(eg. void *p; int &n; vector<int> x;)
             " TODO: 使用 tokens 检查
-            " 若为操作符, 则只可以是 '&', '*', '>'
+            " 若为操作符, 则只可以是 '&', '*', '>', ','
+            " eg. std::map<int, int> a, &b, c, **d;
+            " 预检查
             if !empty(lTokens)
                 " 暂时的方案是, 判断最后的 token, 若为以下操作符, 必然不是声明
                 " ., ->, (, =, -, +, &&, ||
+                "if lTokens[-1].kind == 'cppOperatorPunctuator' 
+                            "\&& lTokens[-1].value =~# 
+                            "\   '\V.\|->\|(\|=\|-\|+\|&&\|||'
                 if lTokens[-1].kind == 'cppOperatorPunctuator' 
-                            \&& lTokens[-1].value =~# 
-                            \   '\V.\|->\|(\|=\|-\|+\|&&\|||'
+                            \&& lTokens[-1].value !~# '\V&\|*\|>\|,'
                     " 无效的声明, 继续
                     continue
                 endif
@@ -11964,7 +11976,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-625
+620
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -12201,11 +12213,6 @@ function! s:RequestCalltips(...) " 可选参数标识是否刚在补全后发出
 
         "不在括号内
         if lStartPos ==# [0, 0]
-            return ''
-        endif
-
-        "暂时只处理 '(' 与光标同行的情况
-        if lCurPos[0] != lStartPos[0]
             return ''
         endif
 

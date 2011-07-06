@@ -754,8 +754,8 @@ class VLWorkspace:
 
         xmlNode = datum['node']
         project = datum['project']
-        name = xmlNode.getAttribute('Name')
-        if name == newName:
+        oldName = xmlNode.getAttribute('Name')
+        if oldName == newName:
             return
         if self.DoCheckNameConflict(xmlNode.parentNode, newName):
             print 'Name Conflict'
@@ -772,7 +772,8 @@ class VLWorkspace:
                 #print absNewFile
                 os.rename(absOldFile, absNewFile)
 
-        xmlNode.setAttribute('Name', newName)
+        xmlNode.setAttribute('Name', 
+                             os.path.join(os.path.dirname(oldName), newName))
         project.Save()
         #TODO: 重新排序
 
