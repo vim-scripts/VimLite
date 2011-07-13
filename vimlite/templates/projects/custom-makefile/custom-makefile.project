@@ -4,7 +4,7 @@
   <Settings Type="Dynamic Library">
     <Configuration Name="Debug" CompilerType="gnu g++" DebuggerType="GNU gdb debugger" Type="Dynamic Library">
       <General OutputFile="" IntermediateDirectory="./Debug" Command="" CommandArguments="" WorkingDirectory="$(IntermediateDirectory)" PauseExecWhenProcTerminates="yes"/>
-      <Compiler Required="yes" Options="-g">
+      <Compiler Required="yes" Options="-g;-Wall">
         <IncludePath Value="."/>
       </Compiler>
       <Linker Required="yes" Options=""/>

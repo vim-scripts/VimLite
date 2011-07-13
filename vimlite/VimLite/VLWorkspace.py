@@ -268,7 +268,7 @@ class VLWorkspace:
         for i in range(parentIndex + 1, len(self.vimLineData)):
             curDeep = len(self.vimLineData[i]['deepFlag'])
             if curDeep > parentDeep:
-                # 新节点比插在后面，所以当前节点必有兄弟节点
+                # 新节点必插在后面，所以当前节点必有兄弟节点
                 self.vimLineData[i]['deepFlag'][newDeep - 1] = 1
 
                 # 当前节点为兄弟节点的子节点，跳过
@@ -281,6 +281,13 @@ class VLWorkspace:
                     # 如果 datum 为 VirtualDirectory 当前位置为 File，插入之
                     if newType == TYPE_VIRTUALDIRECTORY \
                              and self.DoGetTypeByIndex(i) == TYPE_FILE:
+                        # 如果插入的位置是倒数第二个位置, 需要处理
+                        # 因为此循环一开始就把节点的 deepFlag 最后位置为 1 了,
+                        # 这是不对的, 修正过来
+                        if i + 1 >= len(self.vimLineData) \
+                             or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                            self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
+
                         datum['deepFlag'] = parent['deepFlag'][:]
                         datum['deepFlag'].append(1)
                         self.vimLineData.insert(i, datum)
@@ -293,6 +300,13 @@ class VLWorkspace:
                           and self.DoGetTypeByIndex(i) == TYPE_VIRTUALDIRECTORY:
                         continue
                     
+                    # 如果插入的位置是倒数第二个位置, 需要处理
+                    # 因为此循环一开始就把节点的 deepFlag 最后位置为 1 了,
+                    # 这是不对的, 修正过来
+                    if i + 1 >= len(self.vimLineData) \
+                         or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                        self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
+
                     # 插在中间
                     datum['deepFlag'] = parent['deepFlag'][:]
                     datum['deepFlag'].append(1)
@@ -306,8 +320,8 @@ class VLWorkspace:
                         self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
                     return 0
             else:
-                # 到达了深度比父节点小的节点，
-                # 要么是兄弟，要么是祖先的兄弟。插在父节点最后
+                # 到达了深度不比父节点大的节点，要么是兄弟，要么是祖先的兄弟。
+                # 插在父节点最后
                 datum['deepFlag'] = parent['deepFlag'][:]
                 datum['deepFlag'].append(0)
                 self.vimLineData.insert(i, datum)

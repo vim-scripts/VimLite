@@ -32,11 +32,20 @@ class DirSaver:
         os.chdir(self.curDir)
         #print 'back to', self.curDir
 
-def ExpandAllVariables(expression, workspace, projName, confToBuild, fileName):
-    '''展开所有变量'''
+def ExpandAllVariables(expression, workspace, projName, confToBuild, 
+                       fileName = ''):
+    '''展开所有变量
+    
+    expression: 表达式, 字符串
+    workspace: 工作空间, 对象实例
+    projName: 项目名称, 字符串
+    fileName: 绝对路径文件名, 字符串
+    返回: 展开后的表达式'''
     tmpExp = ''
     i = 0
     # 先展开所有命令表达式
+    # 只支持 `` 内的表达式, 不支持 $() 形式的
+    # 因为经常用到在 makefile 里面的变量, 为了统一, 无法支持 $() 形式
     while i < len(expression):
         c = expression[i]
         if c == '`':
@@ -68,7 +77,8 @@ def ExpandAllVariables(expression, workspace, projName, confToBuild, fileName):
     return ExpandAllInterVariables(
         tmpExp, workspace, projName, confToBuild, fileName)
 
-def ExpandAllInterVariables(expression, workspace, projName, confToBuild, fileName):
+def ExpandAllInterVariables(expression, workspace, projName, confToBuild, 
+                            fileName):
     '''展开所有内部变量'''
     output = expression
     if not '$' in output:

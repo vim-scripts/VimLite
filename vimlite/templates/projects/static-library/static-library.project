@@ -11,7 +11,7 @@ Note that this project is set to work with the GNU toolchain (gdb, g++, ar)
   <Settings Type="Static Library">
 	<Configuration Name="Debug" CompilerType="gnu g++" DebuggerType="GNU gdb debugger">
       <General OutputFile="$(IntermediateDirectory)/lib$(ProjectName).a" IntermediateDirectory="./Debug" Command="" CommandArguments="" WorkingDirectory="$(IntermediateDirectory)"/>
-      <Compiler Required="yes" Options="-g">
+      <Compiler Required="yes" Options="-g;-Wall">
         <IncludePath Value="."/>
       </Compiler>
       <Linker Required="yes" Options=""/>

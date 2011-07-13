@@ -44,6 +44,9 @@ class BuilderGnuMake(Builder):
         '''导出工作空间 makefile，如果没有指定 confToBuild，
         则导出工作空间当前选择的构建设置。
         
+        因为工作空间的 Makefile 管理所有子 Makefile, 而每次的目标都可能不同,
+        所以每次调用此函数, 都会重新生成工作空间的 Makefile 的内容.
+        由于此 Makefile 的内容并不多, 每次都重新生成的开销可以接受.
         绝大多数情况下，可不指定 confToBuild。'''
         if not projName:
             return False
@@ -693,6 +696,7 @@ class BuilderGnuMake(Builder):
 
     # private methods?
     def GenerateMakefile(self, project, confToBuild, force):
+        '''此函数会跳过不必要的 Makefile 创建行为'''
         projName = project.GetName()
         configName = confToBuild
 

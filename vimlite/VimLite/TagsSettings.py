@@ -220,6 +220,7 @@ def GenerateDefaultTagsSettings():
         "__BEGIN_NAMESPACE_STD", 
         "__END_NAMESPACE_STD", 
         "__attribute_malloc__", 
+        "__attribute_pure__", 
     ]
     defaultTagsTypes = [
         "std::vector::reference=_Tp", 
