@@ -6,10 +6,33 @@ import os, os.path
 import re
 
 
-def GetIncludeFiles(file):
+# 用于展开的 paths
+#paths = [
+    #'/usr/include/c++/4.4', 
+    #'/usr/include/c++/4.4/i486-linux-gnu', 
+    #'/usr/include/c++/4.4/backward', 
+    #'/usr/local/include', 
+    #'/usr/lib/gcc/i486-linux-gnu/4.4.3/include', 
+    #'/usr/lib/gcc/i486-linux-gnu/4.4.3/include-fixed', 
+    #'/usr/include/i486-linux-gnu', 
+    #'/usr/include', 
+#]
+paths = []
+
+def GetIncludeFiles(fileName, searchPaths = []):
+    '''外部用接口'''
     guard = set()
-    absFile = os.path.abspath(file)
+    global paths
+    if searchPaths:
+        bak_paths = paths
+        paths = searchPaths
+
+    absFile = os.path.abspath(fileName)
     ret = DoGetIncludeFiles(absFile, guard)
+
+    if searchPaths:
+        paths = bak_paths
+
     return ret
 
 # ==============================================================================
@@ -25,18 +48,6 @@ CACHE_RAWINCLUDELIST = {}
 def ClearCache():
     CACHE_INCLUDELIST.clear()
     CACHE_RAWINCLUDELIST.clear()
-
-# 用于展开的 paths
-paths = [
-    '/usr/include/c++/4.4', 
-    '/usr/include/c++/4.4/i486-linux-gnu', 
-    '/usr/include/c++/4.4/backward', 
-    '/usr/local/include', 
-    '/usr/lib/gcc/i486-linux-gnu/4.4.3/include', 
-    '/usr/lib/gcc/i486-linux-gnu/4.4.3/include-fixed', 
-    '/usr/include/i486-linux-gnu', 
-    '/usr/include', 
-]
 
 def ExpandIncludeFile(paths, include, userHeader = True, fileDir = '.'):
     ret = ''

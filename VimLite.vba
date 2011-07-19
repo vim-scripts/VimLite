@@ -28,6 +28,86 @@ high def link dbgIgnore	    Ignore
 
 let b:current_syntax = "dbgvar"
 
+syntax/vlworkspace.vim	[[[1
+78
+" Description:	Vim syntax file for VimLite workspace buffer
+" Maintainer:	fanhe <fanhed@163.com>
+" License:		This file is placed in the public domain
+" Create:		2011-07-19
+" Last Change:	2011-07-19
+
+" 允许装载自定义语法文件
+if exists("b:current_syntax")
+	finish
+endif
+
+" 树结构标志
+syn match VLWTreeLead '|'
+syn match VLWTreeLead '`'
+
+" 可展开和可折叠的标志
+syn match VLWClosable '\V\[|`]~'hs=s+1 contains=VLWTreeLead
+syn match VLWOpenable '\V\[|`]+'hs=s+1 contains=VLWTreeLead
+
+" 文件前缀标志
+syn match VLWFilePre '[|`]-'hs=s+1 contains=VLWTreeLead
+
+
+" 工作空间名字只能由 [a-zA-Z_ +-] 组成
+syn match VLWorkspace '^[a-zA-Z0-9_ +-]\+$'
+
+syn match VLWProject '^[|`][+~].\+' 
+			\contains=VLWOpenable,VLWClosable,VLWTreeLead
+
+syn match VLWVirtualDirectory '\s[|`][+~].\+$'hs=s+3 
+			\contains=VLWOpenable,VLWClosable,VLWTreeLead
+
+" 帮助信息
+syn match VLWFlag '\~'
+syn match VLWHelpKey '" \{1,2\}[^ ]*:'hs=s+2,he=e-1
+syn match VLWHelpKey '" \{1,2\}[^ ]*,'hs=s+2,he=e-1
+syn match VLWHelpTitle '" .*\~'hs=s+2,he=e-1 contains=VLWFlag
+syn match VLWHelp '^".*' contains=VLWHelpKey,VLWHelpTitle,VLWFlag
+
+if exists('g:VLWorkspaceHighlightSourceFile') && g:VLWorkspaceHighlightSourceFile
+	" c/c++ 源文件、头文件
+	syn match VLWCSource    '\V\c\[|`]-\.\+.c\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+
+	syn match VLWCHeader    '\V\c\[|`]-\.\+.h\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+
+	syn match VLWCppSource  '\V\c\[|`]-\.\+.cpp\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+	syn match VLWCppSource  '\V\c\[|`]-\.\+.c++\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+	syn match VLWCppSource  '\V\c\[|`]-\.\+.cxx\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+	syn match VLWCppSource  '\V\c\[|`]-\.\+.cc\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+	syn match VLWCppHeader  '\V\c\[|`]-\.\+.hpp\$'hs=s+2 
+				\contains=VLWFilePre,VLWTreeLead
+
+	hi def link VLWCSource Function
+	hi def link VLWCHeader Constant
+	hi def link VLWCppSource VLWCSource
+	hi def link VLWCppHeader VLWCHeader
+endif
+
+hi def link VLWorkspace PreProc
+hi def link VLWProject Type
+hi def link VLWVirtualDirectory Statement
+
+hi def link VLWTreeLead Special
+hi def link VLWFilePre Linenr
+hi def link VLWClosable VLWFilePre
+hi def link VLWOpenable Title
+
+hi def link VLWFlag Ignore
+hi def link VLWHelp Comment
+hi def link VLWHelpKey Identifier
+hi def link VLWHelpCommand Identifier
+hi def link VLWHelpTitle Title
 plugin/pyclewn.vim	[[[1
 17
 " pyclewn run time file
@@ -48,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-4172
+4355
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -102,15 +182,32 @@ call s:InitVariable('g:VLWorkspaceCscpoeOutFile', '_cscope.out')
 call s:InitVariable('g:VLWorkspaceHighlightSourceFile', 1)
 call s:InitVariable('g:VLWorkspaceActiveProjectHlGroup', 'SpecialKey')
 
-call s:InitVariable('g:VLWorkspaceMenuKey', '.')
-call s:InitVariable('g:VLWorkspacePopupMenuKey', '<RightRelease>')
 "使用 clang 补全, 否则使用 OmniCpp
 call s:InitVariable("g:VLWorkspaceUseClangCC", 0)
 "保存文件时自动解析文件, 仅对属于工作空间的文件有效
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 0)
 "自动解析保存的文件时, 仅解析头文件
 call s:InitVariable("g:VLWorkspaceNotParseSourceAfterSave", 0)
+"保存调试器信息, 默认不保存, 因为暂时无法具体控制
+call s:InitVariable("g:VLWDbgSaveBreakpointsInfo", 1)
 
+"键绑定
+call s:InitVariable('g:VLWShowMenuKey', '.')
+call s:InitVariable('g:VLWPopupMenuKey', '<RightRelease>')
+call s:InitVariable('g:VLWOpenNodeKey', 'o')
+call s:InitVariable('g:VLWOpenNode2Key', 'go')
+call s:InitVariable('g:VLWOpenNodeInNewTabKey', 't')
+call s:InitVariable('g:VLWOpenNodeInNewTab2Key', 'T')
+call s:InitVariable('g:VLWOpenNodeSplitKey', 'i')
+call s:InitVariable('g:VLWOpenNodeSplit2Key', 'gi')
+call s:InitVariable('g:VLWOpenNodeVSplitKey', 's')
+call s:InitVariable('g:VLWOpenNodeVSplit2Key', 'gs')
+call s:InitVariable('g:VLWGotoParentKey', 'p')
+call s:InitVariable('g:VLWGotoRootKey', 'P')
+call s:InitVariable('g:VLWGotoNextSibling', '<C-n>')
+call s:InitVariable('g:VLWGotoPrevSibling', '<C-p>')
+call s:InitVariable('g:VLWRefreshBufferKey', 'R')
+call s:InitVariable('g:VLWToggleHelpInfo', '<F1>')
 
 "=======================================
 "标记是否已经运行
@@ -133,6 +230,8 @@ command! -nargs=0 VLWUpdateCscopeDatabase
 command! -nargs=0 -bar VLWBuildActiveProject    call <SID>BuildActiveProject()
 command! -nargs=0 -bar VLWCleanActiveProject    call <SID>CleanActiveProject()
 command! -nargs=0 -bar VLWRunActiveProject      call <SID>RunActiveProject()
+command! -nargs=0 -bar VLWBuildAndRunActiveProject 
+            \call <SID>BuildAndRunActiveProject()
 
 command! -nargs=* -complete=file VLWParseFiles  call <SID>ParseFiles(<f-args>)
 command! -nargs=0 -bar VLWParseCurrentFile      call <SID>ParseCurrentFile(0)
@@ -207,93 +306,84 @@ else
 endif
 
 
-function! s:OpenFile(file) "优雅地打开一个文件 {{{2
-    let winnr = bufwinnr('^' . a:file . '$')
-    if winnr != -1
-        "文件已经在某个窗口中打开，直接跳至那个窗口
-        call s:exec(winnr . "wincmd w")
-        "激活进入缓冲区自动命令, 用于与 tagbar 配合
-        doautocmd BufEnter
+function! s:OpenFile(sFile, ...) "优雅地打开一个文件 {{{2
+    let sFile = a:sFile
+    if sFile ==# ''
+        return
+    endif
+
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    let bNeedResizeWspWin = (winnr('$') == 1)
+
+    let bak_splitright = &splitright
+    if g:VLWorkspaceWinPos ==? 'left'
+        set splitright
     else
-        let bak_ei = &ei
-        "临时禁用一些自动命令，不能禁用全部，因为一些语法高亮必须自动命令
-        set eventignore+=BufWinEnter,BufEnter
+        set nosplitright
+    endif
+    call vlutils#OpenFile(sFile, bKeepCursorPos)
+    let &splitright = bak_splitright
 
-        if !s:IsWindowUsable(winnr("#")) && s:GetFirstUsableWindow() == -1
-            "仅存在工作空间窗口，需要分割窗口
-            let bak_splitright = &splitright
-            set splitright
+    let nWspWinNr = bufwinnr('^'.g:VLWorkspaceBufName.'$')
+    if bNeedResizeWspWin && nWspWinNr != -1
+        exec 'vertical' nWspWinNr 'resize' g:VLWorkspaceWinSize
+    endif
 
-            vsp new
-            exec 'vertical ' . winnr('#') . 'resize ' . g:VLWorkspaceWinSize
-            exec 'edit ' . g:NormalizeCmdArg(a:file)
-
-            let &splitright = bak_splitright
-        else
-            try
-                if !s:IsWindowUsable(winnr("#"))
-                    call s:exec(s:GetFirstUsableWindow() . "wincmd w")
-                else
-                    call s:exec('wincmd p')
-                endif
-                exec "edit " . g:NormalizeCmdArg(a:file)
-
-                let &ei = bak_ei
-                doautocmd BufEnter
-            catch /^Vim\%((\a\+)\)\=:E37/
-            catch /^Vim\%((\a\+)\)\=:/
-                echo v:exception
-            endtry
-        endif
-
-        let &ei = bak_ei
+    if bKeepCursorPos
+        call vlutils#Exec(nWspWinNr.'wincmd w')
     endif
 endfunction
 
 
-function! s:IsWindowUsable(winNum) "检测某窗口是否可用 {{{2
-    "gotta split if theres only one window (i.e. the NERD tree)
-    if winnr("$") ==# 1
-        return 0
+function! s:OpenFileInNewTab(sFile, ...) "{{{2
+    let sFile = a:sFile
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
     endif
 
-    let oldwinnr = winnr()
-    call s:exec(a:winNum . "wincmd p")
-    let specialWindow = getbufvar("%", '&buftype') != '' 
-                \|| getwinvar('%', '&previewwindow')
-    let modified = &modified
-    call s:exec(oldwinnr . "wincmd p")
-
-    "if its a special window e.g. quickfix or another explorer plugin then we
-    "have to split
-    if specialWindow
-        return 0
-    endif
-
-    if &hidden
-        return 1
-    endif
-
-    return !modified || s:BufInWindows(winbufnr(a:winNum)) >= 2
+    call vlutils#OpenFileInNewTab(sFile, bKeepCursorPos)
 endfunction
 
 
-function! s:BufInWindows(bNum) "返回打开指定缓冲区的窗口数目 {{{2
-    let cnt = 0
-    let winnum = 1
-    while 1
-        let bufnum = winbufnr(winnum)
-        if bufnum < 0
-            break
-        endif
-        if bufnum ==# a:bNum
-            let cnt = cnt + 1
-        endif
-        let winnum = winnum + 1
-    endwhile
+function! s:OpenFileSplit(sFile, ...) "{{{2
+    let sFile = a:sFile
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
 
-    return cnt
-endfunction 
+    call vlutils#OpenFileSplit(sFile, bKeepCursorPos)
+endfunction
+
+
+function! s:OpenFileVSplit(sFile, ...) "{{{2
+    let sFile = a:sFile
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    let bak_splitright = &splitright
+    if g:VLWorkspaceWinPos ==? 'left'
+        set splitright
+    else
+        set nosplitright
+    endif
+
+    let bNeedResizeWspWin = (winnr('$') == 1)
+    if bNeedResizeWspWin
+        call s:OpenFile(sFile, bKeepCursorPos)
+    else
+        call vlutils#OpenFileVSplit(sFile, bKeepCursorPos)
+    endif
+
+    let &splitright = bak_splitright
+endfunction
 "}}}1
 "===============================================================================
 "===============================================================================
@@ -335,8 +425,9 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
     if g:VLWorkspaceLinkToEidtor
         augroup VLWorkspace
             au!
-            au WinEnter     * call <SID>LocateFile(expand('%:p'))
-            au BufWinEnter  * call <SID>LocateFile(expand('%:p'))
+            "au WinEnter     * call <SID>LocateFile(expand('%:p'))
+            "au BufWinEnter  * call <SID>LocateFile(expand('%:p'))
+            au BufEnter     * call <SID>LocateFile(expand('%:p'))
         augroup end
     endif
 
@@ -375,6 +466,9 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
     py g_bldConfs = {}
     py g_glbBldConfs = {}
 
+    "重置帮助信息开关
+    let b:bHelpInfoOn = 0
+
     setlocal nomodifiable
 endfunction
 
@@ -411,10 +505,7 @@ function! s:Autocmd_ParseCurrentFile()
             endif
         else
             let s:CACHE_INCLUDES[fileName] = li
-            py ws.ParseFiles([vim.eval("expand('%:p')")] 
-                        \    + IncludeParser.GetIncludeFiles(
-                        \        vim.eval("expand('%:p')")), 
-                        \True)
+            call s:ParseCurrentFile(1)
         endif
     endif
 endfunction
@@ -451,7 +542,7 @@ endfunction
 
 function! s:CreateVLWorkspaceWin() "创建窗口 {{{2
     "create the workspace window
-    let splitMethod = g:VLWorkspaceWinPos ==# "left" ? "topleft " : "botright "
+    let splitMethod = g:VLWorkspaceWinPos ==? "left" ? "topleft " : "botright "
     let splitSize = g:VLWorkspaceWinSize
 
     if !exists('t:VLWorkspaceBufName')
@@ -486,89 +577,55 @@ function! s:CreateVLWorkspaceWin() "创建窗口 {{{2
         setlocal cursorline
     endif
 
-    setfiletype VLWorkspace
-endfunction
-
-
-function! s:SetupSyntaxHighlighting() "设置语法高亮 {{{2
-    if !has("syntax") || !exists("g:syntax_on")
-        return
-    endif
-
-    "树结构标志
-    syn match VLWTreeLead '|'
-    syn match VLWTreeLead '`'
-
-    "可展开和可折叠的标志
-    syn match VLWClosable '\V\[|`]~'hs=s+1 contains=VLWTreeLead
-    syn match VLWOpenable '\V\[|`]+'hs=s+1 contains=VLWTreeLead
-
-    "文件前缀标志
-    syn match VLWFilePre '[|`]-'hs=s+1 contains=VLWTreeLead
-
-
-    "工作空间名字只能由 [a-zA-Z_ +-] 组成
-    syn match VLWorkspace '^[a-zA-Z0-9_ +-]\+$'
-
-    syn match VLWProject '^[|`][+~].\+' 
-                \contains=VLWOpenable,VLWClosable,VLWTreeLead
-
-    syn match VLWVirtualDirectory '\s[|`][+~].\+$'hs=s+3 
-                \contains=VLWOpenable,VLWClosable,VLWTreeLead
-
-    "c/c++ 源文件、头文件
-    syn match VLWCSource    '\V\c\[|`]-\.\+.c\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-
-    syn match VLWCHeader    '\V\c\[|`]-\.\+.h\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-
-    syn match VLWCppSource  '\V\c\[|`]-\.\+.cpp\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-    syn match VLWCppSource  '\V\c\[|`]-\.\+.c++\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-    syn match VLWCppSource  '\V\c\[|`]-\.\+.cxx\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-    syn match VLWCppSource  '\V\c\[|`]-\.\+.cc\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-    syn match VLWCppHeader  '\V\c\[|`]-\.\+.hpp\$'hs=s+2 
-                \contains=VLWFilePre,VLWTreeLead
-
-    hi def link VLWorkspace PreProc
-    hi def link VLWProject Type
-    hi def link VLWVirtualDirectory Statement
-
-    if g:VLWorkspaceHighlightSourceFile
-        hi def link VLWCSource Function
-        hi def link VLWCHeader Constant
-        hi def link VLWCppSource VLWCSource
-        hi def link VLWCppHeader VLWCHeader
-    endif
-
-    hi def link VLWTreeLead Special
-    hi def link VLWFilePre Linenr
-    hi def link VLWClosable VLWFilePre
-    hi def link VLWOpenable Title
-
+    setfiletype vlworkspace
 endfunction
 
 
 function! s:SetupKeyMappings() "设置键盘映射 {{{2
-    nnoremap <silent> <buffer> <2-LeftMouse> :call <SID>OnMouseDoubleClick()<CR>
+    exec 'nnoremap <silent> <buffer>' g:VLWShowMenuKey 
+                \':call <SID>ShowMenu()<CR>'
 
+    exec 'nnoremap <silent> <buffer>' g:VLWPopupMenuKey 
+                \':call <SID>OnRightMouseClick()<CR>'
+
+    nnoremap <silent> <buffer> <2-LeftMouse> :call <SID>OnMouseDoubleClick()<CR>
     nnoremap <silent> <buffer> <CR> :call <SID>OnMouseDoubleClick()<CR>
 
-    nnoremap <silent> <buffer> p :call <SID>GotoParent()<CR>
-    nnoremap <silent> <buffer> P :call <SID>GotoRoot()<CR>
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeKey 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeKey)<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNode2Key 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNode2Key)<CR>'
 
-    nnoremap <silent> <buffer> <C-n> :call <SID>GotoNextSibling()<CR>
-    nnoremap <silent> <buffer> <C-p> :call <SID>GotoPrevSibling()<CR>
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeInNewTabKey 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeInNewTabKey)<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeInNewTab2Key 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeInNewTab2Key)<CR>'
 
-    exec 'nnoremap <silent> <buffer> ' . g:VLWorkspaceMenuKey . 
-                \' :call <SID>ShowMenu()<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeSplitKey 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeSplitKey)<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeSplit2Key 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeSplit2Key)<CR>'
 
-    exec 'nnoremap <silent> <buffer> ' . g:VLWorkspacePopupMenuKey . 
-                \' :call <SID>OnRightMouseClick()<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeVSplitKey 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeVSplitKey)<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWOpenNodeVSplit2Key 
+                \':call <SID>OnMouseDoubleClick(g:VLWOpenNodeVSplit2Key)<CR>'
+
+    exec 'nnoremap <silent> <buffer>' g:VLWGotoParentKey 
+                \':call <SID>GotoParent()<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWGotoRootKey 
+                \':call <SID>GotoRoot()<CR>'
+
+    exec 'nnoremap <silent> <buffer>' g:VLWGotoNextSibling 
+                \':call <SID>GotoNextSibling()<CR>'
+    exec 'nnoremap <silent> <buffer>' g:VLWGotoPrevSibling 
+                \':call <SID>GotoPrevSibling()<CR>'
+
+    exec 'nnoremap <silent> <buffer>' g:VLWRefreshBufferKey 
+                \':call <SID>RefreshBuffer()<CR>'
+
+    exec 'nnoremap <silent> <buffer>' g:VLWToggleHelpInfo 
+                \':call <SID>ToggleHelpInfo()<CR>'
 endfunction
 
 
@@ -582,14 +639,19 @@ function! s:LocateFile(fileName) "{{{2
     py vim.command("let l:path = '%s'" 
                 \% ws.VLWIns.GetWspFilePathByFileName(vim.eval('a:fileName')))
     if l:path == ''
+        "文件不属于工作空间, 返回
         return 2
     endif
+
+    "当前光标所在文件即为正在编辑的文件, 直接返回
+    py if ws.VLWIns.GetFileByLineNum(ws.window.cursor[0], True)
+                \== vim.eval('a:fileName'): vim.command('return 3')
 
     if l:curWinNum != l:winNum
         call s:exec(l:winNum . 'wincmd w')
     endif
 
-    exec '0'
+    call setpos('.', [0, 1, 1, 0])
     let l:paths = split(l:path, '/')
     let l:depth = 1
     let l:spacePerDepth = 2
@@ -606,8 +668,8 @@ function! s:LocateFile(fileName) "{{{2
     endfor
 
     " NOTE: search 函数居然不自动滚动窗口?!
-    let topLine = winsaveview().topline
-    let botLine = topLine + winheight(0) - 1
+    let topLine = line('w0')
+    let botLine = line('w$')
     let curLine = line('.')
     if curLine < topLine || curLine > botLine
         normal! zz
@@ -657,30 +719,30 @@ function! s:InstallToolBarMenu() "{{{2
     anoremenu 1.600 ToolBar.-Sep16- <Nop>
     anoremenu <silent> icon=~/.vimlite/bitmaps/breakpoint.png 1.605 
                 \ToolBar.DbgToggleBreakpoint 
-                \:silent! call <SID>DbgToggleBreakpoint()<CR>
+                \:silent call <SID>DbgToggleBreakpoint()<CR>
 
     anoremenu 1.609 ToolBar.-Sep17- <Nop>
     anoremenu <silent> icon=~/.vimlite/bitmaps/start.gif 1.610 
                 \ToolBar.DbgStart 
-                \:silent! call <SID>DbgStart()<CR>
+                \:silent call <SID>DbgStart()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/stepin.gif 1.630 
                 \ToolBar.DbgStepIn 
-                \:silent! call <SID>DbgStepIn()<CR>
+                \:silent call <SID>DbgStepIn()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/next.gif 1.640 
                 \ToolBar.DbgNext 
-                \:silent! call <SID>DbgNext()<CR>
+                \:silent call <SID>DbgNext()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/stepout.gif 1.650 
                 \ToolBar.DbgStepOut 
-                \:silent! call <SID>DbgStepOut()<CR>
+                \:silent call <SID>DbgStepOut()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/continue.gif 1.660 
                 \ToolBar.DbgContinue 
-                \:silent! call <SID>DbgContinue()<CR>
+                \:silent call <SID>DbgContinue()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/runtocursor.gif 1.665 
                 \ToolBar.DbgRunToCursor 
-                \:silent! call <SID>DbgRunToCursor()<CR>
+                \:silent call <SID>DbgRunToCursor()<CR>
     anoremenu <silent> icon=~/.vimlite/bitmaps/stop.gif 1.670 
                 \ToolBar.DbgStop 
-                \:silent! call <SID>DbgStop()<CR>
+                \:silent call <SID>DbgStop()<CR>
 
     tmenu ToolBar.DbgStart              Start / Run Debugger
     tmenu ToolBar.DbgStop               Stop Debugger
@@ -702,8 +764,15 @@ function! s:ParseCurrentFile(...) "可选参数为是否解析包含的头文件
     let curFile = expand("%:p")
     let files = [curFile]
     if deep
+        py l_project = ws.VLWIns.GetProjectByFileName(vim.eval('curFile'))
+        py l_searchPaths = []
+        py if l_project: l_searchPaths = ws.GetProjectIncludePaths(
+                    \l_project.GetName())
         py ws.ParseFiles(vim.eval('files') 
-                    \+ IncludeParser.GetIncludeFiles(vim.eval('curFile')))
+                    \+ IncludeParser.GetIncludeFiles(vim.eval('curFile'),
+                    \   l_searchPaths))
+        py del l_searchPaths
+        py del l_project
     else
         py ws.ParseFiles(vim.eval('files'), False)
     endif
@@ -725,8 +794,12 @@ endfunction
 "===============================================================================
 "=================== 工作空间树操作 ===================
 "{{{1
-function! s:OnMouseDoubleClick() "{{{2
-    py ws.OnMouseDoubleClick()
+function! s:OnMouseDoubleClick(...) "{{{2
+    let sKey = ''
+    if a:0 > 0
+        let sKey = a:1
+    endif
+    py ws.OnMouseDoubleClick(vim.eval("sKey"))
 endfunction
 
 
@@ -826,6 +899,151 @@ function! s:RefreshStatusLine() "{{{2
 endfunction
 
 
+function! s:RefreshBuffer() "{{{2
+    let lOrigCursor = getpos('.')
+
+    let bNeedDispHelp = 0
+    if exists('b:bHelpInfoOn') && b:bHelpInfoOn
+        let bNeedDispHelp = 1
+        call s:ToggleHelpInfo()
+    endif
+
+    py ws.RefreshBuffer()
+
+    if bNeedDispHelp
+        call s:ToggleHelpInfo()
+    endif
+
+    call setpos('.', lOrigCursor)
+endfunction
+
+
+function! s:ToggleHelpInfo() "{{{2
+    if !exists('b:bHelpInfoOn')
+        let b:bHelpInfoOn = 0
+    endif
+
+    if !b:bHelpInfoOn
+        let b:dOrigView = winsaveview()
+    endif
+
+    let lHelpInfo = []
+
+    let sLine = '" ============================'
+    call add(lHelpInfo, sLine)
+
+    let sLine = '" File node mappings~'
+    call add(lHelpInfo, sLine)
+
+    let sLine = '" <2-LeftMouse>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <CR>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeKey.': open file gracefully'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNode2Key.': preview'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeInNewTabKey.': open in new tab'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeInNewTab2Key.': open in new tab silently'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeSplitKey.': open split'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeSplit2Key.': preview split'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeVSplitKey.': open vsplit'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeVSplit2Key.': preview vsplit'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+    let sLine = '" ----------------------------'
+    call add(lHelpInfo, sLine)
+    let sLine = '" Directory node mappings~'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <2-LeftMouse>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <CR>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeKey.': open & close node'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+    let sLine = '" ----------------------------'
+    call add(lHelpInfo, sLine)
+    let sLine = '" Project node mappings~'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <2-LeftMouse>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <CR>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeKey.': open & close node'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+    let sLine = '" ----------------------------'
+    call add(lHelpInfo, sLine)
+    let sLine = '" Workspace node mappings~'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <2-LeftMouse>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" <CR>,'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWOpenNodeKey.': show build config menu'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+    let sLine = '" ----------------------------'
+    call add(lHelpInfo, sLine)
+    let sLine = '" Tree navigation mappings~'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWGotoRootKey.': go to root'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWGotoParentKey.': go to parent'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWGotoNextSibling.': go to next sibling'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWGotoPrevSibling.': go to prev sibling'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+    let sLine = '" ----------------------------'
+    call add(lHelpInfo, sLine)
+    let sLine = '" Other mappings~'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWPopupMenuKey.': popup menu'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWShowMenuKey.': show text menu'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWRefreshBufferKey.': refresh buffer'
+    call add(lHelpInfo, sLine)
+    let sLine = '" '.g:VLWToggleHelpInfo.': toggle help info'
+    call add(lHelpInfo, sLine)
+    call add(lHelpInfo, '')
+
+
+    setlocal ma
+    if b:bHelpInfoOn
+        let b:bHelpInfoOn = 0
+        exec 'silent! 1,'.(1+len(lHelpInfo)-1) . ' delete _'
+        py ws.VLWIns.SetWorkspaceLineNum(ws.VLWIns.GetRootLineNum() - 
+                    \int(vim.eval('len(lHelpInfo)')))
+
+        if exists('b:dOrigView')
+            call winrestview(b:dOrigView)
+            unlet b:dOrigView
+        endif
+    else
+        let b:bHelpInfoOn = 1
+        call append(0, lHelpInfo)
+        py ws.VLWIns.SetWorkspaceLineNum(ws.VLWIns.GetRootLineNum() + 
+                    \int(vim.eval('len(lHelpInfo)')))
+        call cursor(1, 1)
+    endif
+    setlocal noma
+endfunction
+
+
 "}}}1
 "=================== 构建操作 ===================
 "{{{1
@@ -859,6 +1077,13 @@ endfunction
 function! s:RunActiveProject() "{{{2
     if g:VLWorkspaceHasStarted
         py ws.RunActiveProject()
+    endif
+endfunction
+
+
+function! s:BuildAndRunActiveProject() "{{{2
+    if g:VLWorkspaceHasStarted
+        py ws.BuildAndRunActiveProject()
     endif
 endfunction
 
@@ -928,14 +1153,17 @@ endfunction
 function! s:DbgStart() "{{{2
     " TODO: pyclewn 首次运行, pyclewn 运行中, pyclewn 一次调试完毕后
     if !has("netbeans_enabled")
-        let dbgProjFile = ''
-        py proj = ws.VLWIns.FindProjectByName(ws.VLWIns.GetActiveProjectName())
-        py if proj: vim.command("let dbgProjFile = '%s'" % os.path.join(
-                    \   proj.dirName, ws.VLWIns.GetActiveProjectName() 
-                    \       + '_' + vim.eval("g:VLWorkspaceDbgConfName")))
-        py del proj
-        if dbgProjFile !=# ''
-            let g:VLWDbgProjectFile = dbgProjFile
+        if g:VLWDbgSaveBreakpointsInfo
+            let dbgProjFile = ''
+            py proj = ws.VLWIns.FindProjectByName(
+                        \ws.VLWIns.GetActiveProjectName())
+            py if proj: vim.command("let dbgProjFile = '%s'" % os.path.join(
+                        \   proj.dirName, ws.VLWIns.GetActiveProjectName() 
+                        \       + '_' + vim.eval("g:VLWorkspaceDbgConfName")))
+            py del proj
+            if dbgProjFile !=# ''
+                let g:VLWDbgProjectFile = dbgProjFile
+            endif
         endif
 
         silent Pyclewn
@@ -1009,12 +1237,12 @@ function! s:CreateWorkspace(...) "{{{2
             let dialog = a:1.owner
         endif
 
-        let l:wspName = ''
+        let sWspName = ''
         let l:wspPath = ''
         let l:isSepPath = 0
         for i in dialog.controls
             if i.id == 0
-                let l:wspName = i.value
+                let sWspName = i.value
             elseif i.id == 1
                 let l:wspPath = i.value
             elseif i.id == 2
@@ -1023,18 +1251,18 @@ function! s:CreateWorkspace(...) "{{{2
                 continue
             endif
         endfor
-        if l:wspName != ''
+        if sWspName != ''
             if l:isSepPath != 0
-                let l:file = l:wspPath .'/'. fnamemodify(l:wspName, ":r") .'/'.
-                            \ l:wspName . '.workspace'
+                let l:file = l:wspPath .'/'. fnamemodify(sWspName, ":r") .'/'.
+                            \ sWspName . '.workspace'
             else
-                let l:file = l:wspPath .'/'. l:wspName . '.workspace'
+                let l:file = l:wspPath .'/'. sWspName . '.workspace'
             endif
         endif
 
         if a:1.type != g:VC_DIALOG
             call a:2.SetId(100)
-            if l:wspName != ''
+            if sWspName != ''
                 let a:2.label = l:file
             else
                 let a:2.label = ''
@@ -1042,10 +1270,10 @@ function! s:CreateWorkspace(...) "{{{2
             call dialog.RefreshCtlById(100)
         endif
 
-        if a:1.type == g:VC_DIALOG && l:wspName != ''
-            "echo l:wspName
+        if a:1.type == g:VC_DIALOG && sWspName != ''
+            "echo sWspName
             "echo l:file
-            py ret = ws.VLWIns.CreateWorkspace(vim.eval('l:wspName'), 
+            py ret = ws.VLWIns.CreateWorkspace(vim.eval('sWspName'), 
                         \os.path.dirname(vim.eval('l:file')))
             py if ret: ws.OpenTagsDatabase()
             py vim.command('call dialog.ConnectPostCallback('
@@ -1371,12 +1599,13 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
         return
     endif
 
-    let l:files = []
-    py vim.command("let l:wspName = '%s'" % ws.VLWIns.name)
     py l_ds = Globals.DirSaver()
-    py if os.path.exists(ws.VLWIns.dirName): os.chdir(ws.VLWIns.dirName)
-    let sCsFilesFile = l:wspName . g:VLWorkspaceCscpoeFilesFile
-    let sCsOutFile = l:wspName . g:VLWorkspaceCscpoeOutFile
+    py if os.path.isdir(ws.VLWIns.dirName): os.chdir(ws.VLWIns.dirName)
+
+    let lFiles = []
+    py vim.command("let sWspName = '%s'" % ws.VLWIns.name)
+    let sCsFilesFile = sWspName . g:VLWorkspaceCscpoeFilesFile
+    let sCsOutFile = sWspName . g:VLWorkspaceCscpoeOutFile
 
     let l:force = 0
     if exists('a:1') && a:1 != 0
@@ -1393,6 +1622,7 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
             exec 'cs add '.sCsOutFile
             set csverb
         endif
+        py del l_ds
         return
     endif
 
@@ -1411,13 +1641,13 @@ def InitVLWCscopeDatabase():
                 needUpdateCsNameFile = True
                 break
     if needUpdateCsNameFile or vim.eval('l:force') == '1':
-        #vim.command('let l:files = %s' 
+        #vim.command('let lFiles = %s' 
             #% [i.encode('utf-8') for i in ws.VLWIns.GetAllFiles(True)])
         #直接 GetAllFiles 可能会出现重复的情况，直接用 filesIndex 字典键值即可
         ws.VLWIns.GenerateFilesIndex() #重建，以免任何特殊情况
         files = ws.VLWIns.filesIndex.keys()
         files.sort()
-        vim.command('let l:files = %s' % [i.encode('utf-8') for i in files])
+        vim.command('let lFiles = %s' % [i.encode('utf-8') for i in files])
 
     # TODO: 添加激活的项目的包含头文件路径选项
     # 这只关系到跳到定义处，如果实现了 ctags 数据库，就不需要
@@ -1430,9 +1660,9 @@ def InitVLWCscopeDatabase():
 InitVLWCscopeDatabase()
 PYTHON_EOF
 
-    "echom string(l:files)
-    if !empty(l:files)
-        call writefile(l:files, sCsFilesFile)
+    "echom string(lFiles)
+    if !empty(lFiles)
+        call writefile(lFiles, sCsFilesFile)
     endif
 
     if !empty(lIncludePaths)
@@ -1483,20 +1713,24 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
     endif
 
 
-    py vim.command("let l:wspName = '%s'" % ws.VLWIns.name)
-    let sCsFilesFile = l:wspName . g:VLWorkspaceCscpoeFilesFile
-    let sCsOutFile = l:wspName . g:VLWorkspaceCscpoeOutFile
+    py l_ds = Globals.DirSaver()
+    py if os.path.isdir(ws.VLWIns.dirName): os.chdir(ws.VLWIns.dirName)
+
+    py vim.command("let sWspName = '%s'" % ws.VLWIns.name)
+    let sCsFilesFile = sWspName . g:VLWorkspaceCscpoeFilesFile
+    let sCsOutFile = sWspName . g:VLWorkspaceCscpoeOutFile
 
     if !filereadable(sCsFilesFile)
         "没有必要文件，自动忽略
+        py del l_ds
         return
     endif
 
     if exists('a:1') && a:1 != 0
         "如果传入参数且非零，强制刷新文件列表
-        py vim.command('let l:files = %s' 
+        py vim.command('let lFiles = %s' 
                     \% [i.encode('utf-8') for i in ws.VLWIns.GetAllFiles(True)])
-        call writefile(l:files, sCsFilesFile)
+        call writefile(lFiles, sCsFilesFile)
     endif
 
     let lIncludePaths = []
@@ -1518,6 +1752,8 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
 
     exec 'silent! cs kill '. sCsOutFile
     exec 'cs add '. sCsOutFile
+
+    py del l_ds
 endfunction
 
 
@@ -3221,7 +3457,6 @@ class VimLiteWorkspace():
 
         #创建窗口
         vim.command("call s:CreateVLWorkspaceWin()")
-        vim.command("call s:SetupSyntaxHighlighting()")
         vim.command("call s:SetupKeyMappings()")
         self.buffer = vim.current.buffer
         self.window = vim.current.window
@@ -3308,6 +3543,8 @@ class VimLiteWorkspace():
 
         texts = self.VLWIns.GetAllDisplayTexts()
         self.buffer[:] = [ i.encode('utf-8') for i in texts ]
+        # 重置偏移量
+        self.VLWIns.SetWorkspaceLineNum(1)
 
     def RefreshStatusLine(self):
         string = self.VLWIns.GetName() + '[' + \
@@ -3345,7 +3582,7 @@ class VimLiteWorkspace():
             if texts != []:
                 self.buffer.append(texts, lnum)
 
-    def OnMouseDoubleClick(self):
+    def OnMouseDoubleClick(self, key = ''):
         lnum = self.window.cursor[0]
         nodeType = self.VLWIns.GetNodeType(lnum)
         if nodeType == VLWorkspace.TYPE_PROJECT \
@@ -3355,8 +3592,25 @@ class VimLiteWorkspace():
             else:
                 self.ExpandNode()
         elif nodeType == VLWorkspace.TYPE_FILE:
-            vim.command('call s:OpenFile("%s")' 
-                % self.VLWIns.GetFileByLineNum(lnum, True))
+            absFile = self.VLWIns.GetFileByLineNum(lnum, True)
+            if not key or key == vim.eval("g:VLWOpenNodeKey"):
+                vim.command('call s:OpenFile("%s", 0)' % absFile)
+            elif key == vim.eval("g:VLWOpenNode2Key"):
+                vim.command('call s:OpenFile("%s", 1)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeInNewTabKey"):
+                vim.command('call s:OpenFileInNewTab("%s", 0)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeInNewTab2Key"):
+                vim.command('call s:OpenFileInNewTab("%s", 1)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeSplitKey"):
+                vim.command('call s:OpenFileSplit("%s", 0)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeSplit2Key"):
+                vim.command('call s:OpenFileSplit("%s", 1)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeVSplitKey"):
+                vim.command('call s:OpenFileVSplit("%s", 0)' % absFile)
+            elif key == vim.eval("g:VLWOpenNodeVSplit2Key"):
+                vim.command('call s:OpenFileVSplit("%s", 1)' % absFile)
+            else:
+                pass
         elif nodeType == VLWorkspace.TYPE_WORKSPACE:
             vim.command('call s:ChangeBuildConfig()')
         else:
@@ -3443,7 +3697,7 @@ class VimLiteWorkspace():
 
     def GotoRoot(self):
         row, col = self.window.cursor
-        rootRow = self.VLWIns.GetParentLineNum(row)
+        rootRow = self.VLWIns.GetRootLineNum(row)
         if rootRow != row:
             vim.command("mark '")
             vim.command("exec %d" % rootRow)
@@ -3681,31 +3935,28 @@ class VimLiteWorkspace():
                     os.chdir(customBuildWd)
             except OSError:
                 return
-            if cmd:
-                tempFile = vim.eval('tempname()')
+        else:
+            cmd = self.builder.GetBuildCommand(projName, '')
+
+        if cmd:
+            if vim.eval("g:VLWorkspaceSaveAllBeforeBuild") != '0':
+                vim.command("wa")
+            tempFile = vim.eval('tempname()')
+            if True:
                 vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
                 vim.command('cgetfile %s' % tempFile)
-        else:
-            bldCmd = self.builder.GetBuildCommand(projName, '')
-            if bldCmd:
-                if vim.eval("g:VLWorkspaceSaveAllBeforeBuild") != '0':
-                    vim.command("wa")
-                tempFile = vim.eval('tempname()')
-                if True:
-                    vim.command("!%s 2>&1 | tee %s" % (bldCmd, tempFile))
-                    vim.command('cgetfile %s' % tempFile)
-                else:
-                    os.system("gnome-terminal -t 'make' -e "\
-                        "\"sh -c \\\"%s 2>&1 | tee '%s' "\
-                        "&& echo ========================================"\
-                        "&& echo -n This will close in 3 seconds... "\
-                        "&& read -t 3 i && echo Press ENTER to continue... "\
-                        "&& read i;"\
-                        "vim --servername '%s' "\
-                        "--remote-send '<C-\><C-n>:cgetfile %s "\
-                        "| echo \\\\\\\"Readed the error file.\\\\\\\"<CR>'\\\"\" &"
-                        % (bldCmd, tempFile, vim.eval('v:servername'), 
-                           tempFile.replace(' ', '\\ ')))
+            else:
+                os.system("gnome-terminal -t 'make' -e "\
+                    "\"sh -c \\\"%s 2>&1 | tee '%s' "\
+                    "&& echo ========================================"\
+                    "&& echo -n This will close in 3 seconds... "\
+                    "&& read -t 3 i && echo Press ENTER to continue... "\
+                    "&& read i;"\
+                    "vim --servername '%s' "\
+                    "--remote-send '<C-\><C-n>:cgetfile %s "\
+                    "| echo \\\\\\\"Readed the error file.\\\\\\\"<CR>'\\\"\" &"
+                    % (cmd, tempFile, vim.eval('v:servername'), 
+                       tempFile.replace(' ', '\\ ')))
 
     def CleanProject(self, projName):
         ds = Globals.DirSaver()
@@ -3736,16 +3987,13 @@ class VimLiteWorkspace():
                     os.chdir(customBuildWd)
             except OSError:
                 return
-            if cmd:
-                tempFile = vim.eval('tempname()')
-                vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
-                vim.command('cgetfile %s' % tempFile)
         else:
-            bldCmd = self.builder.GetCleanCommand(projName, '')
-            if bldCmd:
-                tempFile = vim.eval('tempname()')
-                vim.command("!%s 2>&1 | tee %s" % (bldCmd, tempFile))
-                vim.command('cgetfile %s' % tempFile)
+            cmd = self.builder.GetCleanCommand(projName, '')
+
+        if cmd:
+            tempFile = vim.eval('tempname()')
+            vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
+            vim.command('cgetfile %s' % tempFile)
 
     def RebuildProject(self, projName):
         matrix = self.VLWIns.GetBuildMatrix()
@@ -3780,9 +4028,9 @@ class VimLiteWorkspace():
                 os.chdir(self.VLWIns.dirName)
             except OSError:
                 return
-            bldCmd = self.builder.GetCleanCommand(projName, '')
-            if bldCmd:
-                os.system("%s" % bldCmd)
+            cmd = self.builder.GetCleanCommand(projName, '')
+            if cmd:
+                os.system("%s" % cmd)
 
             self.BuildProject(projName)
 
@@ -3833,6 +4081,17 @@ class VimLiteWorkspace():
         actProjName = self.VLWIns.GetActiveProjectName()
         self.RunProject(actProjName)
 
+    def BuildAndRunProject(self, projName):
+        self.BuildProject(projName)
+        qflist = vim.eval('getqflist()')
+        if qflist and qflist[-1]['text'][:5] != 'make:':
+            # 构建成功
+            self.RunProject(projName)
+
+    def BuildAndRunActiveProject(self):
+        actProjName = self.VLWIns.GetActiveProjectName()
+        self.BuildAndRunProject(actProjName)
+
     def ParseWorkspace(self, full = False):
         if full:
             self.tagsManager.RecreateDatabase()
@@ -3840,8 +4099,7 @@ class VimLiteWorkspace():
         files = self.VLWIns.GetAllFiles(True)
         parseFiles = files[:]
 
-        bak_paths = IncludeParser.paths
-        IncludeParser.paths = \
+        searchPaths = \
             TagsSettingsST.Get().includePaths + self.VLWSettings.includePaths
 
         if True:
@@ -3866,13 +4124,12 @@ class VimLiteWorkspace():
                             projIncludePaths.add(os.path.abspath(tmpPath))
             projIncludePaths = list(projIncludePaths)
             projIncludePaths.sort()
-            IncludeParser.paths += projIncludePaths
+            searchPaths += projIncludePaths
 
         vim.command("echo 'Scanning header files need to be parsed...'")
 
         for f in files:
-            parseFiles += IncludeParser.GetIncludeFiles(f)
-        IncludeParser.paths = bak_paths
+            parseFiles += IncludeParser.GetIncludeFiles(f, searchPaths)
 
         parseFiles = list(set(parseFiles))
         parseFiles.sort()
@@ -4155,9 +4412,15 @@ class VimLiteWorkspace():
                 if useGui and vim.eval('has("browse")') != '0':
                     if vim.eval("executable('zenity')") == '1':
                         # zenity 返回的是绝对路径
+                        ds = Globals.DirSaver()
+                        try:
+                            os.chdir(project.dirName)
+                        except OSError:
+                            pass
                         names = vim.eval('system(\'zenity --file-selection ' \
                                 '--multiple --title="Add Existing files"\')')
                         names = names[:-1].split('|')
+                        del ds
                     else:
                         names = []
                         # NOTE: 返回的也有可能是相对于当前目录, 
@@ -5523,7 +5786,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1
 plugin/vimdialog.vim	[[[1
-2922
+2935
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -5541,10 +5804,14 @@ endfunction
 
 "Function: s:exec(cmd) 忽略所有自动命令事件来运行 cmd {{{2
 function! s:exec(cmd)
-    let old_ei = &ei
+    let bak_ei = &ei
     set ei=all
-    exec a:cmd
-    let &ei = old_ei
+	try
+		exec a:cmd
+	catch
+	finally
+		let &ei = bak_ei
+	endtry
 endfunction
 "}}}
 
@@ -7620,7 +7887,7 @@ function! g:VimDialog.DisplayHelp() "{{{2
 		call add(texts, text)
 
 		let text = '"'
-		let text .= g:VimDialogToggleExtraHelpKey . ': Toggle Extra Help ; '
+		let text .= g:VimDialogToggleExtraHelpKey . ': Toggle Extra Help; '
 		if !self.asTextCtrl
 			let text .= g:VimDialogNextEditableCtlKey . ': Goto Next Control; '
 			let text .= g:VimDialogPrevEditableCtlKey . ': Goto Prev Control '
@@ -8171,12 +8438,21 @@ function! g:VimDialog.ToggleExtraHelp() "{{{2
 		"删除额外帮助信息
 		let extraHelpLineCount = len(split(self.extraHelpContent, '\n'))
 		exec 'silent! 4,'. (4 + extraHelpLineCount - 1) .'delete _'
+		"恢复原始视图
+		if has_key(self, '_saveView')
+			call winrestview(self._saveView)
+			call remove(self, '_saveView')
+		endif
 	else
 		let self._showExtraHelp = 1
+		"保存原始视图
+		let self._saveView = winsaveview()
 		"显示额外帮助信息
 		let contentList = split(self.extraHelpContent, '\n')
 		call map(contentList, '"\" " . v:val')
 		call append(3, contentList)
+		"定位到帮助信息开始处
+		call cursor(4, 1)
 	endif
 	setlocal noma
 endfunction
@@ -8596,7 +8872,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-546
+626
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -8671,15 +8947,13 @@ And VimLite in google code can be found from this url:
 VimLite depends following software: >
     python
     python-lxml
-    libwxbase2.8
     gcc
     make
     gdb
     cscope
 <
 On ubuntu 10.04, just run: >
-    sudo apt-get install python python-lxml libwxbase2.8-0 gdb cscope
-    sudo apt-get install build-essential
+    sudo apt-get install python python-lxml build-essential gdb cscope
 <
 Make sure your vim compile with this features: >
     +python
@@ -8736,14 +9010,92 @@ NOTE: Almost all commands are listed in popup menu, please help info around.
 ------------------------------------------------------------------------------
 4.1. KeyMappings                        *VimLite-ProjectManager-KeyMappings*
 
-    <2-LeftMouse>                       Fold / expand node
-    <CR>                                Same as <2-LeftMouse>
-    p                                   Go to parent node
-    P                                   Go to root node
-    <C-n>                               Go to next sibling node
-    <C-p>                               Go to prev sibling node
-    .                                   Popup menu
-    <RightRelease>                      Popup gui menu
+Press <F1> in workspace buffer for quick help information.
+
+    Key             Description                     Option~
+------------------------------------------------------------------------------
+    <2-LeftMouse>   Fold / expand node          
+    <CR>            Same as <2-LeftMouse>
+    o               Same as <2-LeftMouse>           |g:VLWOpenNodeKey|
+    go              Preview file                    |g:VLWOpenNode2Key|
+    t               Open file in new tab            |g:VLWOpenNodeInNewTabKey|
+    T               Open file in new tab silently   |g:VLWOpenNodeInNewTab2Key|
+    i               Open file split                 |g:VLWOpenNodeSplitKey|
+    gi              Preview file split              |g:VLWOpenNodeSplit2Key|
+    s               Open file vsplit                |g:VLWOpenNodeVSplitKey|
+    gs              Preview file vsplit             |g:VLWOpenNodeVSplit2Key|
+    P               Go to root node                 |g:VLWGotoRootKey|
+    p               Go to parent node               |g:VLWGotoParentKey|
+    <C-n>           Go to next sibling node         |g:VLWGotoPrevSibling|
+    <C-p>           Go to prev sibling node         |g:VLWGotoNextSibling|
+    .               Show text menu                  |g:VLWShowMenuKey|
+    <RightRelease>  Popup gui menu                  |g:VLWPopupMenuKey|
+    R               Refresh buffer                  |g:VLWRefreshBufferKey|
+    <F1>            Toggle quick help info          |g:VLWToggleHelpInfo|
+------------------------------------------------------------------------------
+                                        *g:VLWOpenNodeKey*
+If workspace node is selected, a build config menu will be shown. >
+    let g:VLWOpenNodeKey = 'o'
+<
+                                        *g:VLWOpenNode2Key*
+>
+    let g:VLWOpenNode2Key = 'go'
+<
+                                        *g:VLWOpenNodeInNewTabKey*
+>
+    let g:VLWOpenNodeInNewTabKey = 't'
+<
+                                        *g:VLWOpenNodeInNewTab2Key*
+>
+    let g:VLWOpenNodeInNewTab2Key = 'T'
+<
+                                        *g:VLWOpenNodeSplitKey*
+>
+    let g:VLWOpenNodeSplitKey = 'i'
+<
+                                        *g:VLWOpenNodeSplit2Key*
+>
+    let g:VLWOpenNodeSplit2Key = 'gi'
+<
+                                        *g:VLWOpenNodeVSplitKey*
+>
+    let g:VLWOpenNodeVSplitKey = 's'
+<
+                                        *g:VLWOpenNodeVSplit2Key*
+>
+    let g:VLWOpenNodeVSplit2Key = 'gs'
+<
+                                        *g:VLWGotoParentKey*
+>
+    let g:VLWGotoParentKey = 'p'
+<
+                                        *g:VLWGotoRootKey*
+>
+    let g:VLWGotoRootKey = 'P'
+<
+                                        *g:VLWGotoNextSibling*
+>
+    let g:VLWGotoNextSibling = '<C-n>'
+<
+                                        *g:VLWGotoPrevSibling*
+>
+    let g:VLWGotoPrevSibling = '<C-p>'
+<
+                                        *g:VLWRefreshBufferKey*
+>
+    let g:VLWRefreshBufferKey = 'R'
+<
+                                        *g:VLWShowMenuKey*
+The key to popup general menu. >
+    let g:VLWShowMenuKey = '.'
+<
+                                        *g:VLWPopupMenuKey*
+The key to popup gui menu, this default value probably does not work. >
+    let g:VLWPopupMenuKey = '<RightRelease>'
+<
+                                        *g:VLWToggleHelpInfo*
+>
+    let g:VLWToggleHelpInfo = '<F1>'
 
 ------------------------------------------------------------------------------
 4.2. Commands                           *VimLite-ProjectManager-Commands*
@@ -8756,6 +9108,9 @@ NOTE: Almost all commands are listed in popup menu, please help info around.
     VLWCleanActiveProject               Clean active project.
 
     VLWRunActiveProject                 Run active project.
+
+    VLWBuildAndRunActiveProject         Build active project and run if build
+                                        successfully.
 
 ------------------------------------------------------------------------------
 4.3. Cscope                             *VimLite-ProjectManager-Cscope*
@@ -9053,15 +9408,12 @@ Use Clang code completion instead of OmniCpp which based on modified ctags. >
 The active project highlight group name. >
     let g:VLWorkspaceActiveProjectHlGroup = 'SpecialKey'
 
-The key to popup general menu. >
-    let g:VLWorkspaceMenuKey = '.'
-
-The key to popup gui menu, this default value probably does not work. >
-    let g:VLWorkspacePopupMenuKey = '<RightRelease>'
-
 Auto parse the editing file when save it. 
 Only work for files belong to workspace. >
     let g:VLWorkspaceParseFileAfterSave = 0
+
+Do not auto parse the editing file if it is a source file (*.cpp, *.c). >
+    let g:VLWorkspaceNotParseSourceAfterSave = 0
 
 ------------------------------------------------------------------------------
 7.2. Calltips Options                   *VimLite-Options-Calltips*
@@ -9141,8 +9493,12 @@ function item in the code completion popup menu. >
 The frame sign background color, can be #xxxxxx format. >
     let g:VLWDbgFrameSignBackground = 'DarkMagenta'
 
+Save breakpoints info in a file. Currently, this feature does not work well,
+so you may want to disable this feature. >
+    let g:VLWDbgSaveBreakpointsInfo = 1
+
 ------------------------------------------------------------------------------
-vim:tw=78:ts=8:ft=help:norl:et:sta:
+vim:tw=78:ft=help:norl:et:ts=4:sw=4:sts=4
 doc/pyclewn.txt	[[[1
 1516
 *pyclewn.txt*                                   Last change: 2011 June 14
@@ -10683,8 +11039,314 @@ hi def link qfLineNr    LineNr
 hi def link qfError     Error
 hi def link qfWarning   WarningMsg
 
+autoload/vlutils.vim	[[[1
+304
+" Description:  Common function utilities
+" Maintainer:   fanhe <fanhed@163.com>
+" License:      GPLv2
+" Create:       2011-07-15
+" Last Change:  2011-07-15
+
+" 初始化变量, 仅在没有变量定义时才赋值
+" Param1: sVarName - 变量名, 必须是可作为标识符的字符串
+" Param2: defaultVal - 默认值, 可为任何类型
+" Return: 1 表示赋值为默认, 否则为 0
+function! vlutils#InitVariable(sVarName, defaultVal) "{{{2
+    if !exists(a:sVarName)
+        let {a:sVarName} = a:defaultVal
+        return 1
+    endif
+    return 0
+endfunction
+"}}}
+" 与 exec 命令相同，但是运行时 set eventignore=all
+" 主要用于“安全”地运行某些命令，例如窗口跳转
+function! vlutils#Exec(sCmd) "{{{2
+    try
+        exec 'noautocmd' a:sCmd
+    catch
+    endtry
+endfunction
+"}}}
+function! vlutils#NormalizeCmdArg(sCmd) "{{{2
+    return escape(a:sCmd, ' ')
+endfunction
+"}}}
+" 打开指定缓冲区的窗口数目
+function! vlutils#BufInWinCount(nBufNr) "{{{2
+    let nCount = 0
+    let nWinNr = 1
+    while 1
+        let nWinBufNr = winbufnr(nWinNr)
+        if nWinBufNr < 0
+            break
+        endif
+        if nWinBufNr ==# a:nBufNr
+            let nCount += 1
+        endif
+        let nWinNr += 1
+    endwhile
+
+    return nCount
+endfunction
+"}}}
+" 判断窗口是否可用
+" 可用 - 即可用其他窗口替换本窗口而不会令本窗口的内容消失
+function! vlutils#IsWindowUsable(nWinNr) "{{{2
+    let nWinNr = a:nWinNr
+	" 特殊窗口，如特殊缓冲类型的窗口、预览窗口
+    let bIsSpecialWindow = getwinvar(nWinNr, '&buftype') !=# ''
+                \|| getwinvar(nWinNr, '&previewwindow')
+    if bIsSpecialWindow
+        return 0
+    endif
+
+	" 窗口缓冲是否已修改
+    let bModified = getwinvar(nWinNr, '&modified')
+
+	" 如果可允许隐藏，则无论缓冲是否修改
+    if &hidden
+        return 1
+    endif
+
+	" 如果缓冲区没有修改，或者，已修改，但是同时有其他窗口打开着，则表示可用
+	if !bModified || vlutils#BufInWinCount(winbufnr(nWinNr)) >= 2
+		return 1
+	else
+		return 0
+	endif
+endfunction
+"}}}
+" 获取第一个"可用"(常规, 非特殊)的窗口
+" 特殊: 特殊的缓冲区类型、预览缓冲区、已修改的缓冲并且不能隐藏
+" Return: 窗口编号 - -1 表示没有可用的窗口
+function vlutils#GetFirstUsableWinNr() "{{{2
+    let i = 1
+    while i <= winnr("$")
+		if vlutils#IsWindowUsable(i)
+			return i
+		endif
+
+        let i += 1
+    endwhile
+    return -1
+endfunction
+"}}}
+" 获取宽度最大的窗口编号
+function! vlutils#GetMaxWidthWinNr() "{{{2
+	let i = 1
+	let nResult = 0
+	let nMaxWidth = 0
+	while i <= winnr("$")
+		let nCurWidth = winwidth(i)
+		if nCurWidth > nMaxWidth
+			let nMaxWidth = nCurWidth
+			let nResult = i
+		endif
+		let i += 1
+	endwhile
+
+	return nResult
+endfunction
+"}}}
+" 获取高度最大的窗口编号
+function! vlutils#GetMaxHeightWinNr() "{{{2
+	let i = 1
+	let nResult = 0
+	let nMaxHeight = 0
+	while i <= winnr("$")
+		let nCurHeight = winheight(i)
+		if nCurHeight > nMaxHeight
+			let nMaxHeight = nCurHeight
+			let nResult = i
+		endif
+		let i += 1
+	endwhile
+
+	return nResult
+endfunction
+"}}}
+" '优雅地'打开一个文件, 在需要的时候会分割窗口
+" 水平分割和垂直分割的具体方式由 'splitbelow' 和 'splitright' 选项控制
+" vlutils#OpenFile... 系列函数的分割都是这样控制的
+" 只有一个窗口时会垂直分割窗口, 否则是水平分割
+" 规则:
+" 1. 需要打开的文件已经在某个窗口打开, 跳至那个窗口, 结束
+" 2. 如果上一个窗口(wincmd p)可用, 用此窗口打开文件, 结束
+" 3. 如果没有可用的窗口, 且窗口数为 1, 垂直分割打开
+" 4. 如果没有可用的窗口, 且窗口数多于 1, 跳至宽度最大的窗口水平分割打开
+function! vlutils#OpenFile(sFile, ...) "{{{2
+    let sFile = a:sFile
+    if sFile ==# ''
+        return
+    endif
+
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    " 跳回原始窗口的算法
+    " 1. 先保存此窗口的编号, 再保存此窗口对应的缓冲的编号
+    " 2. 打开文件后, 检查保存的窗口是否对应原来的缓冲编号, 如果对应, 跳回,
+    "    否则, 继续算法
+    " 3. 查找到对应保存的缓冲编号的窗口, 若返回有效编号, 跳回, 否则, 不操作
+    let nBackWinNr = winnr()
+    let nBackBufNr = bufnr('%')
+
+    let nBufWinNr = bufwinnr('^' . sFile . '$')
+    if nBufWinNr != -1
+        " 文件已经在某个窗口中打开, 直接跳至那个窗口
+        exec nBufWinNr 'wincmd w'
+    else
+        " 文件没有在某个窗口中打开
+        let nPrevWinNr = winnr('#')
+        if !vlutils#IsWindowUsable(nPrevWinNr)
+            if vlutils#GetFirstUsableWinNr() == -1
+                " 上一个窗口不可用并且没有可用的窗口, 需要分割窗口
+                if winnr('$') == 1
+                    " 窗口总数为 1, 垂直分割
+                    " TODO: 分割方式应该可控制...
+                    exec 'vsplit' vlutils#NormalizeCmdArg(sFile)
+                else
+                    "有多个窗口, 找一个宽度最大的窗口然后水平分割窗口
+                    let nMaxWidthWinNr = vlutils#GetMaxWidthWinNr()
+                    call vlutils#Exec(nMaxWidthWinNr . 'wincmd w')
+                    exec 'split ' . vlutils#NormalizeCmdArg(sFile)
+                endif
+            else
+                call vlutils#Exec(vlutils#GetFirstUsableWinNr() . "wincmd w")
+                exec 'edit' vlutils#NormalizeCmdArg(sFile)
+            endif
+        else
+            call vlutils#Exec('wincmd p')
+            exec 'edit' vlutils#NormalizeCmdArg(sFile)
+        endif
+    endif
+
+    if bKeepCursorPos
+        if winbufnr(nBackWinNr) == nBackBufNr
+            " NOTE: 是否必要排除自动命令?
+            call vlutils#Exec(nBackWinNr . 'wincmd w')
+        elseif bufwinnr(nBackBufNr) != -1
+            call vlutils#Exec(bufwinnr(nBackBufNr) . 'wincmd w')
+        else
+            " 不操作
+        endif
+    endif
+endfunction
+"}}}
+" 在新的标签页中打开文件
+" OptParam: 默认 0, 1 表示不切换到新标签那里, 即保持光标在原始位置
+function! vlutils#OpenFileInNewTab(sFile, ...) "{{{2
+    let sFile = a:sFile
+    if sFile ==# ''
+        return
+    endif
+
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    let nCurTabNr = tabpagenr()
+
+    exec 'tabedit' vlutils#NormalizeCmdArg(sFile)
+
+    if bKeepCursorPos
+        " 跳回原来的标签
+        " 为什么用 ':tabnext' 也可以? 理应用 ':tab'
+        exec 'tabnext' nCurTabNr
+    endif
+endfunction
+"}}}
+" '优雅地'水平分割打开文件
+function! vlutils#OpenFileSplit(sFile, ...) "{{{2
+    let sFile = a:sFile
+    if sFile ==# ''
+        return
+    endif
+
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    let nBackWinNr = winnr()
+    let nBackBufNr = bufnr('%')
+
+    " 跳到宽度最大的窗口再水平分割
+    call vlutils#Exec(vlutils#GetMaxWidthWinNr() . 'wincmd w')
+    exec 'split' vlutils#NormalizeCmdArg(sFile)
+
+    if bKeepCursorPos
+        if winbufnr(nBackWinNr) == nBackBufNr
+            " NOTE: 是否必要排除自动命令?
+            call vlutils#Exec(nBackWinNr . 'wincmd w')
+        elseif bufwinnr(nBackBufNr) != -1
+            call vlutils#Exec(bufwinnr(nBackBufNr) . 'wincmd w')
+        else
+            " 不操作
+        endif
+    endif
+endfunction
+"}}}
+" '优雅地'垂直分割打开文件
+function! vlutils#OpenFileVSplit(sFile, ...) "{{{2
+    let sFile = a:sFile
+    if sFile ==# ''
+        return
+    endif
+
+    let bKeepCursorPos = 0
+    if a:0 > 0
+        let bKeepCursorPos = a:1
+    endif
+
+    let nBackWinNr = winnr()
+    let nBackBufNr = bufnr('%')
+
+    " 跳到宽度最大的窗口再水平分割
+    call vlutils#Exec(vlutils#GetMaxHeightWinNr() . 'wincmd w')
+    exec 'vsplit' vlutils#NormalizeCmdArg(sFile)
+
+    if bKeepCursorPos
+        if winbufnr(nBackWinNr) == nBackBufNr
+            " NOTE: 是否必要排除自动命令?
+            call vlutils#Exec(nBackWinNr . 'wincmd w')
+        elseif bufwinnr(nBackBufNr) != -1
+            call vlutils#Exec(bufwinnr(nBackBufNr) . 'wincmd w')
+        else
+            " 不操作
+        endif
+    endif
+endfunction
+"}}}
+" 简单的计时器静态类
+" NOTE: 这个类第一次调用时不能直接调用方法, 无奈
+let vlutils#Timer = {'t1': 0, 't2': 0} "{{{1
+function! vlutils#Timer.Start() "{{{2
+	let self.t1 = reltime()
+endfunction
+
+function! vlutils#Timer.End() "{{{2
+	let self.t2 = reltime()
+endfunction
+
+function! vlutils#Timer.EchoMes() "{{{2
+	echom string((str2float(reltimestr(self.t2)) 
+				\- str2float(reltimestr(self.t1))))
+endfunction
+
+function! vlutils#Timer.EndEcho() "{{{2
+	call self.End()
+	call self.EchoMes()
+endfunction
+"}}}1
+
+" vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-1671
+1679
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -12337,6 +12999,14 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
                 " tokens 为空, 无效声明, 跳过
                 continue
             endif
+
+            " 排除在注释或字符串中的情形
+            " 比较慢, 暂时禁用
+            "if g:VLOmniCpp_EnableSyntaxTest
+                "if omnicpp#utils#IsCursorInCommentOrString()
+                    "continue
+                "endif
+            "endif
 
             " 解析声明
             let dTypeInfo = omnicpp#utils#GetVariableType(lTokens, a:sVariable)

@@ -104,6 +104,7 @@ class VLWorkspace:
         self.activeProject = ''
         self.modifyTime = 0
         self.filesIndex = {} # 用于从文件名快速定位所在位置(项目，目录等)的数据
+                             # {文件绝对路径: xml 节点}
 
         if fileName:
             try:
@@ -180,7 +181,7 @@ class VLWorkspace:
         '''设置索引偏移量
         
         offset 为相对于首行的偏移量，若在首行，即为 0'''
-        self.lineOffset = CONSTANT_OFFSET + num
+        self.lineOffset = CONSTANT_OFFSET + offset
 
     def DoGetTypeOfNode(self, node):
         if not node:
@@ -632,7 +633,8 @@ class VLWorkspace:
                 break
             i = next
 
-    def GetRootLineNum(self, lineNum):#
+    def GetRootLineNum(self, lineNum = 0):#
+        '''获取根节点的行号, 参数仅仅用于保持形式, 除此以外别无他用'''
         return 1 + self.lineOffset - 2
 
     def GetParentLineNum(self, lineNum):#
