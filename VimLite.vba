@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-4355
+4337
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -283,27 +283,6 @@ function! s:exec(cmd) "忽略所有事件运行 cmd {{{2
     exec a:cmd
     let &ei = bak_ei
 endfunction
-
-
-"FUNCTION: s:GetFirstUsableWindow() 获取第一个'常规'的窗口 {{{2
-if exists('*g:GetFirstUsableWindow')
-    let s:GetFirstUsableWindow = function('g:GetFirstUsableWindow')
-else
-    function! s:GetFirstUsableWindow()
-        let i = 1
-        while i <= winnr("$")
-            let bnum = winbufnr(i)
-            if bnum != -1 && getbufvar(bnum, '&buftype') ==# ''
-                        \ && !getwinvar(i, '&previewwindow')
-                        \ && (!getbufvar(bnum, '&modified') || &hidden)
-                return i
-            endif
-
-            let i += 1
-        endwhile
-        return -1
-    endfunction
-endif
 
 
 function! s:OpenFile(sFile, ...) "优雅地打开一个文件 {{{2
@@ -1171,7 +1150,7 @@ function! s:DbgStart() "{{{2
         " 否则出现灵异事件. 这条命令会最后才运行
         Cpwd
 
-        if filereadable(dbgProjFile)
+        if g:VLWDbgSaveBreakpointsInfo && filereadable(dbgProjFile)
             py ws.DebugActiveProject(True)
         else
             py ws.DebugActiveProject(False)
@@ -4400,7 +4379,10 @@ class VimLiteWorkspace():
                         if project.dirName:
                             os.chdir(project.dirName)
                         if not os.path.exists(name):
-                            os.makedirs(os.path.dirname(name))
+                            try:
+                                os.makedirs(os.path.dirname(name))
+                            except OSError:
+                                pass
                             os.mknod(name, 0644)
                     except:
                         # 创建文件失败

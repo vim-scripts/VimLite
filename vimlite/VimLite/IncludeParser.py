@@ -118,6 +118,7 @@ def GetRawIncludeList(file):
 
     try:
         f = open(file)
+        #p = re.compile(r'^\s*#\s*include\s*(<[^>]+>|"[^"]+")')
         p = re.compile(r'^\s*#\s*include\s+(<[^>]+>|"[^"]+")')
         for l in f:
             m = p.match(l)
@@ -134,6 +135,41 @@ def GetRawIncludeList(file):
             CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
 
         return ret
+
+def GetRawIncludeList2(file):
+    '''获取包含文件列表, 包含 <> 或 ""
+    这个函数表面上看更快, 实际上更慢!
+    
+    #include <stdio.h> -> <stdio.h>
+    #include "stdio.h" -> "stdio.h"
+    '''
+
+    if enableCache:
+        # NOTE: 时间戳比较应该用 ==
+        if CACHE_RAWINCLUDELIST.has_key(file) and \
+           int(os.path.getmtime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
+            ret = CACHE_RAWINCLUDELIST[file]['inclist']
+            return ret
+
+    output = os.popen(r'''mawk '/^[ \t]*#[ \t]*include[ \t]*(<[^>]+>|"[^"]+")/ {sub(/^[ \t]*#[ \t]*include[ \t]*/, "");if(match($0, /(<[^>]+>|"[^"]+")/)) print substr($0, RESTART, RLENGTH+1)}' "%s"''' % file).read()
+    ret = output.split('\n')
+    try:
+        while not ret[-1]:
+            ret.pop(-1)
+    except:
+        pass
+
+    # 缓存结果
+    if enableCache:
+        try:
+            CACHE_RAWINCLUDELIST[file] = {}
+            CACHE_RAWINCLUDELIST[file]['inclist'] = ret
+            CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+        except:
+            # 文件不存在的话, 走到这里
+            del CACHE_RAWINCLUDELIST[file]
+
+    return ret
 
 def DoGetIncludeFiles(file, guard):
     '''file 必须为绝对路径'''
