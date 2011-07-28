@@ -19,8 +19,9 @@ class TagsSettings:
         self.tagsTokens = [] # 宏处理符号
         self.tagsTypes = [] # 类型映射符号
 
-        # 如果指定了 fileName, 从文件载入, 不论成功与否
-        self.Load()
+        # 如果指定了 fileName, 从文件载入
+        if fileName:
+            self.Load(fileName)
 
     def SetFileName(self, fileName):
         self.fileName = fileName
@@ -121,12 +122,13 @@ class TagsSettingsST:
             if not TagsSettingsST.__ins.Load(CONFIG_FILE):
                 # 文件不存在, 新建默认设置文件
                 GenerateDefaultTagsSettings()
-                print TagsSettingsST.__ins.Save(CONFIG_FILE)
+                TagsSettingsST.__ins.Save(CONFIG_FILE)
             TagsSettingsST.__ins.SetFileName(CONFIG_FILE)
         return TagsSettingsST.__ins
 
     @staticmethod
     def Free():
+        del TagsSettingsST.__ins
         TagsSettingsST.__ins = None
 
 

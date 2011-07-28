@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-4337
+4677
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -246,7 +246,8 @@ command! -nargs=0 -bar VLWDbgRunToCursor    call <SID>DbgRunToCursor()
 command! -nargs=0 -bar VLWDbgContinue       call <SID>DbgContinue()
 command! -nargs=0 -bar VLWDbgToggleBp       call <SID>DbgToggleBreakpoint()
 
-command! -nargs=0 -bar VLWTagsSetttings call <SID>TagsSettings()
+"command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
+command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
 
 
 function! g:VLWGetAllFiles() "{{{2
@@ -668,12 +669,13 @@ endfunction
 
 
 function! s:InstallMenuBarMenu() "{{{2
-    "anoremenu 200.10 &VimLite.Environment\ Settings\.\.\. <Nop>
-    "anoremenu 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
-    "anoremenu 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
+    "anoremenu <silent> 200.10 &VimLite.Environment\ Variables\ Settings\.\.\. 
+                "\:call <SID>EnvVarSettings()<CR>
+    "anoremenu <silent> 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
+    "anoremenu <silent> 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
 
     if !g:VLWorkspaceUseClangCC
-        anoremenu 200.20 &VimLite.Tags\ Settings\.\.\. 
+        anoremenu <silent> 200.20 &VimLite.Tags\ Settings\.\.\. 
                     \:call <SID>TagsSettings()<CR>
     endif
 endfunc
@@ -1104,9 +1106,12 @@ function! s:DbgToggleBreakpoint() "{{{2
             let sSignName = matchstr(sLine, '\Cname=\zs\w\+\>')
             if nSignLine == nCurLine && sSignName !=# sCursorSignName
                 " 获取断点的编号, 按编号删除
-                let nID = str2nr(matchstr(sLine, '\Cid=\zs\d\+'))
+                "let nID = str2nr(matchstr(sLine, '\Cid=\zs\d\+'))
+                " 获取断点的名字, 按名字删除
+                let sName = matchstr(sLine, '\Cid=\zs\w\+')
                 for sLine2 in split(g:GetCmdOutput('sign list'), "\n")
-                    if matchstr(sLine2, '\C^sign ' . nID) !=# ''
+                    "if matchstr(sLine2, '\C^sign ' . nID) !=# ''
+                    if matchstr(sLine2, '\C^sign ' . sName) !=# ''
                         let sBpID = matchstr(sLine2, '\Ctext=\zs\d\+')
                         exec 'Cdelete ' . sBpID
                         break
@@ -1156,7 +1161,12 @@ function! s:DbgStart() "{{{2
             py ws.DebugActiveProject(False)
         endif
     else
-        silent Crun
+        let sLastDbgOutput = getbufline(bufnr('(clewn)_console'), '$')[0]
+        if sLastDbgOutput !=# '(gdb) '
+            " 正在运行, 中断之, 重新运行
+            Csigint
+        endif
+        Crun
     endif
 endfunction
 
@@ -1268,21 +1278,21 @@ function! s:CreateWorkspace(...) "{{{2
     let ctl = g:VCSingleText.New('Workspace Name:')
     call ctl.SetId(0)
     call g:newWspDialog.AddControl(ctl)
-    call g:newWspDialog.AddBlankline()
+    call g:newWspDialog.AddBlankLine()
     let tmpCtl = ctl
 
     let ctl = g:VCSingleText.New('Workspace Path:')
     call ctl.SetValue(getcwd())
     call ctl.SetId(1)
     call g:newWspDialog.AddControl(ctl)
-    call g:newWspDialog.AddBlankline()
+    call g:newWspDialog.AddBlankLine()
     let tmpCtl1 = ctl
 
     let ctl = g:VCCheckItem.New(
                 \'Create the workspace under a seperate directory')
     call ctl.SetId(2)
     call g:newWspDialog.AddControl(ctl)
-    call g:newWspDialog.AddBlankline()
+    call g:newWspDialog.AddBlankLine()
     let tmpCtl2 = ctl
 
     let ctl = g:VCStaticText.New('File Name:')
@@ -1292,9 +1302,9 @@ function! s:CreateWorkspace(...) "{{{2
     call ctl.SetIndent(8)
     call ctl.SetHighlight('Special')
     call g:newWspDialog.AddControl(ctl)
-    call tmpCtl.ConnectCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
-    call tmpCtl1.ConnectCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
-    call tmpCtl2.ConnectCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
+    call tmpCtl.ConnectActionPostCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
+    call tmpCtl1.ConnectActionPostCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
+    call tmpCtl2.ConnectActionPostCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
 
     call g:newWspDialog.AddCallback(s:GetSFuncRef("s:CreateWorkspace"))
     call g:newWspDialog.Display()
@@ -1468,7 +1478,7 @@ PYTHON_EOF
     let ctl = g:VCSingleText.New('Project Name:')
     call ctl.SetId(0)
     call g:newProjDialog.AddControl(ctl)
-    call g:newProjDialog.AddBlankline()
+    call g:newProjDialog.AddBlankLine()
     let tmpCtl = ctl
 
     let ctl = g:VCSingleText.New('Project Path:')
@@ -1480,13 +1490,13 @@ PYTHON_EOF
 
     call ctl.SetId(1)
     call g:newProjDialog.AddControl(ctl)
-    call g:newProjDialog.AddBlankline()
+    call g:newProjDialog.AddBlankLine()
     let tmpCtl1 = ctl
 
     let ctl = g:VCCheckItem.New('Create the project under a seperate directory')
     call ctl.SetId(2)
     call g:newProjDialog.AddControl(ctl)
-    call g:newProjDialog.AddBlankline()
+    call g:newProjDialog.AddBlankLine()
     let tmpCtl2 = ctl
 
     let ctl = g:VCStaticText.New('File Name:')
@@ -1496,10 +1506,10 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.SetHighlight('Special')
     call g:newProjDialog.AddControl(ctl)
-    call g:newProjDialog.AddBlankline()
-    call tmpCtl.ConnectCallback(s:GetSFuncRef('s:CreateProject'), ctl)
-    call tmpCtl1.ConnectCallback(s:GetSFuncRef('s:CreateProject'), ctl)
-    call tmpCtl2.ConnectCallback(s:GetSFuncRef('s:CreateProject'), ctl)
+    call g:newProjDialog.AddBlankLine()
+    call tmpCtl.ConnectActionPostCallback(s:GetSFuncRef('s:CreateProject'), ctl)
+    call tmpCtl1.ConnectActionPostCallback(s:GetSFuncRef('s:CreateProject'), ctl)
+    call tmpCtl2.ConnectActionPostCallback(s:GetSFuncRef('s:CreateProject'), ctl)
 
     " 项目类型
     "let ctl = g:VCComboBox.New('Project Type:')
@@ -1509,7 +1519,7 @@ PYTHON_EOF
     "call ctl.AddItem('Executable')
     "call ctl.SetValue('Executable')
     "call g:newProjDialog.AddControl(ctl)
-    "call g:newProjDialog.AddBlankline()
+    "call g:newProjDialog.AddBlankLine()
 
     " 编译器
     let ctl = g:VCComboBox.New('Compiler Type:')
@@ -1520,7 +1530,7 @@ PYTHON_EOF
     call ctl.AddItem('gnu gcc')
     call ctl.SetValue('gnu gcc')
     call g:newProjDialog.AddControl(ctl)
-    call g:newProjDialog.AddBlankline()
+    call g:newProjDialog.AddBlankLine()
 
     let cmpTypeCtl = ctl
 
@@ -1539,7 +1549,7 @@ PYTHON_EOF
     call tblCtl.SetSelection(1)
     call tblCtl.SetDispButtons(0)
     call g:newProjDialog.AddControl(tblCtl)
-    call ctl.ConnectCallback(
+    call ctl.ConnectActionPostCallback(
                 \s:GetSFuncRef('s:CreateProjectCategoriesCbk'), tblCtl)
     call tblCtl.ConnectSelectionCallback(
                 \s:GetSFuncRef('s:TemplatesTableCbk'), cmpTypeCtl)
@@ -1744,6 +1754,245 @@ endfunction
 "===============================================================================
 "使用控件系统的交互操作
 "===============================================================================
+"=================== 环境变量设置 ===================
+"{{{1
+"标识用控件 ID {{{2
+let s:ID_EnvVarSettingsEnvVarSets = 100
+let s:ID_EnvVarSettingsEnvVarList = 101
+
+
+function! s:EnvVarSettings() "{{{2
+    let dlg = s:CreateEnvVarSettingsDialog()
+    call dlg.Display()
+endfunction
+
+function! s:NewSetCbk(ctl, data) "{{{2
+    echohl Question
+    let sNewSet = input("Enter Name:\n")
+    echohl None
+    if sNewSet ==# ''
+        return 0
+    endif
+
+    let ctl = a:ctl
+    let nSetsID = s:ID_EnvVarSettingsEnvVarSets
+    let nListID = s:ID_EnvVarSettingsEnvVarList
+    let dlg = ctl.owner
+    let dSetsCtl = dlg.GetControlByID(nSetsID)
+    let dListCtl = dlg.GetControlByID(nListID)
+
+    if !empty(dSetsCtl)
+        "检查同名
+        if index(dSetsCtl.GetItems(), sItem) != -1
+            return 0
+        endif
+
+        call dSetsCtl.AddItem(sNewSet)
+        call dSetsCtl.SetValue(sNewSet)
+        call dlg.RefreshCtl(dSetsCtl)
+
+        "更新 data
+        let data = dSetsCtl.GetData()
+        let data[sNewSet] = []
+        call dSetsCtl.SetData(data)
+
+        if !empty(dListCtl)
+            call dListCtl.DeleteAllLines()
+            call dlg.RefreshCtl(dListCtl)
+
+            "更新 data
+            call dListCtl.SetData(sNewSet)
+        endif
+    endif
+
+    return 0
+endfunction
+
+function! s:DeleteSetCbk(ctl, data) "{{{2
+    let ctl = a:ctl
+    let nSetsID = s:ID_EnvVarSettingsEnvVarSets
+    let nListID = s:ID_EnvVarSettingsEnvVarList
+    let dlg = ctl.owner
+    let dSetsCtl = dlg.GetControlByID(nSetsID)
+    let dListCtl = dlg.GetControlByID(nListID)
+
+    if empty(dSetsCtl) || dSetsCtl.GetValue() ==# 'Default'
+        "不能删除默认组
+        return 0
+    endif
+
+    if !empty(dSetsCtl)
+        let sCurSet = dSetsCtl.GetValue()
+        let data = dSetsCtl.GetData()
+        if has_key(data, sCurSet)
+            call remove(data, sCurSet)
+        endif
+        call dSetsCtl.RemoveItem(sCurSet)
+        call dlg.RefreshCtl(dSetsCtl)
+
+        if !empty(dListCtl)
+            call dListCtl.DeleteAllLines()
+            for sEnvVarExpr in dSetsCtl.GetData()[dSetsCtl.GetValue()]
+                call dListCtl.AddLineByValues(sEnvVarExpr)
+            endfor
+            call dListCtl.SetData(dSetsCtl.GetValue())
+            call dlg.RefreshCtl(dListCtl)
+        endif
+    endif
+
+    return 0
+endfunction
+
+function! s:AddEnvVarCbk(ctl, data) "{{{2
+    echohl Question
+    let input = input("New Environment Variable:\n")
+    echohl None
+    if input != ''
+        call a:ctl.AddLineByValues(input)
+    endif
+endfunction
+
+function! s:EditEnvVarCbk(ctl, data) "{{{2
+    let value = a:ctl.GetSelectedLine()[0]
+    echohl Question
+    let input = input("Edit Environment Variable:\n", value)
+    echohl None
+    if input != '' && input != value
+        call a:ctl.SetCellValue(a:ctl.selection, 0, input)
+    endif
+endfunction
+
+function! s:ChangeEditingEnvVarSetCbk(ctl, data) "{{{2
+    let dSetsCtl = a:ctl
+    let dListCtl = a:data
+    let dData = dSetsCtl.GetData()
+    let sCurSet = dListCtl.GetData()
+
+    "更新 data
+    if has_key(dData, sCurSet)
+        call filter(dData[sCurSet], 0)
+        for lLine in dListCtl.table
+            call add(dData[sCurSet], lLine[0])
+        endfor
+    endif
+
+    call dListCtl.DeleteAllLines()
+    for sEnvVarExpr in dData[dSetsCtl.GetValue()]
+        call dListCtl.AddLineByValues(sEnvVarExpr)
+    endfor
+    call dListCtl.SetData(dSetsCtl.GetValue())
+    call dSetsCtl.owner.RefreshCtl(dListCtl)
+endfunction
+
+function! s:SaveEnvVarSettingsCbk(dlg, data) "{{{2
+    py ins = EnvVarSettingsST.Get()
+    py ins.DeleteAllEnvVarSets()
+    let sCurSet = ''
+    for ctl in a:dlg.controls
+        if ctl.GetId() == s:ID_EnvVarSettingsEnvVarSets
+            let sCurSet = ctl.GetValue()
+            let dData = ctl.GetData()
+            for item in items(dData)
+                if sCurSet ==# item[0]
+                    "跳过 data 中的 sCurSet 的数据, 应该用 table 控件的数据
+                    continue
+                endif
+                py ins.NewEnvVarSet(vim.eval("item[0]"))
+                for expr in item[1]
+                    py ins.AddEnvVar(vim.eval("item[0]"), vim.eval("expr"))
+                endfor
+            endfor
+        elseif ctl.GetId() == s:ID_EnvVarSettingsEnvVarList
+            let table = ctl.table
+            py ins.NewEnvVarSet(vim.eval("sCurSet"))
+            py ins.ClearEnvVarSet(vim.eval("sCurSet"))
+            for line in table
+                py ins.AddEnvVar(vim.eval("sCurSet"), vim.eval("line[0]"))
+            endfor
+        endif
+    endfor
+    "保存
+    py ins.Save()
+    py del ins
+endfunction
+
+function! s:CreateEnvVarSettingsDialog() "{{{2
+    let dlg = g:VimDialog.New('==Environment Variables Settings==')
+    py ins = EnvVarSettingsST.Get()
+
+    "1.EnvVarSets
+    "===========================================================================
+    let ctl = g:VCStaticText.New('Available Environment Sets')
+    call ctl.SetIndent(4)
+    call dlg.AddControl(ctl)
+
+    let ctl = g:VCButtonLine.New('')
+    call ctl.SetIndent(4)
+    call ctl.AddButton('New Set...')
+    call ctl.AddButton('Delete Set')
+    call ctl.ConnectButtonCallback(0, s:GetSFuncRef('s:NewSetCbk'), '')
+    call ctl.ConnectButtonCallback(1, s:GetSFuncRef('s:DeleteSetCbk'), '')
+    call dlg.AddControl(ctl)
+
+    let ctl = g:VCComboBox.New('')
+    let dSetsCtl = ctl
+    call ctl.SetId(s:ID_EnvVarSettingsEnvVarSets)
+    call ctl.SetIndent(4)
+    py vim.command("let lEnvVarSets = %s" % ins.envVarSets.keys())
+    call sort(lEnvVarSets)
+    for sEnvVarSet in lEnvVarSets
+        call ctl.AddItem(sEnvVarSet)
+    endfor
+    py vim.command("let sActiveSetName = '%s'" % ins.GetActiveSetName())
+    call ctl.SetValue(sActiveSetName)
+    call dlg.AddControl(ctl)
+
+    "2.EnvVarList
+    "===========================================================================
+    let ctl = g:VCTable.New('')
+    let dListCtl = ctl
+    call ctl.SetId(s:ID_EnvVarSettingsEnvVarList)
+    call ctl.SetDispHeader(0)
+    call ctl.SetIndent(4)
+    call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddEnvVarCbk'), '')
+    call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditEnvVarCbk'), '')
+    call dlg.AddControl(ctl)
+
+    call dlg.AddBlankLine()
+
+    call dSetsCtl.ConnectActionPostCallback(
+                \s:GetSFuncRef('s:ChangeEditingEnvVarSetCbk'), dListCtl)
+
+    call dlg.ConnectSaveCallback(s:GetSFuncRef("s:SaveEnvVarSettingsCbk"), "")
+
+python << PYTHON_EOF
+def CreateEnvVarSettingsData():
+    ins = EnvVarSettingsST.Get()
+    vim.command('let dData = {}')
+    for setName, envVars in ins.envVarSets.iteritems():
+        vim.command("let dData['%s'] = []" % setName)
+        for envVar in envVars:
+            vim.command("call add(dData['%s'], '%s')" 
+                        \% (setName, envVar.GetString()))
+CreateEnvVarSettingsData()
+PYTHON_EOF
+
+    "私有变量保存环境变量全部数据
+    call dSetsCtl.SetData(dData)
+    if has_key(dData, dSetsCtl.GetValue())
+        for sEnvVarExpr in dData[dSetsCtl.GetValue()]
+            call dListCtl.AddLineByValues(sEnvVarExpr)
+        endfor
+    endif
+    "私有变量保存当前环境变量列表的 setName
+    call dListCtl.SetData(dSetsCtl.GetValue())
+
+    call dlg.AddFooterButtons()
+
+    py del ins
+    return dlg
+endfunction
+"}}}1
 "=================== tags 设置 ===================
 "{{{1
 "标识用控件 ID {{{2
@@ -1786,7 +2035,7 @@ function! s:CreateTagsSettingsDialog() "{{{2
     let ctl = g:VCStaticText.New("Include Files")
     call ctl.SetHighlight("Special")
     call dlg.AddControl(ctl)
-    call dlg.AddBlankline()
+    call dlg.AddBlankLine()
 
     let ctl = g:VCTable.New('Add search paths for the parser.', 1)
     call ctl.SetId(s:ID_TagsSettingsIncludePaths)
@@ -1799,7 +2048,7 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
     call dlg.AddControl(ctl)
-    call dlg.AddBlankline()
+    call dlg.AddBlankLine()
 
     let ctl = g:VCMultiText.New("Tokens")
     call ctl.SetId(s:ID_TagsSettingsTagsTokens)
@@ -1808,7 +2057,7 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call ctl.SetValue(tagsTokens)
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "")
     call dlg.AddControl(ctl)
-    call dlg.AddBlankline()
+    call dlg.AddBlankLine()
 
     let ctl = g:VCMultiText.New("Types")
     call ctl.SetId(s:ID_TagsSettingsTagsTypes)
@@ -1817,9 +2066,11 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call ctl.SetValue(tagsTypes)
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "")
     call dlg.AddControl(ctl)
-    call dlg.AddBlankline()
+    call dlg.AddBlankLine()
 
     call dlg.ConnectSaveCallback(s:GetSFuncRef("s:SaveTagsSettingsCbk"), "")
+
+    call dlg.AddFooterButtons()
 
     py del ins
     return dlg
@@ -2081,15 +2332,27 @@ PYTHON_EOF
     endif
 endfunction
 
+function! s:WspBCMChangePreCbk(ctl, data) "{{{2
+    "返回 1 表示不继续处理控件的 Action
+    "目的在于保存改变前的值
+    let ctl = a:ctl
+    let dlg = ctl.owner
+    call ctl.SetData(ctl.GetValue())
+
+    return 0
+endfunction
+
 function! s:WspBCMCbk(ctl, data) "{{{2
+    let ctl = a:ctl
     let dlg = a:ctl.owner
     if a:ctl.id == s:WspConfigurationCtlID
+    "工作空间的构建设置
         let wspSelConfName = a:ctl.GetValue()
         if wspSelConfName == '<New...>'
             let input = input("\nEnter New Configuration Name:\n")
             let copyFrom = a:ctl.GetPrevValue()
             call a:ctl.SetValue(copyFrom)
-            if input != '' && index(a:ctl.items, input) == -1
+            if input != '' && index(a:ctl.GetItems(), input) == -1
                 call a:ctl.InsertItem(input, -2)
 python << PYTHON_EOF
 def NewWspConfig(newConfName, copyFrom):
@@ -2099,8 +2362,8 @@ def NewWspConfig(newConfName, copyFrom):
     matrix = g_wspBuildMatrix
     copyFromConf = matrix.GetConfigurationByName(copyFrom)
     if not copyFromConf:
-        wspSelConfName = self.GetSelectedConfigurationName()
-        newWspConf = self.GetConfigurationByName(wspSelConfName)
+        wspSelConfName = matrix.GetSelectedConfigurationName()
+        newWspConf = matrix.GetConfigurationByName(wspSelConfName)
     else:
         newWspConf = copyFromConf.Clone()
     newWspConf.SetName(newConfName)
@@ -2126,13 +2389,36 @@ PYTHON_EOF
             call newCtl.DisableButton(3)
             call newCtl.DisableButton(4)
             call newCtl.DisableButton(5)
-            for item in a:ctl.items
+            for item in a:ctl.GetItems()
                 if item != '<New...>' && item != '<Edit...>'
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
             call editConfigsDlg.Display()
         else
+            let bModified = dlg.GetData()
+            if bModified
+                echohl WarningMsg
+                let sAnswer = input("Settings for workspace configuration '"
+                            \. a:ctl.GetData()
+                            \."' have been changed, would you like to save"
+                            \." them? (y/n): ", "y")
+                echohl None
+                if sAnswer ==? 'y'
+                    redraw
+                    "保存前切换到之前的值
+                    let bak_value = ctl.GetValue()
+                    call ctl.SetValue(ctl.GetData())
+                    silent call dlg.Save()
+                    call ctl.SetValue(bak_value)
+                elseif sAnswer ==? 'n'
+                    "继续
+                else
+                    "返回
+                    call ctl.SetValue(ctl.GetData())
+                    return 1
+                endif
+            endif
             py matrix = g_wspBuildMatrix
             for ctl in dlg.controls
                 if ctl.gId == s:BuildMatrixMappingGID
@@ -2141,14 +2427,16 @@ PYTHON_EOF
                                 \% matrix.GetProjectSelectedConf(
                                 \vim.eval("wspSelConfName"), 
                                 \vim.eval("projName")))
-                    "echo ctl.data
+                    "echo ctl.GetData()
                 endif
             endfor
             py del matrix
             call dlg.RefreshAll()
+            "标记为未修改
+            call dlg.SetData(0)
         endif
     else
-        let ctl = a:ctl
+    "项目的构建设置
         let value = ctl.GetValue()
         if value == '<New...>'
             call a:ctl.SetValue(a:ctl.GetPrevValue())
@@ -2156,12 +2444,12 @@ PYTHON_EOF
             let newCtl = g:VCSingleText.New('Configuration Name:')
             call newCtl.SetId(1)
             call newConfDlg.AddControl(newCtl)
-            call newConfDlg.AddBlankline()
+            call newConfDlg.AddBlankLine()
 
             let newCtl = g:VCComboBox.New('Copy Settings From:')
             call newCtl.SetId(2)
             call newCtl.AddItem('--None--')
-            for item in ctl.items
+            for item in ctl.GetItems()
                 if item != '<New...>' && item != '<Edit...>'
                     call newCtl.AddItem(item)
                 endif
@@ -2186,14 +2474,47 @@ PYTHON_EOF
             call newCtl.DisableButton(3)
             call newCtl.DisableButton(4)
             call newCtl.DisableButton(5)
-            for item in ctl.items
+            for item in ctl.GetItems()
                 if item != '<New...>' && item != '<Edit...>'
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
             call editConfigsDlg.Display()
+        else
+            "标记为已修改
+            call dlg.SetData(1)
         endif
     endif
+endfunction
+
+function! s:WspBCMSaveCbk(dlg, data) "{{{2
+python << PYTHON_EOF
+def WspBCMSaveCbk(wspConfName, projName, confName):
+    global g_wspBuildMatrix
+    matrix = g_wspBuildMatrix
+    wspConf = matrix.GetConfigurationByName(wspConfName)
+    if wspConf:
+        for mapping in wspConf.GetMapping():
+            if mapping.project == projName:
+                mapping.name = confName
+                break
+PYTHON_EOF
+    let dlg = a:dlg
+    let wspConfName = ''
+    for ctl in dlg.controls
+        if ctl.GetId() == s:WspConfigurationCtlID
+            let wspConfName = ctl.GetValue()
+        elseif ctl.GetGId() == s:BuildMatrixMappingGID
+            let projName = ctl.GetData()
+            let confName = ctl.GetValue()
+            py WspBCMSaveCbk(vim.eval('wspConfName'), vim.eval('projName'), 
+                        \vim.eval('confName'))
+        endif
+    endfor
+
+    "保存
+    py ws.VLWIns.SetBuildMatrix(g_wspBuildMatrix)
+    "py del g_wspBuildMatrix
 endfunction
 
 function! s:CreateWspBuildConfDialog() "{{{2
@@ -2212,10 +2533,11 @@ def CreateWspBuildConfDialog():
     vim.command("call ctl.SetValue('%s')" % wspSelConfName)
     vim.command("call ctl.AddItem('<New...>')")
     vim.command("call ctl.AddItem('<Edit...>')")
-    vim.command("call ctl.ConnectCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
+    vim.command("call ctl.ConnectActionCallback(s:GetSFuncRef('s:WspBCMChangePreCbk'), '')")
+    vim.command("call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
     vim.command("call wspBCMDlg.AddSeparator()")
     vim.command("call wspBCMDlg.AddControl(g:VCStaticText.New('Available project configurations:'))")
-    vim.command("call wspBCMDlg.AddBlankline()")
+    vim.command("call wspBCMDlg.AddBlankLine()")
 
     projectNameList = ws.VLWIns.projects.keys()
     projectNameList.sort(VLWorkspace.Cmp)
@@ -2225,7 +2547,7 @@ def CreateWspBuildConfDialog():
         vim.command("call ctl.SetGId(s:BuildMatrixMappingGID)")
         vim.command("call ctl.SetData('%s')" % projName)
         vim.command("call ctl.SetIndent(4)")
-        vim.command("call ctl.ConnectCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
+        vim.command("call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
         vim.command("call wspBCMDlg.AddControl(ctl)")
         for confName in project.GetSettings().configs.keys():
             vim.command("call ctl.AddItem('%s')" % confName)
@@ -2233,9 +2555,12 @@ def CreateWspBuildConfDialog():
         vim.command("call ctl.SetValue('%s')" % projSelConfName)
         vim.command("call ctl.AddItem('<New...>')")
         vim.command("call ctl.AddItem('<Edit...>')")
-        vim.command("call wspBCMDlg.AddBlankline()")
+        vim.command("call wspBCMDlg.AddBlankLine()")
 CreateWspBuildConfDialog()
 PYTHON_EOF
+    call wspBCMDlg.SetData(0)
+    call wspBCMDlg.ConnectSaveCallback(s:GetSFuncRef('s:WspBCMSaveCbk'), '')
+    call wspBCMDlg.AddFooterButtons()
     return wspBCMDlg
 endfunction
 "}}}1
@@ -2291,7 +2616,7 @@ function! s:SaveWspSettingsCbk(dlg, data) "{{{2
 endfunction
 
 function! s:AddSearchPathCbk(ctl, data) "{{{2
-    echohl Character
+    echohl Question
     let input = input("Add Parser Search Path:\n")
     echohl None
     if input != ''
@@ -2301,7 +2626,7 @@ endfunction
 
 function! s:EditSearchPathCbk(ctl, data) "{{{2
     let value = a:ctl.GetSelectedLine()[0]
-    echohl Character
+    echohl Question
     let input = input("Edit Search Path:\n", value)
     echohl None
     if input != '' && input != value
@@ -2317,7 +2642,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     let ctl = g:VCStaticText.New("Include Files")
     call ctl.SetHighlight("Special")
     call wspSettingsDlg.AddControl(ctl)
-    call wspSettingsDlg.AddBlankline()
+    call wspSettingsDlg.AddBlankLine()
 
     let ctl = g:VCTable.New('Add search paths for the parser.', 1)
     call ctl.SetId(s:ID_WspSettingsIncludePaths)
@@ -2330,7 +2655,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
     call wspSettingsDlg.AddControl(ctl)
-    call wspSettingsDlg.AddBlankline()
+    call wspSettingsDlg.AddBlankLine()
 
     let ctl = g:VCMultiText.New("Tokens")
     call ctl.SetId(s:ID_WspSettingsTagsTokens)
@@ -2339,7 +2664,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     call ctl.SetValue(tagsTokens)
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "")
     call wspSettingsDlg.AddControl(ctl)
-    call wspSettingsDlg.AddBlankline()
+    call wspSettingsDlg.AddBlankLine()
 
     let ctl = g:VCMultiText.New("Types")
     call ctl.SetId(s:ID_WspSettingsTagsTypes)
@@ -2348,11 +2673,12 @@ function! s:CreateWspSettingsDialog() "{{{2
     call ctl.SetValue(tagsTypes)
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "")
     call wspSettingsDlg.AddControl(ctl)
-    call wspSettingsDlg.AddBlankline()
+    call wspSettingsDlg.AddBlankLine()
 
     call wspSettingsDlg.ConnectSaveCallback(
                 \s:GetSFuncRef("s:SaveWspSettingsCbk"), "")
 
+    call wspSettingsDlg.AddFooterButtons()
     return wspSettingsDlg
 endfunction
 "}}}1
@@ -2601,7 +2927,10 @@ endfunction
 
 function! s:EditOptionsBtnCbk(ctl, data) "{{{2
     let g:editDialog = g:VimDialog.New('Edit', a:ctl.owner)
-    let content = join(split(a:ctl.GetValue(), ';'), "\n") . "\n"
+    let content = join(split(a:ctl.GetValue(), ';'), "\n")
+    if content !=# ''
+        let content .= "\n"
+    endif
     call g:editDialog.SetIsPopup(1)
     call g:editDialog.SetAsTextCtrl(1)
     call g:editDialog.SetTextContent(content)
@@ -2618,7 +2947,7 @@ function! s:EditOptionsSaveCbk(dlg, data) "{{{2
 endfunction
 
 function! s:AddBuildTblLineCbk(ctl, data) "{{{2
-    echohl Character
+    echohl Question
     let input = input("New Command:\n")
     echohl None
     if input != ''
@@ -2627,7 +2956,7 @@ function! s:AddBuildTblLineCbk(ctl, data) "{{{2
 endfunction
 function! s:EditBuildTblLineCbk(ctl, data) "{{{2
     let value = a:ctl.GetSelectedLine()[1]
-    echohl Character
+    echohl Question
     let input = input("Edit Command:\n", value)
     echohl None
     if input != '' && input != value
@@ -2637,7 +2966,7 @@ endfunction
 
 function! s:CustomBuildTblAddCbk(ctl, data) "{{{2
     let ctl = a:ctl
-    echohl Character
+    echohl Question
     let input = input("New Target:\n")
     echohl None
     if input != ''
@@ -2674,8 +3003,15 @@ endfunction
 
 function! s:GetAvailableMacrosHelpText() "{{{2
     let vimliteHelp = '===== Available Macros: =====' . "\n"
-    let vimliteHelp .= "$(ProjectPath)           "
-                \."Expand to the project path" . "\n"
+
+    let vimliteHelp .= "$(User)                  "
+                \."Expand to logged-in user as defined by the OS" . "\n"
+
+    let vimliteHelp .= "$(Date)                  "
+                \."Expand to current date" . "\n"
+
+    let vimliteHelp .= "$(WorkspaceName)         "
+                \."Expand to the workspace name" . "\n"
 
     let vimliteHelp .= "$(WorkspacePath)         "
                 \."Expand to the workspace path" . "\n"
@@ -2683,31 +3019,18 @@ function! s:GetAvailableMacrosHelpText() "{{{2
     let vimliteHelp .= "$(ProjectName)           "
                 \."Expand to the project name" . "\n"
 
-    let vimliteHelp .= "$(IntermediateDirectory) "
-                \."Expand to the project intermediate directory path, " . "\n"
-                \.repeat(' ', 25)."as set in the project settings" . "\n"
+    let vimliteHelp .= "$(ProjectPath)           "
+                \."Expand to the project path" . "\n"
 
     let vimliteHelp .= "$(ConfigurationName)     "
                 \."Expand to the current project selected configuration" . "\n"
 
+    let vimliteHelp .= "$(IntermediateDirectory) "
+                \."Expand to the project intermediate directory path, " . "\n"
+                \.repeat(' ', 25)."as set in the project settings" . "\n"
+
     let vimliteHelp .= "$(OutDir)                "
                 \."An alias to $(IntermediateDirectory)" . "\n"
-
-    let vimliteHelp .= "$(CurrentFileName)       "
-                \."Expand to current file name (without extension and " . "\n"
-                \.repeat(' ', 25)."path)"."\n"
-
-    let vimliteHelp .= "$(CurrentFilePath)       "
-                \."Expand to current file path" . "\n"
-
-    let vimliteHelp .= "$(CurrentFileFullPath)   "
-                \."Expand to current file full path (path and full name)" . "\n"
-
-    let vimliteHelp .= "$(User)                  "
-                \."Expand to logged-in user as defined by the OS" . "\n"
-
-    let vimliteHelp .= "$(Date)                  "
-                \."Expand to current date" . "\n"
 
     let vimliteHelp .= "$(ProjectFiles)          "
                 \."A space delimited string containing all of the " . "\n"
@@ -2717,6 +3040,19 @@ function! s:GetAvailableMacrosHelpText() "{{{2
     let vimliteHelp .= "$(ProjectFilesAbs)       "
                 \."A space delimited string containing all of the " . "\n"
                 \.repeat(' ', 25)."project files in an absolute path" . "\n"
+
+    let vimliteHelp .= "$(CurrentFileName)       "
+                \."Expand to current file name (without extension and " . "\n"
+                \.repeat(' ', 25)."path)"."\n"
+
+    let vimliteHelp .= "$(CurrentFileExt)        "
+                \."Expand to current file extension" . "\n"
+
+    let vimliteHelp .= "$(CurrentFilePath)       "
+                \."Expand to current file path" . "\n"
+
+    let vimliteHelp .= "$(CurrentFileFullPath)   "
+                \."Expand to current file full path (path and full name)" . "\n"
 
     let vimliteHelp .= "`expression`             "
                 \."Evaluates the expression inside the backticks into a " . "\n"
@@ -2750,10 +3086,10 @@ def ProjectSettings():
         vim.command('call ctl.AddItem("%s")' % i.encode('utf-8'))
     vim.command('call ctl.SetValue("%s")' % g_bldConfs[projName].GetName())
     vim.command(
-            'call ctl.ConnectCallback(s:GetSFuncRef("s:SelProjConfCbk"), "%s")' 
+            'call ctl.ConnectActionPostCallback(s:GetSFuncRef("s:SelProjConfCbk"), "%s")' 
             % projName)
     vim.command('call l:dialog.AddControl(ctl)')
-    vim.command('call l:dialog.AddBlankline()')
+    vim.command('call l:dialog.AddBlankLine()')
 ProjectSettings()
 PYTHON_EOF
 
@@ -2763,7 +3099,7 @@ PYTHON_EOF
     let ctl = g:VCStaticText.New('Common Settings')
     call ctl.SetHighlight("Special")
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -2781,7 +3117,7 @@ PYTHON_EOF
     call ctl.AddItem('Executable')
     call ctl.BindVariable('g_bldConfs["'.projName.'"].projectType', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "1.1.2.编译器
     let ctl = g:VCComboBox.New('Compiler:')
@@ -2791,48 +3127,48 @@ PYTHON_EOF
     call ctl.AddItem('gnu gcc')
     call ctl.BindVariable('g_bldConfs["'.projName.'"].compilerType', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
-    "1.1.3.输出文件
+    "1.1.3.过渡文件夹
+    let ctl = g:VCSingleText.New("Intermediate Directory:")
+    call ctl.SetIndent(8)
+    call ctl.BindVariable('g_bldConfs["'.projName.'"].intermediateDirectory', 1)
+    call l:dialog.AddControl(ctl)
+    call l:dialog.AddBlankLine()
+
+    "1.1.4.输出文件
     let ctl = g:VCSingleText.New("Output File:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].outputFile', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
-
-    "1.1.4.过渡文件夹
-    let ctl = g:VCSingleText.New("Intermediate Folder:")
-    call ctl.SetIndent(8)
-    call ctl.BindVariable('g_bldConfs["'.projName.'"].intermediateDirectory', 1)
-    call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Program:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].command', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Working Folder:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].workingDirectory', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Program Arguments:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].commandArguments', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCCheckItem.New("Use seperate debug arguments")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].useSeparateDebugArgs', 1)
-    call ctl.ConnectCallback(s:GetSFuncRef('s:ActiveIfCheckCbk'), 
+    call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:ActiveIfCheckCbk'), 
                 \s:DebugArgumentsGID)
     let bUseSepDbgArgs = ctl.GetValue()
     call l:dialog.AddControl(ctl)
-    "call l:dialog.AddBlankline()
+    "call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Debug Arguments:")
     call ctl.SetGId(s:DebugArgumentsGID)
@@ -2840,13 +3176,13 @@ PYTHON_EOF
     call ctl.BindVariable('g_bldConfs["'.projName.'"].debugArgs', 1)
     call ctl.SetActivated(bUseSepDbgArgs)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "let ctl = g:VCCheckItem.New("Pause when execution ends")
     "call ctl.SetIndent(8)
     "call ctl.BindVariable('g_bldConfs["'.projName.'"].pauseWhenExecEnds', 1)
     "call l:dialog.AddControl(ctl)
-    "call l:dialog.AddBlankline()
+    "call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -2860,11 +3196,11 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.SetReverse(1)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].compilerRequired', 1)
-    call ctl.ConnectCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
+    call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
                 \s:CommonCompilerGID)
     let enabled = !ctl.GetValue()
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCComboBox.New('Use With Global Settings:')
     call ctl.SetGId(s:CommonCompilerGID)
@@ -2876,7 +3212,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].buildCmpWithGlobalSettings', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("C++ Compiler Options:")
     call ctl.SetGId(s:CommonCompilerGID)
@@ -2885,7 +3221,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.compileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("C Compiler Options:")
     call ctl.SetGId(s:CommonCompilerGID)
@@ -2894,7 +3230,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.cCompileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Include Paths:")
     call ctl.SetGId(s:CommonCompilerGID)
@@ -2903,7 +3239,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.includePath', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     let ctl = g:VCSingleText.New("Preprocessor:")
@@ -2913,7 +3249,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.preprocessor', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("g:EditOptionsBtnCbk"), '')
 
     let ctl = g:VCSingleText.New("PCH:")
@@ -2922,7 +3258,7 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].precompiledHeader', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -2936,11 +3272,11 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.SetReverse(1)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].linkerRequired', 1)
-    call ctl.ConnectCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
+    call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
                 \s:CommonLinkerGID)
     let enabled = !ctl.GetValue()
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCComboBox.New('Use With Global Settings:')
     call ctl.SetGId(s:CommonLinkerGID)
@@ -2952,7 +3288,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].buildLnkWithGlobalSettings', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Options:")
     call ctl.SetGId(s:CommonLinkerGID)
@@ -2961,7 +3297,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.linkOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Library Paths:", '')
     call ctl.SetGId(s:CommonLinkerGID)
@@ -2969,7 +3305,7 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].commonConfig.libPath', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     let ctl = g:VCSingleText.New("Libraries:", '')
@@ -2978,7 +3314,7 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].commonConfig.libs', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     "---------------------------------------------------------------------------
@@ -2993,11 +3329,11 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.SetReverse(1)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].isResCmpNeeded', 1)
-    call ctl.ConnectCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
+    call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:ActiveIfUnCheckCbk'), 
                 \s:CommonResourcesGID)
     let enabled = !ctl.GetValue()
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCComboBox.New('Use With Global Settings:')
     call ctl.SetGId(s:CommonResourcesGID)
@@ -3009,7 +3345,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].buildResWithGlobalSettings', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Compiler Options:")
     call ctl.SetGId(s:CommonResourcesGID)
@@ -3018,7 +3354,7 @@ PYTHON_EOF
     call ctl.BindVariable(
                 \'g_bldConfs["'.projName.'"].commonConfig.resCompileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Include Paths:", '')
     call ctl.SetGId(s:CommonResourcesGID)
@@ -3028,16 +3364,16 @@ PYTHON_EOF
                 \   .'"].commonConfig.resCompileIncludePath', 
                 \1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
 "===============================================================================
     "2.Pre / Post Build Commands
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call l:dialog.AddSeparator()
     let ctl = g:VCStaticText.New('Pre / Post Build Commands')
     call ctl.SetHighlight("Special")
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -3060,7 +3396,7 @@ PYTHON_EOF
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditBuildTblLineCbk'), '')
     call ctl.BindVariable()
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -3084,16 +3420,16 @@ PYTHON_EOF
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditBuildTblLineCbk'), '')
     call ctl.BindVariable()
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
 "===============================================================================
     "3.Customize
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call l:dialog.AddSeparator()
     let ctl = g:VCStaticText.New('Customize')
     call ctl.SetHighlight("Special")
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -3106,14 +3442,14 @@ PYTHON_EOF
     let ctl = g:VCCheckItem.New('Enable custom build')
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].enableCustomBuild', 1)
-    call ctl.ConnectCallback(s:GetSFuncRef('s:ActiveIfCheckCbk'), 
+    call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:ActiveIfCheckCbk'), 
                 \s:CustomBuildGID)
     let enabled = ctl.GetValue()
     call l:dialog.AddControl(ctl)
     let sep = g:VCSeparator.New('~')
     call sep.SetIndent(8)
     call l:dialog.AddControl(sep)
-"    call l:dialog.AddBlankline()
+"    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -3124,7 +3460,7 @@ PYTHON_EOF
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].customBuildWorkingDir', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "Custom Build
     let ctl = g:VCTable.New('', 2)
@@ -3145,7 +3481,7 @@ PYTHON_EOF
     call ctl.DisableButton(2)
     call ctl.DisableButton(5)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
 if 0 "不明所以的东东, 暂时禁用
     let ctl = g:VCComboBox.New('Makefile Generators:')
@@ -3156,7 +3492,7 @@ if 0 "不明所以的东东, 暂时禁用
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].toolName', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New('Command to use for makefile generation:')
     call ctl.SetGId(s:CustomBuildGID)
@@ -3164,17 +3500,17 @@ if 0 "不明所以的东东, 暂时禁用
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_bldConfs["'.projName.'"].makeGenerationCommand', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 endif "暂时禁用
 
 "===============================================================================
     "4.Global Settings
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call l:dialog.AddSeparator()
     let ctl = g:VCStaticText.New('Global Settings')
     call ctl.SetHighlight("Special")
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -3188,26 +3524,26 @@ endif "暂时禁用
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].compileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("C Compiler Options:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].cCompileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Include Paths:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].includePath', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     let ctl = g:VCSingleText.New("Preprocessor:")
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].preprocessor', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     "---------------------------------------------------------------------------
@@ -3222,20 +3558,20 @@ endif "暂时禁用
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].linkOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Library Paths:", '')
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].libPath', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     let ctl = g:VCSingleText.New("Libraries:", '')
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].libs', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
     "---------------------------------------------------------------------------
@@ -3250,17 +3586,18 @@ endif "暂时禁用
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].resCompileOptions', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
 
     let ctl = g:VCSingleText.New("Include Paths:", '')
     call ctl.SetIndent(8)
     call ctl.BindVariable('g_glbBldConfs["'.projName.'"].resCompileIncludePath', 1)
     call l:dialog.AddControl(ctl)
-    call l:dialog.AddBlankline()
+    call l:dialog.AddBlankLine()
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditOptionsBtnCbk"), '')
 
 "===============================================================================
 
+    call l:dialog.AddFooterButtons()
     call l:dialog.ConnectSaveCallback(
                 \s:GetSFuncRef("s:SaveProjectSettingsCbk"), projName)
     return l:dialog
@@ -3286,6 +3623,9 @@ import VLWorkspace
 from VLWorkspace import VLWorkspaceST
 from TagsSettings import TagsSettings
 from TagsSettings import TagsSettingsST
+from EnvVarSettings import EnvVar
+from EnvVarSettings import EnvVarSettings
+from EnvVarSettings import EnvVarSettingsST
 from VLWorkspaceSettings import VLWorkspaceSettings
 import BuilderGnuMake
 import IncludeParser
@@ -5527,7 +5867,7 @@ endfunction
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLUtils.vim	[[[1
-239
+238
 " Vim script utilities for VimLite
 " Last Change: 2011 Apr 11
 " Maintainer: fanhe <fanhed@163.com>
@@ -5702,8 +6042,7 @@ function g:Timer.End() "{{{2
 endfunction
 
 function g:Timer.EchoMes() "{{{2
-	echom string((str2float(reltimestr(self.t2)) 
-				\- str2float(reltimestr(self.t1))))
+	echom join(reltime(self.t1, self.t2), '.')
 endfunction
 
 function g:Timer.EndEchoMes() "{{{2
@@ -5768,19 +6107,27 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1
 plugin/vimdialog.vim	[[[1
-2935
+3194
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
 " Create: 	2011 Mar 21
 " Change:	2011 Jun 13
 
-function! s:InitVariable(var, value) "{{{2
-    if !exists(a:var)
-		let {a:var} = a:value
+function! s:InitVariable(sVarName, value) "{{{2
+    if !exists(a:sVarName)
+		let {a:sVarName} = a:value
         return 1
     endif
     return 0
+endfunction
+"}}}
+function! s:SID() "{{{2
+    return matchstr(expand('<sfile>'), '<SNR>\zs\d\+\ze_SID$')
+endfunction
+"}}}
+function! s:GetSFuncRef(sFuncName) "{{{2
+    return function('<SNR>'.s:SID().'_'.a:sFuncName[2:])
 endfunction
 "}}}
 
@@ -5797,9 +6144,9 @@ function! s:exec(cmd)
 endfunction
 "}}}
 
-"Variable: 全局变量 {{{2
-call s:InitVariable("g:VimDialogActionKey", "<Cr>")
-call s:InitVariable("g:VimDialogRestoreValueKey", "<C-r>")
+"全局变量 {{{2
+call s:InitVariable("g:VimDialogActionKey", "<CR>")
+call s:InitVariable("g:VimDialogRestoreValueKey", "R")
 call s:InitVariable("g:VimDialogClearValueKey", "C")
 call s:InitVariable("g:VimDialogSaveKey", "<C-s>")
 call s:InitVariable("g:VimDialogQuitKey", "<C-x><C-x>")
@@ -5809,7 +6156,7 @@ call s:InitVariable("g:VimDialogPrevEditableCtlKey", "<C-p>")
 call s:InitVariable("g:VimDialogToggleExtraHelpKey", "<F1>")
 
 
-"控件的基本类型
+"控件的基本类型 {{{2
 let g:VC_BLANKLINE = 0
 let g:VC_SEPARATOR = 1
 let g:VC_STATICTEXT = 2
@@ -5820,101 +6167,117 @@ let g:VC_CHECKLIST = 6
 let g:VC_COMBOBOX = 7
 let g:VC_CHECKITEM = 8
 let g:VC_TABLE = 9
+let g:VC_BUTTONLINE = 10
 
 let g:VC_DIALOG = 99
 
 let s:VC_MAXLINELEN = 78
 
 
-"Class: VCBlankline 空行类，所有控件类的基类 {{{1
-let g:VCBlankline = {}
-"Function: g:VCBlankline.New() {{{2
-function! g:VCBlankline.New()
-	let newVCBlankline = copy(self)
-	let newVCBlankline.id = -1 "控件 id
-	let newVCBlankline.gId = -1 "控件组id
-	let newVCBlankline.type = g:VC_BLANKLINE
-	let newVCBlankline.data = '' "私有数据，外部用
-	let newVCBlankline.indent = 0 "缩进，主要用于派生类
-	let newVCBlankline.editable = 0	"是否可变，若为0，除非全部刷新，否则控件不变
-	let newVCBlankline.activated = 1 "是否激活，区别高亮，若 editable 为 0，无效
-	let newVCBlankline.hiGroup = "Constant" "用于高亮
-	let newVCBlankline.owner = {}
+"Class: VCBlankLine 空行类，所有控件类的基类 {{{1
+let g:VCBlankLine = {}
+"Function: g:VCBlankLine.New() {{{2
+function! g:VCBlankLine.New()
+	let newVCBlankLine = copy(self)
+	let newVCBlankLine.id = -1 "控件 id
+	let newVCBlankLine.gId = -1 "控件组id
+	let newVCBlankLine.type = g:VC_BLANKLINE
+	let newVCBlankLine.data = '' "私有数据，外部用
+	let newVCBlankLine.indent = 0 "缩进，主要用于派生类
+	let newVCBlankLine.editable = 0	"是否可变，若为0，除非全部刷新，否则控件不变
+	let newVCBlankLine.activated = 1 "是否激活，区别高亮，若 editable 为 0，无效
+	let newVCBlankLine.hiGroup = "Constant" "用于高亮
+	let newVCBlankLine.owner = {}
 
 	"用于自动命令和键绑定等的使用
 	let l:i = 0
 	while 1
 		let l:ins = 'g:VCControlInstance_' . l:i
 		if !exists(l:ins)
-			let {l:ins} = newVCBlankline
-			let newVCBlankline.interInsName = l:ins
+			let {l:ins} = newVCBlankLine
+			let newVCBlankLine.interInsName = l:ins
 			break
 		endif
 		let l:i += 1
 	endwhile
 
-	return newVCBlankline
+	return newVCBlankLine
 endfunction
 
-"Function: g:VCBlankline.SetId(id) {{{2
+function! g:VCBlankLine.GetType() "{{{2
+	return self.type
+endfunction
+
+"Function: g:VCBlankLine.SetId(id) {{{2
 "ID 理论上可为任何类型的值，但最好用整数
-function! g:VCBlankline.SetId(id)
+function! g:VCBlankLine.SetId(id)
+	unlet self.id
 	let self.id = a:id
 endfunction
 
-"Function: g:VCBlankline.SetGId(id) {{{2
+"Function: g:VCBlankLine.SetGId(id) {{{2
 "GID 理论上可为任何类型的值，但最好用整数
-function! g:VCBlankline.SetGId(id)
+function! g:VCBlankLine.SetGId(id)
 	let self.gId = a:id
 endfunction
 
-"Function: g:VCBlankline.SetData(data) {{{2
+"Function: g:VCBlankLine.SetData(data) {{{2
 "data 可为任何类型的值
-function! g:VCBlankline.SetData(data)
+function! g:VCBlankLine.SetData(data)
 	unlet self.data
 	let self.data = a:data
 endfunction
 
-"Function: g:VCBlankline.SetIndent(indent) {{{2
-function! g:VCBlankline.SetIndent(indent)
+"Function: g:VCBlankLine.GetData() {{{2
+"data 可为任何类型的值
+function! g:VCBlankLine.GetData()
+	return self.data
+endfunction
+
+"Function: g:VCBlankLine.SetIndent(indent) {{{2
+function! g:VCBlankLine.SetIndent(indent)
 	let self.indent = a:indent
 endfunction
 
-function! g:VCBlankline.SetEditable(yesOrNo) "{{{2
+function! g:VCBlankLine.SetEditable(yesOrNo) "{{{2
 	let self.editable = yesOrNo
 endfunction
 
-function! g:VCBlankline.SetActivated(yesOrNo) "{{{2
+function! g:VCBlankLine.IsEditable() "{{{2
+	return self.editable
+endfunction
+
+function! g:VCBlankLine.SetActivated(yesOrNo) "{{{2
 	let self.activated = a:yesOrNo
 endfunction
 
-"Function: g:VCBlankline.GetId() {{{2
-function! g:VCBlankline.GetId()
+"Function: g:VCBlankLine.GetId() {{{2
+function! g:VCBlankLine.GetId()
 	return self.id
 endfunction
 
-"Function: g:VCBlankline.GetGId() {{{2
-function! g:VCBlankline.GetGId()
+"Function: g:VCBlankLine.GetGId() {{{2
+function! g:VCBlankLine.GetGId()
 	return self.gId
 endfunction
 
-function! g:VCBlankline.GetOwner() "{{{2
+function! g:VCBlankLine.GetOwner() "{{{2
 	return self.owner
 endfunction
 
-"Function: g:VCBlankline.GetDispText() {{{2
-function! g:VCBlankline.GetDispText()
+"Function: g:VCBlankLine.GetDispText() {{{2
+function! g:VCBlankLine.GetDispText()
 "	let l:text = repeat(" ", s:VC_MAXLINELEN)
 	let l:text = ""
 	return  l:text
 endfunction
 
-"Function: g:VCBlankline.SetupHighlight() 占位，设置文本高亮 {{{2
-function! g:VCBlankline.SetupHighlight()
+"Function: g:VCBlankLine.SetupHighlight() 占位，设置文本高亮 {{{2
+function! g:VCBlankLine.SetupHighlight()
 endfunction
 
-"Function: g:VCBlankline.ClearHighlight() 占位，取消文本高亮 {{{2
-function! g:VCBlankline.ClearHighlight()
+"Function: g:VCBlankLine.ClearHighlight() 占位，取消文本高亮 {{{2
+function! g:VCBlankLine.ClearHighlight()
 	if has_key(self, 'matchIds')
 		for i in self.matchIds
 			call matchdelete(i)
@@ -5926,8 +6289,8 @@ function! g:VCBlankline.ClearHighlight()
 	endif
 endfunction
 
-"Function: g:VCBlankline.Delete() 销毁对象 {{{2
-function! g:VCBlankline.Delete()
+"Function: g:VCBlankLine.Delete() 销毁对象 {{{2
+function! g:VCBlankLine.Delete()
 	unlet {self.interInsName}
 	call filter(self, 0)
 endfunction
@@ -5943,7 +6306,7 @@ function! g:VCSeparator.New(...)
 	let newVCSeparator = copy(self)
 
 	"继承，keep 为不覆盖新类的属性
-	call extend(newVCSeparator, g:VCBlankline.New(), "keep")
+	call extend(newVCSeparator, g:VCBlankLine.New(), "keep")
 
 	let newVCSeparator.type = g:VC_SEPARATOR
 	let newVCSeparator.editable = 0
@@ -5988,7 +6351,7 @@ let g:VCStaticText = {}
 function! g:VCStaticText.New(label)
 	let newVCStaticText = copy(self)
 
-	call extend(newVCStaticText, g:VCBlankline.New(), "keep")
+	call extend(newVCStaticText, g:VCBlankLine.New(), "keep")
 
 	let newVCStaticText.label = a:label
 	let newVCStaticText.type = g:VC_STATICTEXT
@@ -6048,8 +6411,8 @@ endfunction
 
 "Class: VCSingleText 单行可编辑文本控件类，所有可编辑控件的基类 {{{1
 let g:VCSingleText = {}
-"Function: g:VCSingleText.New(label, ...) 可选参数为文本控件显示字符串值 {{{2
-function! g:VCSingleText.New(label, ...)
+"Function: g:VCSingleText.New(label, ...) 可选参数为文本控件显示字符串值
+function! g:VCSingleText.New(label, ...) "{{{2
 	let newVCSingleText = copy(self)
 
 	"继承？！
@@ -6085,25 +6448,26 @@ function! g:VCSingleText.New(label, ...)
 	let newVCSingleText.editable = 1
 	return newVCSingleText
 endfunction
-
-"Function: g:VCSingleText.ConnectCallback(func, data) 添加控件回调函数 {{{2
-" 回调函数必须接收两个参数，控件和私有数据。值改变的时候才调用
-function! g:VCSingleText.ConnectCallback(func, data)
+"}}}
+"添加控件回调函数
+"回调函数必须接收两个参数，控件和私有数据。值改变的时候才调用
+function! g:VCSingleText.ConnectActionPostCallback(func, data) "{{{2
 	if type(a:func) == type(function("tr"))
-		let self.callback = a:func
+		let self.actionPostCbk = a:func
 	else
-		let self.callback = function(a:func)
+		let self.actionPostCbk = function(a:func)
 	endif
-	let self.callbackData = a:data
+	let self.actionPostCbkData = a:data
 endfunction
-
-function! g:VCSingleText.HandleCallback() "{{{2
-	if has_key(self, "callback")
-		call self.callback(self, self.callbackData)
+"}}}
+function! g:VCSingleText.HandleActionPostCallback() "{{{2
+	if has_key(self, "actionPostCbk")
+		call self.actionPostCbk(self, self.actionPostCbkData)
 	endif
 endfunction
-
-function! g:VCSingleText.ConnectActionCallback(func, data) "用于拦截 Action {{{2
+"}}}
+"用于拦截 Action, 回调函数返回 1 表示不继续处理原始的 Action 行为
+function! g:VCSingleText.ConnectActionCallback(func, data) "{{{2
 	if type(a:func) == type(function("tr"))
 		let self.actionCallback = a:func
 	else
@@ -6111,16 +6475,15 @@ function! g:VCSingleText.ConnectActionCallback(func, data) "用于拦截 Action 
 	endif
 	let self.actCbData = a:data
 endfunction
-
+"}}}
 function! g:VCSingleText.HandleActionCallback() "{{{2
 	if has_key(self, "actionCallback")
-		call self.actionCallback(self, self.actCbData)
-		return 1
+		return self.actionCallback(self, self.actCbData)
 	else
 		return 0
 	endif
 endfunction
-
+"}}}
 function! g:VCSingleText.ConnectButtonCallback(func, data) "按钮动作 {{{2
 	if type(a:func) == type(function("tr"))
 		let self.buttonCallback = a:func
@@ -6270,24 +6633,36 @@ function! g:VCSingleText.Action()
 		endif
 	endif
 
-	"是否被拦截
-	if self.HandleActionCallback()
-		return 1
-	endif
-
-	echohl Character
+	echohl Question
 	" TODO: 设置自动完成类型
 	let l:value = input(self.label . "\n", self.value, "file")
 	if exists("l:value") && len(l:value) != 0
 		call self.SetValue(l:value)
 		let l:ret = 1
-		call self.HandleCallback()
 	endif
 	echohl None
 
 	return l:ret
 endfunction
+"}}}
+function! g:VCSingleText.ClearValueAction() "{{{2
+	if self.HandleActionCallback()
+		return 1
+	endif
 
+	call self.SetValue('')
+	return 1
+endfunction
+"}}}
+function! g:VCSingleText.RestoreValueAction() "{{{2
+	if self.HandleActionCallback()
+		return 1
+	endif
+
+	call self.SetValue(self.origValue)
+	return 1
+endfunction
+"}}}
 function! g:VCSingleText.SetBindVarCallback(func, data) "定制变量绑定行为 {{{2
 	if type(a:func) == type(function("tr"))
 		let self.bindVarCbk = a:func
@@ -6511,6 +6886,10 @@ function! g:VCComboBox.GetDispText()
 	return s
 endfunction
 
+function! g:VCComboBox.GetItems() "{{{2
+	return self.items
+endfunction
+
 "Function: g:VCComboBox.AddItem(item) 添加条目 {{{2
 function! g:VCComboBox.AddItem(item)
 	call add(self.items, a:item)
@@ -6580,11 +6959,16 @@ function! g:VCComboBox.Action()
 		call self.SetValue(self.items[l:choice - 1])
 		if l:choice -1 != l:index
 			let l:ret = 1
-			call self.HandleCallback()
 		endif
 	endif
 
 	return l:ret
+endfunction
+
+function! g:VCComboBox.ClearValueAction() "{{{2
+endfunction
+
+function! g:VCComboBox.RestoreValueAction() "{{{2
 endfunction
 
 function! g:VCComboBox.SetupHighlight() "{{{2
@@ -6663,8 +7047,6 @@ function! g:VCCheckItem.Action()
 		call self.SetValue(1)
 	endif
 
-	call self.HandleCallback()
-
 	return l:ret
 endfunction
 
@@ -6699,7 +7081,7 @@ EOF
 	let self.origValue = self.value
 
 	"FIXME: 关联 activated 怎样处理？
-	call self.HandleCallback()
+	call self.HandleActionPostCallback()
 endfunction
 
 "Function: g:VCCheckItem.UpdateBindVar() 更新绑定的变量值为控件值 {{{2
@@ -6941,6 +7323,7 @@ endfunction
 
 function! g:VCTable.DeleteAllLines() "{{{2
 	call filter(self.table, 0)
+	call self.SetSelection(0)
 endfunction
 
 function! g:VCTable.TransposeLines(lineIndex1, lineIndex2) "{{{2
@@ -7286,7 +7669,9 @@ function! g:VCTable.Action() "{{{2
 					let l:ret = 1
 				elseif self.cellEditable
 					let tmpLine = self.GetLine(lineIndex)
+					echohl Question
 					let input = input("Edit:\n", tmpLine[index])
+					echohl None
 					if input != '' && input != tmpLine[index]
 						let tmpLine[index] = input
 						let l:ret = 1
@@ -7464,6 +7849,141 @@ endfunction
 "-------------------------------------------------------------------------------
 "===============================================================================
 
+
+"Class: VCButtonLine 按钮控件类，用于实现按钮 "{{{1
+let g:VCButtonLine = {}
+function! g:VCButtonLine.New(label, ...) "{{{2
+	let new = copy(self)
+
+	"继承
+	let new.parent = g:VCSingleText.New(a:label)
+	call extend(new, new.parent, "keep")
+	"暂时删除，不然影响调试
+	call remove(new, "parent")
+
+	let new.type = g:VC_BUTTONLINE
+
+	let new.buttons = [] "按钮列表, 按钮为一个字典 
+						 "{'label': '', 'id': -1, 'enable': 1}
+
+	return new
+endfunction
+
+function! g:VCButtonLine.AddButton(sLabel, ...) "{{{2
+	let sLabel = a:sLabel
+	let nID = -1
+	if a:0 > 0
+		let nID = a:1
+	endif
+
+	if strdisplaywidth(sLabel) < 2
+		"按钮文字字符数至少要 2
+		let sLabel .= repeat(' ', 2 - strdisplaywidth(sLabel))
+	endif
+
+	let button = {'label': sLabel, 'id': nID, 'enable': 1}
+	call add(self.buttons, button)
+endfunction
+
+function! g:VCButtonLine.ConnectButtonCallback(nBtnIdx, func, data) "{{{2
+	try
+		if type(a:func) == type('')
+			let self.buttons[a:nBtnIdx].callback = function(a:func)
+		else
+			let self.buttons[a:nBtnIdx].callback = a:func
+		endif
+		let self.buttons[a:nBtnIdx].callbackData = a:data
+	catch
+	endtry
+endfunction
+
+function! g:VCButtonLine.EnableButton(nBtnIdx) "{{{2
+	try
+		let self.buttons[a:nBtnIdx].enable = 1
+	catch
+	endtry
+endfunction
+
+function! g:VCButtonLine.DisableButton(nBtnIdx) "{{{2
+	try
+		let self.buttons[a:nBtnIdx].enable = 0
+	catch
+	endtry
+endfunction
+
+function! g:VCButtonLine.GetDispText() "{{{2
+	let s = ''
+	let sIndent = repeat(' ', self.indent)
+
+	let s .= sIndent
+	let bFirstEnter = 1
+	for button in self.buttons
+		let sL = '['
+		let sR = ']'
+		if !button.enable
+			let sL = '@'
+			let sR = '@'
+		endif
+		if bFirstEnter
+			let bFirstEnter = 0
+			let s .= sL . button.label . sR
+		else
+			let s .= ' ' . sL . button.label . sR
+		endif
+	endfor
+
+	return s
+endfunction
+
+function! g:VCButtonLine.Action() "{{{2
+	let nRet = 0
+
+	let nCurCol = virtcol('.')
+	let nIndent = self.indent
+
+	let nRealCol = nCurCol - nIndent
+	if nRealCol <= 0
+		return nRet
+	endif
+
+	let idx = 0
+	let bPressed = 0
+	let nMin = 0
+	let nMax = 0
+	while idx < len(self.buttons)
+		let button = self.buttons[idx]
+		let nMax = nMin + strdisplaywidth('['.button.label.']')
+		if nRealCol <= nMax && nRealCol > nMin
+			let bPressed = 1
+			break
+		endif
+
+		let nMin = nMax + 1
+		let idx += 1
+	endwhile
+
+	if bPressed && self.buttons[idx].enable
+		let nRet = 1
+		if has_key(self.buttons[idx], 'callback')
+			let nRet = self.buttons[idx].callback(
+						\self, self.buttons[idx].callbackData)
+		endif
+	endif
+
+	return nRet
+endfunction
+
+function! g:VCButtonLine.ClearValueAction() "{{{2
+endfunction
+
+function! g:VCButtonLine.RestoreValueAction() "{{{2
+endfunction
+
+"===============================================================================
+"-------------------------------------------------------------------------------
+"===============================================================================
+
+
 "{{{ 控件索引键值
 let g:VimDialogCtlKeyBit = 2
 "剔除 '\'，以免影响正则匹配
@@ -7484,6 +8004,7 @@ function! g:VimDialog.New(name, ...)
 	let newVimDialog.showLineNum = 0
 	let newVimDialog.highlightCurLine = 0 "默认关闭，否则影响按钮高亮
 	let newVimDialog.type = g:VC_DIALOG
+	let newVimDialog.data = '' "私有数据
 
 	let newVimDialog.bufNum = -1
 
@@ -7518,7 +8039,7 @@ function! g:VimDialog.New(name, ...)
 		call newVimDialog.parentDlg.AddChildDialog(newVimDialog)
 	endif
 
-	let newVimDialog.isModified = 0 "未实现
+	let newVimDialog.isModified = 0 "是否已修改设置. 采用近似算法
 
 	"用于自动命令和键绑定等的使用
 	let i = 0
@@ -7542,6 +8063,15 @@ function! g:VimDialog.New(name, ...)
 	let newVimDialog._inactiveCtlMatchId = {}
 
 	return newVimDialog
+endfunction
+
+function! g:VimDialog.SetData(data) "{{{2
+	unlet self.data
+	let self.data = a:data
+endfunction
+
+function! g:VimDialog.GetData() "{{{2
+	return self.data
 endfunction
 
 function! g:VimDialog.AddChildDialog(child) "添加子对话框 {{{2
@@ -7577,7 +8107,7 @@ function! g:VimDialog.SetExtraHelpContent(text) "{{{2
 endfunction
 
 function! g:VimDialog.SetModified(yesOrNo) "{{{2
-	let self.isModified = yesOrNo
+	let self.isModified = a:yesOrNo
 endfunction
 
 function! g:VimDialog.IsModified() "{{{2
@@ -7738,14 +8268,14 @@ function! g:VimDialog._RefreshStatusLine() "{{{2
 	endif
 endfunction
 
-"Function: g:VimDialog.GetControl(lnum) DEPRECATE! 从行号直接获取控件对象 {{{2
-function! g:VimDialog.GetControl(lnum)
-	let l:key = self._GetCtlKeyByLnum(a:lnum)
-	if has_key(self.controlsDict, l:key)
-		return self.controlsDict[l:key]
-	else
-		return {}
-	endif
+function! g:VimDialog.GetControlByID(nID) "从 ID 获取控件 {{{2
+	for ctl in self.controls
+		if ctl.GetId() == a:nID
+			return ctl
+		endif
+	endfor
+
+	return {}
 endfunction
 
 "Function: g:VimDialog.GetControlByLnum(lnum) 从行号直接获取控件对象 {{{2
@@ -7787,7 +8317,7 @@ function! g:VimDialog.Display()
 		if self.textContent != ''
 			let @a .= self.textContent
 			silent! put! a
-			if self.textContent !~# '\n$'
+			if self.textContent[-1:-1] !=# "\n"
 				"处理多出来的空行, 只有当字符串最后的字符为非换行时才需要
 				exec "silent " . line("$") . "," . line("$") . " delete _"
 			endif
@@ -7803,7 +8333,7 @@ function! g:VimDialog.Display()
 
 		let self.controlsDict = {}
 		for i in self.controls
-			if i.editable
+			if i.IsEditable()
 				let l:key = self._GetAKey()
 				let self.controlsDict[l:key] = i
 			else
@@ -7824,6 +8354,10 @@ function! g:VimDialog.Display()
 	endif
 
 	let @a = bak
+endfunction
+
+function! g:VimDialog.Refresh() "刷新显示 {{{2
+	call self.Display()
 endfunction
 
 function! g:VimDialog.RefreshAll() "此函数只支持从回调函数中调用 {{{2
@@ -7907,69 +8441,67 @@ function! g:VimDialog.DisplayHelp() "{{{2
 		endif
 	endif
 endfunction
-
-"Function: g:VimDialog.Action() 响应设置动作 {{{2
-function! g:VimDialog.Action()
+"}}}
+function! g:VimDialog.Action(...) "响应动作 {{{2
 	if self.lock
 		return
 	endif
 
-	let l:lnum = line('.')
-	let l:ctl = self.GetControl(l:lnum)
-	if len(l:ctl) != 0 && has_key(l:ctl, "Action") && l:ctl.activated
-		if l:ctl.Action()
-			call self.RefreshCtlByLnum(l:lnum)
-			"let self.isModified = 1
-			"call self._RefreshStatusLine()
+	let sType = 'action'
+	if a:0 > 0
+		let sType = a:1
+	endif
+
+	let nLn = line('.')
+	let ctl = self.GetControlByLnum(nLn)
+	if len(ctl) != 0 && has_key(ctl, "Action") && ctl.activated
+		let bSkipAction = 0
+		if has_key(ctl, 'HandleActionCallback') && ctl.HandleActionCallback()
+			let bSkipAction = 1
+		endif
+		if !bSkipAction
+			if sType ==? 'restore'
+				let nRet = ctl.RestoreValueAction()
+			elseif sType ==? 'clear'
+				let nRet = ctl.ClearValueAction()
+			else
+				let nRet = ctl.Action()
+			endif
+			if nRet
+				if has_key(ctl, 'HandleActionPostCallback')
+					call ctl.HandleActionPostCallback()
+				endif
+
+				"支持在控件的 Action 中删除窗口
+				if !empty(self)
+					call self.RefreshCtlByLnum(nLn)
+					"let self.isModified = 1
+					"call self._RefreshStatusLine()
+				endif
+			endif
 		endif
 	endif
 
-	let save_cursor = getpos(".") "用于恢复光标位置
-	if self.requestDeepRefreshAll
-		let self.isModified = 0
-		let self.requestDeepRefreshAll = 0
-		call self._DeepRefreshAll()
-	elseif self.requestRefreshAll
-		let self.requestRefreshAll = 0
-		call self._RefreshAll()
+	if !empty(self)
+		let save_cursor = getpos(".") "用于恢复光标位置
+		if self.requestDeepRefreshAll
+			let self.isModified = 0
+			let self.requestDeepRefreshAll = 0
+			call self._DeepRefreshAll()
+		elseif self.requestRefreshAll
+			let self.requestRefreshAll = 0
+			call self._RefreshAll()
+		endif
+		call setpos('.', save_cursor) "恢复光标位置
 	endif
-	call setpos('.', save_cursor) "恢复光标位置
 endfunction
 
 function! g:VimDialog.RestoreCtlValue() "{{{2
-	if self.lock
-		return
-	endif
-
-	let l:lnum = line('.')
-	let l:ctl = self.GetControl(l:lnum)
-	if len(l:ctl) != 0 && has_key(l:ctl, "origValue")
-		let l:ctl.value = l:ctl.origValue
-
-		if has_key(l:ctl, 'HandleCallback')
-			call l:ctl.HandleCallback()
-		endif
-
-		call self.RefreshCtlByLnum(l:lnum)
-	endif
+	call self.Action('restore')
 endfunction
 
 function! g:VimDialog.ClearCtlValue() "{{{2
-	if self.lock
-		return
-	endif
-
-	let l:lnum = line('.')
-	let l:ctl = self.GetControl(l:lnum)
-	if len(l:ctl) != 0 && l:ctl.editable
-		let l:ctl.value = ''
-
-		if has_key(l:ctl, 'HandleCallback')
-			call l:ctl.HandleCallback()
-		endif
-
-		call self.RefreshCtlByLnum(l:lnum)
-	endif
+	call self.Action('clear')
 endfunction
 
 function! g:VimDialog.RefreshCtl(ctl) "刷新指定实例 {{{2
@@ -7991,7 +8523,7 @@ function! g:VimDialog.RefreshCtlById(id) "{{{2
     endif
 
 	for i in range(1, line('$') + 1)
-		let ctl = self.GetControl(i)
+		let ctl = self.GetControlByLnum(i)
 		if ctl != {} && ctl.GetId() == a:id
 			call self.RefreshCtlByLnum(i)
 			break
@@ -8023,27 +8555,27 @@ function! g:VimDialog.RefreshCtlByLnum(lnum)
 	let save_cursor = getpos(".") "用于恢复光标位置
 
 	if a:lnum == '.'
-		let l:lnum = line('.')
+		let nLn = line('.')
 	else
-		let l:lnum = a:lnum
+		let nLn = a:lnum
 	endif
-	let l:ctlKey = self._GetCtlKeyByLnum(l:lnum)
+	let l:ctlKey = self._GetCtlKeyByLnum(nLn)
 	if l:ctlKey == ''
 		return
 	endif
 "	echo l:ctlKey
 
-	let l:ctlSln = l:lnum
-	let l:ctlEln = l:lnum
-	for i in range(1, l:lnum)
-		let l:curKey = self._GetCtlKeyByLnum(l:lnum - i)
+	let l:ctlSln = nLn
+	let l:ctlEln = nLn
+	for i in range(1, nLn)
+		let l:curKey = self._GetCtlKeyByLnum(nLn - i)
 "		echo l:curKey
 		if l:curKey != ctlKey
 			break
 		endif
-		let l:ctlSln = l:lnum - i
+		let l:ctlSln = nLn - i
 	endfor
-	for i in range(l:lnum + 1, line('$'))
+	for i in range(nLn + 1, line('$'))
 		let l:curKey = self._GetCtlKeyByLnum(i)
 "		echo l:curKey
 		if l:curKey != ctlKey
@@ -8056,11 +8588,11 @@ function! g:VimDialog.RefreshCtlByLnum(lnum)
 
 	setlocal ma
 	" 刷新控件显示
-	let l:ctl = self.GetControl(l:lnum)
-	if l:ctl == {}
+	let ctl = self.GetControlByLnum(nLn)
+	if ctl == {}
 		return
 	endif
-	let l:text = l:ctl.GetDispText()
+	let l:text = ctl.GetDispText()
 	let l:texts = split(l:text, "\n")
 	call map(l:texts, 'v:val . l:ctlKey')
 
@@ -8079,7 +8611,7 @@ function! g:VimDialog.RefreshCtlByLnum(lnum)
 	call setline(l:ctlSln, l:texts)
 
 	"处理激活
-	call self._HandleCtlActivated(l:ctl, ctlKey)
+	call self._HandleCtlActivated(ctl, ctlKey)
 
 "	exec l:ctlSln . "," . l:ctlEln . "delete _"
 "	let bak = @a
@@ -8135,8 +8667,8 @@ function! g:VimDialog.AddSeparator()
 	call self.AddControl(g:VCSeparator.New())
 endfunction
 
-function! g:VimDialog.AddBlankline()
-	call self.AddControl(g:VCBlankline.New())
+function! g:VimDialog.AddBlankLine()
+	call self.AddControl(g:VCBlankLine.New())
 endfunction
 
 "Function: g:VimDialog.SetupKeyMappings() 设置默认键盘映射 {{{2
@@ -8214,7 +8746,13 @@ function! g:VimDialog.Save() "{{{2
 	endif
 
 	echohl PreProc
-	echo "All have been saved."
+	if exists("*strftime")
+		echo "All have been saved at "
+		echohl Special
+		echon strftime("%c")
+	else
+		echo "All have been saved."
+	endif
 	echohl None
 endfunction
 
@@ -8281,12 +8819,16 @@ function! g:VimDialog.ConfirmQuit() "{{{2
 		return
 	endif
 
-	echohl WarningMsg
-	let ret = input("Are you sure to quit without save? (y/n): ", 'y')
-	if ret == 'y'
+	if self.IsModified() || self.asTextCtrl
+		echohl WarningMsg
+		let ret = input("Are you sure to quit without save? (y/n): ", 'y')
+		if ret ==? 'y'
+			call self.Quit()
+		endif
+		echohl None
+	else
 		call self.Quit()
 	endif
-	echohl None
 endfunction
 
 "回调函数必须返回 0 以示成功，否则始终不会关闭窗口
@@ -8381,7 +8923,7 @@ function! g:VimDialog.GotoNextEdiableCtl() "{{{2
 	let origCtl = self.GetControlByLnum(origRow)
 	for row in range(origRow, line('$'))
 		let ctl = self.GetControlByLnum(row)
-		if !empty(ctl) && ctl isnot origCtl && ctl.editable
+		if !empty(ctl) && ctl isnot origCtl && ctl.IsEditable()
 			exec row
 			break
 		endif
@@ -8393,7 +8935,7 @@ function! g:VimDialog.GotoPrevEdiableCtl() "{{{2
 	let origCtl = self.GetControlByLnum(origRow)
 	for row in range(origRow, 1, -1)
 		let ctl = self.GetControlByLnum(row)
-		if !empty(ctl) && ctl isnot origCtl && ctl.editable
+		if !empty(ctl) && ctl isnot origCtl && ctl.IsEditable()
 			"需要定位到首行
 			for row2 in range(row, 1, -1)
 				let ctl2 = self.GetControlByLnum(row2)
@@ -8438,7 +8980,44 @@ function! g:VimDialog.ToggleExtraHelp() "{{{2
 	endif
 	setlocal noma
 endfunction
+"}}}
+"Apply, Cancel, OK 按钮回调函数 {{{2
+function! s:_ApplyCbk(ctl, ...)
+	call a:ctl.owner.Save()
+endfunction
+function! s:_CancelCbk(ctl, ...)
+	call a:ctl.owner.Quit()
+endfunction
+function! s:_OKCbk(ctl, ...)
+	call a:ctl.owner.SaveAndQuit()
+endfunction
+"}}}
+function! g:VimDialog.AddFooterButtons() "{{{2
+	call self.AddBlankLine()
+	call self.AddSeparator()
 
+	let ctl = g:VCButtonLine.New('')
+
+	let lButtonLabel = ['Apply ', 'Cancel', '  OK  ']
+	let nLen = 0
+	for sLabel in lButtonLabel
+		let nLen += strdisplaywidth(sLabel) + 2
+	endfor
+	if len(lButtonLabel)
+		let nLen += len(lButtonLabel) - 1
+	endif
+
+	call ctl.SetIndent((s:VC_MAXLINELEN - nLen) / 2)
+	call ctl.AddButton(lButtonLabel[0])
+	call ctl.AddButton(lButtonLabel[1])
+	call ctl.AddButton(lButtonLabel[2])
+	call self.AddControl(ctl)
+
+	call ctl.ConnectButtonCallback(0, s:GetSFuncRef('s:_ApplyCbk'), '')
+	call ctl.ConnectButtonCallback(1, s:GetSFuncRef('s:_CancelCbk'), '')
+	call ctl.ConnectButtonCallback(2, s:GetSFuncRef('s:_OKCbk'), '')
+endfunction
+"}}}
 function! g:VimDialog.ReplacedBy(dlgIns) "用于替换，暂不可用 {{{2
 	call self.Delete()
 	call extend(self, a:dlgIns, 'force')
@@ -8457,28 +9036,45 @@ function! g:VimDialogTest()
 	let g:vdst = g:VCStaticText.New("vdst")
 	call g:vimdialog.AddControl(g:vdst)
 
-"	let g:vdST = g:VCSingleText.New("单行文本控件", repeat('=', 60))
-	let g:vdST = g:VCSingleText.New("单行文本控件")
-	call g:vimdialog.AddControl(g:vdST)
+"	let g:ctl = g:VCSingleText.New("单行文本控件", repeat('=', 60))
+	let g:ctl = g:VCSingleText.New("单行文本控件")
+	call g:vimdialog.AddControl(g:ctl)
 
-	let g:vdST = g:VCSingleText.New("单行文本控件")
-	call g:vdST.BindVariable("g:str")
-	call g:vdST.SetIndent(8)
-	call g:vimdialog.AddControl(g:vdST)
+	let g:ctl = g:VCSingleText.New("单行文本控件")
+	call g:ctl.BindVariable("g:str")
+	call g:ctl.SetIndent(8)
+	call g:vimdialog.AddControl(g:ctl)
 
-	let g:vdST = g:VCSingleText.New("单行文本控件", repeat('=', 84))
-	call g:vdST.SetActivated(0)
-	call g:vdST.ConnectActionCallback('TestCtlCallback', 'Action!')
-	call g:vimdialog.AddControl(g:vdST)
+	let g:ctl = g:VCSingleText.New("单行文本控件", repeat('=', 84))
+	call g:ctl.SetActivated(0)
+	call g:ctl.ConnectActionCallback('TestCtlCallback', 'Action!')
+	call g:vimdialog.AddControl(g:ctl)
 
-	let g:vdST = g:VCSingleText.New("单行文本控件", repeat('=', 84))
-	call g:vdST.SetIndent(4)
-	call g:vimdialog.AddControl(g:vdST)
+	let g:ctl = g:VCSingleText.New("单行文本控件", repeat('=', 84))
+	call g:ctl.SetIndent(4)
+	call g:vimdialog.AddControl(g:ctl)
 
-	let g:vdST = g:VCMultiText.New("多行文本控件", repeat('=', 84) . "\nA\n\nB\nC\nE\nD\nF\nG")
-	call g:vdST.SetIndent(4)
-	call g:vdST.ConnectButtonCallback('TestCtlCallback', 'button')
-	call g:vimdialog.AddControl(g:vdST)
+	let g:ctl = g:VCMultiText.New("多行文本控件", repeat('=', 84) . "\nA\n\nB\nC\nE\nD\nF\nG")
+	call g:ctl.SetIndent(4)
+	call g:ctl.ConnectButtonCallback('TestCtlCallback', 'button')
+	call g:vimdialog.AddControl(g:ctl)
+
+	let g:ctl = g:VCButtonLine.New('')
+	call g:ctl.SetIndent(4)
+	call g:ctl.AddButton('abc')
+	call g:ctl.AddButton('xyz')
+	call g:ctl.DisableButton(0)
+	call g:ctl.ConnectButtonCallback(1, 'TestCtlCallback', 'ButtonLine')
+	call g:vimdialog.AddControl(g:ctl)
+
+	let ctl = g:VCButtonLine.New('')
+	call ctl.SetIndent(26)
+	call ctl.AddButton('Apply ')
+	call ctl.AddButton('Cancel')
+	call ctl.AddButton('  OK  ')
+	call g:vimdialog.AddControl(ctl)
+
+	call g:vimdialog.AddFooterButtons()
 
 	call g:vimdialog.AddSeparator()
 	call g:vimdialog.AddCallback("TestCallback")
@@ -8503,7 +9099,7 @@ function! g:VimDialogTest2() "{{{2
 
 	call add(li, g:ctl1)
 	call add(li, g:VCSeparator.New())
-"	call add(li, g:VCBlankline.New())
+"	call add(li, g:VCBlankLine.New())
 	call add(li, g:ctl2)
 	" NOTE: 已不支持此方法
 	let g:ins = g:VimDialog.New("__VIMDIALOGTEST2__", li)
@@ -8539,6 +9135,8 @@ function! TestCtlCallback(ctl, data)
 	echo "I am a callback"
 	echo a:ctl.GetValue()
 	echo a:data
+
+	return 1
 endfunction
 
 function! g:ProjectSettingsTest() "{{{2
@@ -8606,22 +9204,22 @@ function! g:ProjectSettingsTest() "{{{2
 	call ctl.SetIndent(8)
 	call ctl.ConnectButtonCallback('TestCtlCallback', 'button')
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Intermediate Folder:", './Debug')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Program:", './$(ProjectName)')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Program Arguments:", '')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 "===============================================================================
 
 "===============================================================================
@@ -8633,23 +9231,23 @@ function! g:ProjectSettingsTest() "{{{2
 	let ctl = g:VCSingleText.New("C++ Compiler Options:", "-Wall;-g3")
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("C Compiler Options:", 
 				\'-Wall;-g3;$(shell pkg-config --cflags gtk+-2.0)')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Include Paths:", '.')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Preprocessor:", '')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 "===============================================================================
 
 "===============================================================================
@@ -8661,17 +9259,17 @@ function! g:ProjectSettingsTest() "{{{2
 	let ctl = g:VCSingleText.New("Options:", "$(shell pkg-config --libs gtk+-2.0)")
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Library Paths:", '')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCSingleText.New("Libraries:", '')
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 "	let ctl = g:VCComboBox.New("Combo Box:")
 	let ctl = g:VCComboBox.New("")
@@ -8682,20 +9280,20 @@ function! g:ProjectSettingsTest() "{{{2
 	call ctl.AddItem("d")
 	call ctl.AddItem("e")
 	call ctl.AddItem("f")
-	call ctl.ConnectCallback("TestCtlCallback", "Hello")
+	call ctl.ConnectActionPostCallback("TestCtlCallback", "Hello")
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 	let ctl = g:VCCheckItem.New("是否启用？", 1)
 	call ctl.SetIndent(8)
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 "===============================================================================
 
 	call g:TestVCTable()
 	let ctl = g:ctl
 	call g:psdialog.AddControl(ctl)
-	call g:psdialog.AddBlankline()
+	call g:psdialog.AddBlankLine()
 
 "===============================================================================
 
@@ -8854,7 +9452,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-626
+629
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -9256,6 +9854,9 @@ in VLWorkspace buffer window, popup the menu, select "Parse Workspace (Quick)".
                                         files it includes.
                                         NOTE: You ought to save current file
                                         before run this command.
+
+    VLWEnvVarSetttings                  Open 'Environment Variables Setting'
+                                        dialog.
 
     VLWTagsSetttings                    Open 'Tags Setting' dialog.
 

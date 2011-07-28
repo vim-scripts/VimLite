@@ -5,6 +5,10 @@ import sys
 import os
 import os.path
 import time
+import re
+import getpass
+
+import EnvVarSettings
 
 
 def GetFileModificationTime(fileName):
@@ -12,7 +16,7 @@ def GetFileModificationTime(fileName):
     
     返回自 1970-01-01 以来的秒数'''
     try:
-        ret = int(os.stat(fileName).st_mtime)
+        ret = int(os.path.getmtime(fileName))
     except OSError:
         ret = 0
     finally:
@@ -32,20 +36,52 @@ class DirSaver:
         os.chdir(self.curDir)
         #print 'back to', self.curDir
 
-def ExpandAllVariables(expression, workspace, projName, confToBuild, 
+def StripVariablesForShell(sExpr):
+    '''剔除所有 $( name ) 形式的字符串, 防止被 shell 解析'''
+    p = re.compile(r'(\$\(\s*[a-zA-Z_]\w*\s*\))')
+    return p.sub('', sExpr)
+
+def ExpandVariables(sString, dVariables):
+    '''单次(非递归)展开 $(VarName) 形式的变量'''
+    if not sString or not dVariables:
+        return sString
+
+    p = re.compile(r'(\$\([a-zA-Z_]\w*\))')
+
+    nStartIdx = 0
+    sResult = ''
+    while True:
+        m = p.search(sString, nStartIdx)
+        if m:
+            sVarName = m.group(1)[2:-1]
+            sResult += sString[nStartIdx : m.start(1)]
+            if dVariables.has_key(sVarName):
+                sResult += str(dVariables[sVarName])
+            else:
+                sResult += m.group(1)
+            nStartIdx = m.end(1)
+        else:
+            sResult += sString[nStartIdx :]
+            break
+
+    return sResult
+
+def ExpandAllVariables(expression, workspace, projName, confToBuild = '', 
                        fileName = ''):
     '''展开所有变量
     
-    expression: 表达式, 字符串
-    workspace: 工作空间, 对象实例
-    projName: 项目名称, 字符串
-    fileName: 绝对路径文件名, 字符串
-    返回: 展开后的表达式'''
+    expression  - 需要展开的表达式, 可为空
+    workspace   - 工作区实例, 可为空
+    projName    - 项目名字, 可为空
+    confToBuild - 工作区构建设置名称, 可为空
+    fileName    - 文件名字, 要求为绝对路径, 可为空
+
+    RETURN      - 展开后的表达式'''
     tmpExp = ''
     i = 0
     # 先展开所有命令表达式
     # 只支持 `` 内的表达式, 不支持 $() 形式的
-    # 因为经常用到在 makefile 里面的变量, 为了统一, 无法支持 $() 形式
+    # 因为经常用到在 Makefile 里面的变量, 为了统一, 无法支持 $() 形式
     while i < len(expression):
         c = expression[i]
         if c == '`':
@@ -61,7 +97,7 @@ def ExpandAllVariables(expression, workspace, projName, confToBuild,
 
             if not found:
                 print 'Syntax error in expression: ' + expression \
-                        + ': expecting \'`\''
+                        + ": expecting '`'"
                 return expression
             else:
                 expandedBacktick = ExpandAllInterVariables(
@@ -74,68 +110,92 @@ def ExpandAllVariables(expression, workspace, projName, confToBuild,
             tmpExp += c
         i += 1
 
-    return ExpandAllInterVariables(
-        tmpExp, workspace, projName, confToBuild, fileName)
+    result = ExpandAllInterVariables(tmpExp, workspace, projName, confToBuild,
+                                     fileName)
+    # 剔除没有定义的变量并返回
+    return StripVariablesForShell(result)
 
-def ExpandAllInterVariables(expression, workspace, projName, confToBuild, 
-                            fileName):
-    '''展开所有内部变量'''
-    output = expression
-    if not '$' in output:
-        return output
+def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '', 
+                            fileName = ''):
+    '''展开所有内部变量
+
+    expression  - 需要展开的表达式, 可为空
+    workspace   - 工作区实例, 可为空
+    projName    - 项目名字, 可为空
+    confToBuild - 工作区构建设置名称, 可为空
+    fileName    - 文件名字, 要求为绝对路径, 可为空
+    
+    支持的变量有:
+    $(User)
+    $(Date)
+    $(CodeLitePath)
+
+    $(WorkspaceName)
+    $(WorkspacePath)
+
+    $(ProjectName)
+    $(ProjectPath)
+    $(ConfigurationName)
+    $(IntermediateDirectory)
+    $(OutDir)
+    $(ProjectFiles)
+    $(ProjectFilesAbs)
+
+    $(CurrentFileName)
+    $(CurrentFileExt)
+    $(CurrentFilePath)
+    $(CurrentFileFullPath)
+    '''
+    if not '$' in expression:
+        return expression
+
+    # 先展开环境变量, 因为内部变量不可能包含环境变量, 反之则可能包含
+    expression = \
+            EnvVarSettings.EnvVarSettingsST.Get().ExpandVariables(expression)
+
+    dVariables = {}
+
+    dVariables['User'] = getpass.getuser()
+    dVariables['Date'] = time.strftime('%Y-%m-%d', time.localtime())
+    dVariables['CodeLitePath'] = os.path.expanduser('~/.codelite')
 
     if workspace:
-        output = output.replace('$(WorkspaceName)', workspace.GetName())
+        dVariables['WorkspaceName'] = workspace.GetName()
+        dVariables['WorkspacePath'] = workspace.dirName
         project = workspace.FindProjectByName(projName)
         if project:
-            # make sure that the project name does not contain any spaces
-            projectName = project.GetName().replace(' ', '_')
-            output = output.replace('$(ProjectName)', projectName)
-            output = output.replace('$(ProjectPath)', project.dirName)
-            output = output.replace('$(WorkspacePath)', workspace.dirName)
-
-            output = output.replace('$(CodeLitePath)', 
-                                    os.path.expanduser('~/.codelite'))
+            dVariables['ProjectName'] = project.GetName()
+            dVariables['ProjectPath'] = project.dirName
 
             bldConf = workspace.GetProjBuildConf(project.GetName(), confToBuild)
             if bldConf:
-                output = output.replace('$(ConfigurationName)', bldConf.GetName())
-
+                dVariables['ConfigurationName'] = bldConf.GetName()
                 imd = bldConf.GetIntermediateDirectory()
-                # Substitute all macros from $(IntermediateDirectory)
-                imd = imd.replace('$(ProjectPath)', project.dirName)
-                imd = imd.replace('$(WorkspacePath)', workspace.dirName)
-                imd = imd.replace('$(ProjectName)', projectName)
-                imd = imd.replace('$(ConfigurationName)', bldConf.GetName())
+                # 先展开中间目录的变量
+                # 中间目录不能包含自身和自身的别名 $(OutDir)
+                # 可包含的变量为此之前添加的变量
+                imd = EnvVarSettings.EnvVarSettingsST.Get().ExpandVariables(imd)
+                imd = ExpandVariables(imd, dVariables)
+                dVariables['IntermediateDirectory'] = imd
+                dVariables['OutDir'] = imd
 
-                output = output.replace('$(IntermediateDirectory)', imd)
-                output = output.replace('$(OutDir)', imd)
-
-            if '$(ProjectFiles)' in output:
-                output = output.replace(
-                    '$(ProjectFiles)', 
-                    ' '.join([ '"%s"' % i for i in project.GetAllFiles()]))
-            if '$(ProjectFilesAbs)' in output:
-                output = output.replace(
-                    '$(ProjectFilesAbs)', 
-                    ' '.join([ '"%s"' % i for i in project.GetAllFiles(True)]))
+            if '$(ProjectFiles)' in expression:
+                dVariables['ProjectFiles'] = \
+                        ' '.join([ '"%s"' % i for i in project.GetAllFiles()])
+            if '$(ProjectFilesAbs)' in expression:
+                dVariables['ProjectFilesAbs'] = \
+                        ' '.join([ '"%s"' % i for i in project.GetAllFiles(True)])
 
     if fileName:
-        output = output.replace('$(CurrentFileName)', 
-                                os.path.splitext(os.path.basename(fileName))[0])
-        output = output.replace('$(CurrentFileExt)', 
-                                os.path.splitext(os.path.basename(fileName))[1][1:])
-        output = output.replace('$(CurrentFilePath)', 
-                               os.path.dirname(fileName).replace('\\', '/'))
-        output = output.replace('$(CurrentFileFullPath)', 
-                               fileName.replace('\\', '/'))
+        dVariables['CurrentFileName'] = \
+                os.path.splitext(os.path.basename(fileName))[0]
+        dVariables['CurrentFileExt'] = \
+                os.path.splitext(os.path.basename(fileName))[1][1:]
+        dVariables['CurrentFilePath'] = \
+                NormalizePath(os.path.dirname(fileName))
+        dVariables['CurrentFileFullPath'] = NormalizePath(fileName)
 
-    output = output.replace('$(User)', os.environ['USER'])
-    output = output.replace('$(Date)', time.strftime('%Y-%m-%d', time.localtime()))
-
-    # TODO: 展开所有环境变量
-
-    return output
+    return ExpandVariables(expression, dVariables)
 
 def IsSourceFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
@@ -172,6 +232,9 @@ if __name__ == '__main__':
     print IsSourceFile('./a.cx')
     print IsHeaderFile('b.h')
     print IsHeaderFile('/homt/a.hxx')
+
+    print StripVariablesForShell(' sne $(CodeLitePath) , $( ooxx  )')
+    print StripVariablesForShell('')
     
-    #print GetFileModificationTime(sys.argv[1])
+    print GetFileModificationTime(sys.argv[0])
 
