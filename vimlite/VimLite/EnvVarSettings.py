@@ -32,7 +32,7 @@ class EnvVarSettings:
     def __init__(self, fileName = ''):
         self.fileName = ''
         self.envVarSets = {} # 名称: 列表(元素为 EnvVar 类)
-        self.activeSetName = '' # 当前激活项
+        self.activeSetName = '' # 当前激活项, 这个需要外部需要时修改
         self.mtime = 0 # 最后修改时间
 
         if fileName:
@@ -42,7 +42,10 @@ class EnvVarSettings:
         self.fileName = fileName
 
     def SetActiveSetName(self, activeSetName):
+        s1 = self.activeSetName
         self.activeSetName = activeSetName
+        if s1 != activeSetName:
+            self.Save()
 
     def GetActiveSetName(self):
         return self.activeSetName

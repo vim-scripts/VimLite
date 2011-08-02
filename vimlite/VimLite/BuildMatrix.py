@@ -63,6 +63,9 @@ class WorkspaceConfiguration:
     def SetConfigMappingList(self, mapList):
         self.mappingList = mapList
 
+    def GetConfigMappingList(self):
+        return self.mappingList
+
 class BuildMatrix:
     def __init__(self, node = None):
         # FIXME: 应该用字典

@@ -106,12 +106,16 @@ class ProjectSettings:
         
     
     def GetFirstBuildConfiguration(self):
-        # TODO，字典中获取第一个？
-        pass
+        self.configsIterator = self.configs.itervalues()
+        return self.configsIterator.next()
     
     def GetNextBuildConfiguration(self):
-        # TODO
-        pass
+        try:
+            result = self.configsIterator.next()
+        except:
+            return None
+        else:
+            return result
     
     def SetBuildConfiguration(self, buildConfig):
         self.configs[buildConfig.name] = buildConfig

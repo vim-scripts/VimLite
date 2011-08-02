@@ -7,6 +7,7 @@ from TagEntry import TagEntry
 from FileEntry import FileEntry
 
 import os, os.path
+import platform
 import sqlite3
 
 class TagsStorageSQLiteCache:
@@ -1254,7 +1255,10 @@ class TagsStorageSQLite(ITagsStorage):
 
 #CTAGS = 'ctags'
 #CTAGS = os.path.expanduser('~/bin/vlctags')
-CTAGS = os.path.expanduser('~/.vimlite/bin/vlctags')
+if platform.architecture()[0] == '64bit':
+    CTAGS = os.path.expanduser('~/.vimlite/bin/vlctags64')
+else:
+    CTAGS = os.path.expanduser('~/.vimlite/bin/vlctags')
 CTAGS_OPTS = '--excmd=pattern --sort=no --fields=aKmSsnit '\
         '--c-kinds=+p --c++-kinds=+p'
 # 强制视全部文件为 C++

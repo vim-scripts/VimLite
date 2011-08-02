@@ -17,6 +17,8 @@ class VLWorkspaceSettings:
         self.tagsTokens = [] # 宏处理符号
         self.tagsTypes = [] # 类型映射符号
 
+        self.envVarSetName = 'Default' # 选择的环境变量组, 默认为 'Default'
+
         # 如果指定了 fileName, 从文件载入, 不论成功与否
         self.Load()
 
@@ -59,6 +61,12 @@ class VLWorkspaceSettings:
         except IndexError:
             return
 
+    def GetEnvVarSetName(self):
+        return self.envVarSetName
+
+    def SetEnvVarSetName(self, envVarSetName):
+        self.envVarSetName = envVarSetName
+
     def Load(self, fileName = ''):
         if not fileName and not self.fileName:
             return False
@@ -81,6 +89,10 @@ class VLWorkspaceSettings:
             self.excludePaths = obj.excludePaths
             self.tagsTokens = obj.tagsTokens
             self.tagsTypes = obj.tagsTypes
+            try:
+                self.envVarSetName = obj.envVarSetName
+            except:
+                pass
             del obj
             ret = True
 

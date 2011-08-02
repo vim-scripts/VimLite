@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-4677
+4803
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -246,7 +246,7 @@ command! -nargs=0 -bar VLWDbgRunToCursor    call <SID>DbgRunToCursor()
 command! -nargs=0 -bar VLWDbgContinue       call <SID>DbgContinue()
 command! -nargs=0 -bar VLWDbgToggleBp       call <SID>DbgToggleBreakpoint()
 
-"command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
+command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
 command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
 
 
@@ -669,8 +669,8 @@ endfunction
 
 
 function! s:InstallMenuBarMenu() "{{{2
-    "anoremenu <silent> 200.10 &VimLite.Environment\ Variables\ Settings\.\.\. 
-                "\:call <SID>EnvVarSettings()<CR>
+    anoremenu <silent> 200.10 &VimLite.Environment\ Variables\ Settings\.\.\. 
+                \:call <SID>EnvVarSettings()<CR>
     "anoremenu <silent> 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
     "anoremenu <silent> 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
 
@@ -1306,6 +1306,8 @@ function! s:CreateWorkspace(...) "{{{2
     call tmpCtl1.ConnectActionPostCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
     call tmpCtl2.ConnectActionPostCallback(s:GetSFuncRef('s:CreateWorkspace'), ctl)
 
+    call g:newWspDialog.DisableApply()
+    call g:newWspDialog.AddFooterButtons()
     call g:newWspDialog.AddCallback(s:GetSFuncRef("s:CreateWorkspace"))
     call g:newWspDialog.Display()
 endfunction
@@ -1563,6 +1565,8 @@ def CreateTemplateCtls():
 CreateTemplateCtls()
 PYTHON_EOF
 
+    call g:newProjDialog.DisableApply()
+    call g:newProjDialog.AddFooterButtons()
     call g:newProjDialog.AddCallback(s:GetSFuncRef("s:CreateProject"))
     call g:newProjDialog.Display()
 
@@ -1943,8 +1947,7 @@ function! s:CreateEnvVarSettingsDialog() "{{{2
     for sEnvVarSet in lEnvVarSets
         call ctl.AddItem(sEnvVarSet)
     endfor
-    py vim.command("let sActiveSetName = '%s'" % ins.GetActiveSetName())
-    call ctl.SetValue(sActiveSetName)
+    call ctl.SetValue('Default')
     call dlg.AddControl(ctl)
 
     "2.EnvVarList
@@ -2032,10 +2035,10 @@ function! s:CreateTagsSettingsDialog() "{{{2
 
 "===============================================================================
     "1.Include Files
-    let ctl = g:VCStaticText.New("Include Files")
-    call ctl.SetHighlight("Special")
-    call dlg.AddControl(ctl)
-    call dlg.AddBlankLine()
+    "let ctl = g:VCStaticText.New("Tags Settings")
+    "call ctl.SetHighlight("Special")
+    "call dlg.AddControl(ctl)
+    "call dlg.AddBlankLine()
 
     let ctl = g:VCTable.New('Add search paths for the parser.', 1)
     call ctl.SetId(s:ID_TagsSettingsIncludePaths)
@@ -2184,6 +2187,14 @@ function! s:NewConfigCbk(dlg, data) "{{{2
     endfor
 
     if newConfName != ''
+        if index(comboCtl.GetItems(), newConfName) != -1
+            "存在同名设置
+            echohl ErrorMsg
+            echo "Create failed, existing a similar name."
+            echohl None
+            return
+        endif
+
         let projName = comboCtl.data
         call comboCtl.InsertItem(newConfName, -2)
 python << PYTHON_EOF
@@ -2224,23 +2235,47 @@ function! s:WspBCMRenameCbk(ctl, data) "{{{2
         let oldBcName = line[0]
         let newBcName = input("Enter New Name:\n", oldBcName)
         if newBcName != '' && newBcName != oldBcName
-            let line[0] = newBcName
-            "更新组合框
-            call comboCtl.RenameItem(oldBcName, newBcName)
-            call comboCtl.owner.RefreshCtl(comboCtl)
 python << PYTHON_EOF
 def RenameProjectBuildConfig(projName, oldBcName, newBcName):
+    '''可能重命名失败, 当同名的配置已经存在的时候
+    
+    若重命名失败, 则还原显示, 什么都不做'''
     project = ws.VLWIns.FindProjectByName(projName)
-    if not project or oldBcName == newBcName: return
+    if not project or oldBcName == newBcName:
+        return
 
     settings = project.GetSettings()
     oldBldConf = settings.GetBuildConfiguration(oldBcName)
-    if not oldBldConf: return
+    if not oldBldConf:
+        return
 
+    if settings.GetBuildConfiguration(newBcName):
+        # 存在同名配置
+        vim.command("echohl ErrorMsg")
+        vim.command('echo "Rename failed, existing a similar name."')
+        vim.command("echohl None")
+        return
+
+    # 修改项目文件
     settings.RemoveConfiguration(oldBcName)
     oldBldConf.SetName(newBcName)
     settings.SetBuildConfiguration(oldBldConf)
     project.SetSettings(settings)
+
+    # 修改工作空间文件
+    matrix = ws.VLWIns.GetBuildMatrix()
+    for configuration in matrix.GetConfigurations():
+        for mapping in configuration.GetConfigMappingList():
+            if mapping.name == oldBcName:
+                mapping.name = newBcName
+    ws.VLWIns.SetBuildMatrix(matrix)
+
+    # 更新当前窗口显示
+    vim.command("let line[0] = newBcName")
+    # 更新父窗口组合框显示
+    vim.command("call comboCtl.RenameItem(oldBcName, newBcName)")
+    vim.command("call comboCtl.owner.RefreshCtl(comboCtl)")
+
 RenameProjectBuildConfig(
     vim.eval('projName'), 
     vim.eval('oldBcName'), 
@@ -2256,21 +2291,34 @@ PYTHON_EOF
         let oldConfName = line[0]
         let newConfName = input("Enter New Configuration Name:\n", oldConfName)
         if newConfName != '' && newConfName != oldConfName
-            let line[0] = newConfName
-            "更新组合框
-            call comboCtl.RenameItem(oldConfName, newConfName)
-            call comboCtl.owner.RefreshCtl(comboCtl)
 python << PYTHON_EOF
 def RenameWorkspaceConfiguration(oldConfName, newConfName):
-    if not newConfName or newConfName == oldConfName: return
+    if not newConfName or newConfName == oldConfName:
+        return
 
     matrix = ws.VLWIns.GetBuildMatrix()
     oldWspConf = matrix.GetConfigurationByName(oldConfName)
-    if not oldWspConf: return
+
+    if not oldWspConf:
+        return
+    if matrix.GetConfigurationByName(newConfName):
+        # 存在同名配置
+        vim.command("echohl ErrorMsg")
+        vim.command('echo "Rename failed, existing a similar name."')
+        vim.command("echohl None")
+        return
+
     matrix.RemoveConfiguration(oldConfName)
     oldWspConf.SetName(newConfName)
     matrix.SetConfiguration(oldWspConf)
     ws.VLWIns.SetBuildMatrix(matrix)
+
+    # 更新当前窗口表格
+    vim.command("let line[0] = newConfName")
+    # 更新父窗口组合框
+    vim.command("call comboCtl.RenameItem(oldConfName, newConfName)")
+    vim.command("call comboCtl.owner.RefreshCtl(comboCtl)")
+
 RenameWorkspaceConfiguration(vim.eval('oldConfName'), vim.eval('newConfName'))
 PYTHON_EOF
         endif
@@ -2281,14 +2329,23 @@ function! s:WspBCMRemoveCbk(ctl, data) "{{{2
     let ctl = a:ctl
     let comboCtl = a:data
     let projName = comboCtl.data
+    if len(ctl.table) == 1
+        echohl ErrorMsg
+        echo "Can not remove the last configuration."
+        echohl None
+        return
+    endif
+
     if ctl.id == 3
         if ctl.selection <= 0
             return
         endif
         let line = ctl.GetLine(ctl.selection)
         let bldConfName = line[0]
+        echohl WarningMsg
         let input = input("Remove configuration \""
                     \.bldConfName."\"? (y/n): ", 'y')
+        echohl None
         if input == 'y'
             call ctl.DeleteLine(ctl.selection)
             let ctl.selection = 0
@@ -2298,11 +2355,22 @@ function! s:WspBCMRemoveCbk(ctl, data) "{{{2
 python << PYTHON_EOF
 def RemoveProjectBuildConfig(projName, bldConfName):
     project = ws.VLWIns.FindProjectByName(projName)
-    if not project: return
+    if not project:
+        return
 
     settings = project.GetSettings()
     settings.RemoveConfiguration(bldConfName)
     project.SetSettings(settings)
+
+    # 修正工作空间文件
+    matrix = ws.VLWIns.GetBuildMatrix()
+    for configuration in matrix.GetConfigurations():
+        for mapping in configuration.GetConfigMappingList():
+            if mapping.name == bldConfName:
+                # 随便选择一个可用的补上
+                mapping.name = settings.GetFirstBuildConfiguration().GetName()
+    ws.VLWIns.SetBuildMatrix(matrix)
+
 RemoveProjectBuildConfig(vim.eval('projName'), vim.eval('bldConfName'))
 PYTHON_EOF
         endif
@@ -2312,8 +2380,10 @@ PYTHON_EOF
         endif
         "删除工作空间 BuildMatrix 的 config
         let configName = ctl.GetLine(ctl.selection)[0]
+        echohl WarningMsg
         let input = input("Remove workspace configuration \""
                     \.configName."\"? (y/n): ", 'y')
+        echohl None
         if input == 'y'
             call ctl.DeleteLine(ctl.selection)
             let ctl.selection = 0
@@ -2326,6 +2396,7 @@ def RemoveWorkspaceConfiguration(confName):
     matrix = ws.VLWIns.GetBuildMatrix()
     matrix.RemoveConfiguration(confName)
     ws.VLWIns.SetBuildMatrix(matrix)
+
 RemoveWorkspaceConfiguration(vim.eval('configName'))
 PYTHON_EOF
         endif
@@ -2342,24 +2413,34 @@ function! s:WspBCMChangePreCbk(ctl, data) "{{{2
     return 0
 endfunction
 
-function! s:WspBCMCbk(ctl, data) "{{{2
+function! s:WspBCMActionPostCbk(ctl, data) "{{{2
     let ctl = a:ctl
     let dlg = a:ctl.owner
     if a:ctl.id == s:WspConfigurationCtlID
     "工作空间的构建设置
         let wspSelConfName = a:ctl.GetValue()
         if wspSelConfName == '<New...>'
+            echohl Question
             let input = input("\nEnter New Configuration Name:\n")
+            echohl None
             let copyFrom = a:ctl.GetPrevValue()
             call a:ctl.SetValue(copyFrom)
-            if input != '' && index(a:ctl.GetItems(), input) == -1
+            if input != ''
+                if index(a:ctl.GetItems(), input) != -1
+                    "存在同名
+                    echohl ErrorMsg
+                    echo "Create failed, existing a similar name."
+                    echohl None
+                    return 1
+                endif
+
                 call a:ctl.InsertItem(input, -2)
 python << PYTHON_EOF
 def NewWspConfig(newConfName, copyFrom):
-    if not newConfName or not copyFrom: return
+    if not newConfName or not copyFrom:
+        return
 
-    global g_wspBuildMatrix
-    matrix = g_wspBuildMatrix
+    matrix = ws.VLWIns.GetBuildMatrix()
     copyFromConf = matrix.GetConfigurationByName(copyFrom)
     if not copyFromConf:
         wspSelConfName = matrix.GetSelectedConfigurationName()
@@ -2394,6 +2475,7 @@ PYTHON_EOF
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
+            call editConfigsDlg.AddCloseButton()
             call editConfigsDlg.Display()
         else
             let bModified = dlg.GetData()
@@ -2419,7 +2501,7 @@ PYTHON_EOF
                     return 1
                 endif
             endif
-            py matrix = g_wspBuildMatrix
+            py matrix = ws.VLWIns.GetBuildMatrix()
             for ctl in dlg.controls
                 if ctl.gId == s:BuildMatrixMappingGID
                     let projName = ctl.data
@@ -2457,6 +2539,7 @@ PYTHON_EOF
             call newConfDlg.ConnectSaveCallback(s:GetSFuncRef('s:NewConfigCbk'),
                         \ctl)
             call newConfDlg.AddControl(newCtl)
+            call newConfDlg.AddFooterButtons()
             call newConfDlg.Display()
         elseif value == '<Edit...>'
             call a:ctl.SetValue(a:ctl.GetPrevValue())
@@ -2479,6 +2562,7 @@ PYTHON_EOF
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
+            call editConfigsDlg.AddCloseButton()
             call editConfigsDlg.Display()
         else
             "标记为已修改
@@ -2489,9 +2573,7 @@ endfunction
 
 function! s:WspBCMSaveCbk(dlg, data) "{{{2
 python << PYTHON_EOF
-def WspBCMSaveCbk(wspConfName, projName, confName):
-    global g_wspBuildMatrix
-    matrix = g_wspBuildMatrix
+def WspBCMSaveCbk(matrix, wspConfName, projName, confName):
     wspConf = matrix.GetConfigurationByName(wspConfName)
     if wspConf:
         for mapping in wspConf.GetMapping():
@@ -2501,29 +2583,31 @@ def WspBCMSaveCbk(wspConfName, projName, confName):
 PYTHON_EOF
     let dlg = a:dlg
     let wspConfName = ''
+    py matrix = ws.VLWIns.GetBuildMatrix()
     for ctl in dlg.controls
         if ctl.GetId() == s:WspConfigurationCtlID
             let wspConfName = ctl.GetValue()
         elseif ctl.GetGId() == s:BuildMatrixMappingGID
             let projName = ctl.GetData()
             let confName = ctl.GetValue()
-            py WspBCMSaveCbk(vim.eval('wspConfName'), vim.eval('projName'), 
-                        \vim.eval('confName'))
+            py WspBCMSaveCbk(matrix, vim.eval('wspConfName'), 
+                        \vim.eval('projName'), vim.eval('confName'))
         endif
     endfor
 
     "保存
-    py ws.VLWIns.SetBuildMatrix(g_wspBuildMatrix)
-    "py del g_wspBuildMatrix
+    py ws.VLWIns.SetBuildMatrix(matrix)
+    py del matrix
+
+    "重置为未修改
+    call dlg.SetData(0)
 endfunction
 
 function! s:CreateWspBuildConfDialog() "{{{2
     let wspBCMDlg = g:VimDialog.New('--Workspace Build Configuration--')
-    py g_wspBuildMatrix = ws.VLWIns.GetBuildMatrix()
 python << PYTHON_EOF
 def CreateWspBuildConfDialog():
-    global g_wspBuildMatrix
-    matrix = g_wspBuildMatrix
+    matrix = ws.VLWIns.GetBuildMatrix()
     wspSelConfName = matrix.GetSelectedConfigurationName()
     vim.command("let ctl = g:VCComboBox.New('Workspace Configuration:')")
     vim.command("call ctl.SetId(s:WspConfigurationCtlID)")
@@ -2533,10 +2617,13 @@ def CreateWspBuildConfDialog():
     vim.command("call ctl.SetValue('%s')" % wspSelConfName)
     vim.command("call ctl.AddItem('<New...>')")
     vim.command("call ctl.AddItem('<Edit...>')")
-    vim.command("call ctl.ConnectActionCallback(s:GetSFuncRef('s:WspBCMChangePreCbk'), '')")
-    vim.command("call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
+    vim.command("call ctl.ConnectActionCallback("\
+            "s:GetSFuncRef('s:WspBCMChangePreCbk'), '')")
+    vim.command("call ctl.ConnectActionPostCallback("\
+            "s:GetSFuncRef('s:WspBCMActionPostCbk'), '')")
     vim.command("call wspBCMDlg.AddSeparator()")
-    vim.command("call wspBCMDlg.AddControl(g:VCStaticText.New('Available project configurations:'))")
+    vim.command("call wspBCMDlg.AddControl("\
+            "g:VCStaticText.New('Available project configurations:'))")
     vim.command("call wspBCMDlg.AddBlankLine()")
 
     projectNameList = ws.VLWIns.projects.keys()
@@ -2547,11 +2634,13 @@ def CreateWspBuildConfDialog():
         vim.command("call ctl.SetGId(s:BuildMatrixMappingGID)")
         vim.command("call ctl.SetData('%s')" % projName)
         vim.command("call ctl.SetIndent(4)")
-        vim.command("call ctl.ConnectActionPostCallback(s:GetSFuncRef('s:WspBCMCbk'), '')")
+        vim.command("call ctl.ConnectActionPostCallback("\
+                "s:GetSFuncRef('s:WspBCMActionPostCbk'), '')")
         vim.command("call wspBCMDlg.AddControl(ctl)")
         for confName in project.GetSettings().configs.keys():
             vim.command("call ctl.AddItem('%s')" % confName)
-        projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, projName)
+        projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, 
+                                                        projName)
         vim.command("call ctl.SetValue('%s')" % projSelConfName)
         vim.command("call ctl.AddItem('<New...>')")
         vim.command("call ctl.AddItem('<Edit...>')")
@@ -2567,6 +2656,7 @@ endfunction
 "=================== 工作空间设置 ===================
 "{{{1
 "标识用控件 ID {{{2
+let s:ID_WspSettingsEnvironment = 9
 let s:ID_WspSettingsIncludePaths = 10
 let s:ID_WspSettingsTagsTokens = 11
 let s:ID_WspSettingsTagsTypes = 12
@@ -2597,7 +2687,9 @@ endfunction
 
 function! s:SaveWspSettingsCbk(dlg, data) "{{{2
     for ctl in a:dlg.controls
-        if ctl.GetId() == s:ID_WspSettingsIncludePaths
+        if ctl.GetId() == s:ID_WspSettingsEnvironment
+            py ws.VLWSettings.SetEnvVarSetName(vim.eval("ctl.GetValue()"))
+        elseif ctl.GetId() == s:ID_WspSettingsIncludePaths
             let table = ctl.table
             py del ws.VLWSettings.includePaths[:]
             for line in table
@@ -2610,7 +2702,7 @@ function! s:SaveWspSettingsCbk(dlg, data) "{{{2
         endif
     endfor
     "保存
-    py ws.VLWSettings.Save()
+    py ws.SaveWspSettings()
     "重新初始化 Omnicpp 类型替换字典
     py ws.InitOmnicppTypesVar()
 endfunction
@@ -2638,8 +2730,29 @@ function! s:CreateWspSettingsDialog() "{{{2
     let wspSettingsDlg = g:VimDialog.New('==Workspace Settings==')
 
 "===============================================================================
-    "1.Include Files
-    let ctl = g:VCStaticText.New("Include Files")
+    "1.Environment
+    let ctl = g:VCStaticText.New("Environment")
+    call ctl.SetHighlight("Special")
+    call wspSettingsDlg.AddControl(ctl)
+    call wspSettingsDlg.AddBlankLine()
+
+    let ctl = g:VCComboBox.New('Environment sets:')
+    call ctl.SetId(s:ID_WspSettingsEnvironment)
+    call ctl.SetIndent(4)
+    py vim.command("let lEnvVarSets = %s" 
+                \% EnvVarSettingsST.Get().envVarSets.keys())
+    call sort(lEnvVarSets)
+    for sEnvVarSet in lEnvVarSets
+        call ctl.AddItem(sEnvVarSet)
+    endfor
+    py vim.command("call ctl.SetValue('%s')" % 
+                \ws.VLWSettings.GetEnvVarSetName())
+    call wspSettingsDlg.AddControl(ctl)
+    call wspSettingsDlg.AddBlankLine()
+
+"===============================================================================
+    "2.Include Files
+    let ctl = g:VCStaticText.New("Tags Setttings")
     call ctl.SetHighlight("Special")
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
@@ -3807,6 +3920,13 @@ class VimLiteWorkspace():
             self.VLWSettings.Load()
             # 初始化 Omnicpp 类型替换字典
             self.InitOmnicppTypesVar()
+            # 通知全局环境变量设置当前选择的组别名字
+            EnvVarSettingsST.Get().SetActiveSetName(
+                self.VLWSettings.GetEnvVarSetName())
+
+    def SaveWspSettings(self):
+        if self.VLWSettings.Save():
+            self.LoadWspSettings()
 
     def OpenTagsDatabase(self):
         if self.VLWIns.fileName and vim.eval('g:VLWorkspaceUseClangCC') == '0':
@@ -4384,9 +4504,15 @@ class VimLiteWorkspace():
             confToBuild, '')
         #print args
         if prog:
-            os.system('~/.vimlite/vimlite_term "%s" \
-                "/bin/sh -f $HOME/.vimlite/vimlite_exec %s %s" &' \
-                % (prog, prog, args))
+            envs = ''
+            for envVar in EnvVarSettingsST.Get().GetActiveEnvVars():
+                envs += envVar.GetString() + ' '
+            #print envs
+            os.system('~/.vimlite/vimlite_run "%s" '\
+                '~/.vimlite/vimlite_exec %s %s %s &' % (prog, envs, prog, args))
+            #os.system('~/.vimlite/vimlite_term "%s" \
+            #    "/bin/sh -f $HOME/.vimlite/vimlite_exec %s %s" &' \
+            #    % (prog, prog, args))
 
     def BuildActiveProject(self):
         actProjName = self.VLWIns.GetActiveProjectName()
@@ -5107,7 +5233,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLClangCodeCompletion.vim	[[[1
-758
+760
 " Vim global plugin for code-completion with clang
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -5218,7 +5344,9 @@ function! s:CanComplete() "{{{2
             return 0
         endif
         if g:VLCCC_EnableSyntaxTest
-            for nID in synstack(nLine, nCol)
+            let lStack = synstack(nLine, nCol)
+            let lStack = empty(lStack) ? [] : lStack
+            for nID in lStack
                 if synIDattr(nID, 'name') 
                             \=~? 'comment\|string\|float\|character'
                     return 0
@@ -5867,7 +5995,7 @@ endfunction
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLUtils.vim	[[[1
-238
+240
 " Vim script utilities for VimLite
 " Last Change: 2011 Apr 11
 " Maintainer: fanhe <fanhed@163.com>
@@ -6053,7 +6181,9 @@ endfunction
 
 function g:EchoSyntaxStack() "{{{2
 	let names = []
-	for id in synstack(line("."), col("."))
+	let li = synstack(line("."), col("."))
+	let li = empty(li) ? [] : li
+	for id in li
 		"echo synIDattr(id, "name")
 		call add(names, synIDattr(id, 'name'))
 	endfor
@@ -6107,7 +6237,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1
 plugin/vimdialog.vim	[[[1
-3194
+3243
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -7885,6 +8015,13 @@ function! g:VCButtonLine.AddButton(sLabel, ...) "{{{2
 	call add(self.buttons, button)
 endfunction
 
+function! g:VCButtonLine.RemoveButton(nBtnIdx) "{{{2
+	try
+		call remove(self.buttons, a:nBtnIdx)
+	catch
+	endtry
+endfunction
+
 function! g:VCButtonLine.ConnectButtonCallback(nBtnIdx, func, data) "{{{2
 	try
 		if type(a:func) == type('')
@@ -8027,6 +8164,8 @@ function! g:VimDialog.New(name, ...)
 	let newVimDialog.parentDlg = {} "父窗口实例
 	let newVimDialog.childDlgs = [] "子窗口实例列表
 
+	let newVimDialog.disableApply = 0
+
 	"若为 1，则窗口为一个可编辑的普通文本，用于实现文本控件
 	"这会忽略所有本窗口包含的其他控件
 	let newVimDialog.asTextCtrl = 0
@@ -8072,6 +8211,10 @@ endfunction
 
 function! g:VimDialog.GetData() "{{{2
 	return self.data
+endfunction
+
+function! g:VimDialog.DisableApply() "{{{2
+	let self.disableApply = 1
 endfunction
 
 function! g:VimDialog.AddChildDialog(child) "添加子对话框 {{{2
@@ -8395,7 +8538,7 @@ function! g:VimDialog.DisplayHelp() "{{{2
 		call add(texts, text)
 
 		let text = '"'
-		if !self.isPopup
+		if !self.isPopup && !self.disableApply
 			let text = text . g:VimDialogSaveKey . ': Save All; '
 		endif
 		let text = text . g:VimDialogSaveAndQuitKey . ': Save And Quit; '
@@ -8691,7 +8834,7 @@ function! g:VimDialog.SetupKeyMappings()
 					\" :call ".l:ins.".ToggleExtraHelp()<Cr>"
 	endif
 
-	if !self.isPopup
+	if !self.isPopup && !self.disableApply
 		exec "nnoremap <silent> <buffer> " . g:VimDialogSaveKey . 
 					\" :call ".l:ins.".Save()<Cr>"
 	endif
@@ -8710,7 +8853,8 @@ endfunction
 
 function! g:VimDialog.Close() "{{{2
     let bak = &ei
-    set eventignore=all
+	"TODO: 需要完善的方案
+    set eventignore+=BufWinLeave "暂时屏蔽自删动作的自动命令
 	let l:winnr = bufwinnr(self.bufNum)
     if l:winnr != -1
 		call s:exec(l:winnr . " wincmd w")
@@ -9016,6 +9160,41 @@ function! g:VimDialog.AddFooterButtons() "{{{2
 	call ctl.ConnectButtonCallback(0, s:GetSFuncRef('s:_ApplyCbk'), '')
 	call ctl.ConnectButtonCallback(1, s:GetSFuncRef('s:_CancelCbk'), '')
 	call ctl.ConnectButtonCallback(2, s:GetSFuncRef('s:_OKCbk'), '')
+
+	if self.isPopup || self.disableApply
+		call ctl.RemoveButton(0)
+		call remove(lButtonLabel, 0)
+
+		let nLen = 0
+		for sLabel in lButtonLabel
+			let nLen += strdisplaywidth(sLabel) + 2
+		endfor
+		if len(lButtonLabel)
+			let nLen += len(lButtonLabel) - 1
+		endif
+		call ctl.SetIndent((s:VC_MAXLINELEN - nLen) / 2)
+	endif
+endfunction
+"}}}
+function! g:VimDialog.AddCloseButton() "{{{2
+	call self.AddBlankLine()
+	call self.AddSeparator()
+
+	let ctl = g:VCButtonLine.New('')
+
+	let lButtonLabel = ['Close']
+	let nLen = 0
+	for sLabel in lButtonLabel
+		let nLen += strdisplaywidth(sLabel) + 2
+	endfor
+	if len(lButtonLabel)
+		let nLen += len(lButtonLabel) - 1
+	endif
+
+	call ctl.SetIndent((s:VC_MAXLINELEN - nLen) / 2)
+	call ctl.AddButton(lButtonLabel[0])
+	call self.AddControl(ctl)
+	call ctl.ConnectButtonCallback(0, s:GetSFuncRef('s:_CancelCbk'), '')
 endfunction
 "}}}
 function! g:VimDialog.ReplacedBy(dlgIns) "用于替换，暂不可用 {{{2
@@ -9301,7 +9480,7 @@ function! g:ProjectSettingsTest() "{{{2
 	call g:psdialog.Display()
 endfunction
 
-" vim:fdm=marker:fen:fdl=1
+" vim:fdm=marker:fen:fdl=1:ts=4
 plugin/VimTagsManager.vim	[[[1
 147
 " Vim script utilities for VimLite
@@ -11929,7 +12108,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-1679
+1717
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -12418,7 +12597,6 @@ endfunc
 function! omnicpp#resolvers#ResolveOmniScopeStack(
             \lSearchScopes, lMemberStack, dScopeInfo) "{{{2
     " TODO: 每次解析变量的 TypeInfo 时, 应该添加此变量的作用域到此类型的搜索域
-    " TODO: 类型信息带作用域前缀时(::A), 修正搜索域
     " eg.
     " namespace A
     " {
@@ -12475,8 +12653,13 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                             \lSearchScopes, dMember.name)
 
                 if len(dTypeInfo.types) >= 2
-                    let lTmpName = substitute(dTypeInfo.name, '::\w\+$', '', '')
-                    let dCtnTag = s:GetFirstMatchTag(lSearchScopes, lTmpName)
+                    " 联系数据库解析变量前, 处理一次类型替换
+                    " eg.
+                    " std::map<string, int>::iterator iter;
+                    " iter->|
+                    "
+                    let sTmpName = substitute(dTypeInfo.name, '::\w\+$', '', '')
+                    let dCtnTag = s:GetFirstMatchTag(lSearchScopes, sTmpName)
                     let lCtnTil = dTypeInfo.types[-2].til
                     let dReplTypeInfo = s:ResolveFirstVariableTypeReplacement(
                                 \dTypeInfo.name, dCtnTag, lCtnTil)
@@ -12489,16 +12672,48 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                     endif
                 endif
 
+                " 检查是否 '::A '形式, 若是, 修正搜索域为仅搜索全局作用域
                 if dTypeInfo.name =~# '^::\w\+'
                     let dTypeInfo.name = dTypeInfo.name[2:]
-                    "修正搜索域为仅搜索全局作用域
                     let lOrigScopes = dScopeInfo.global
                     let lSearchScopes = lOrigScopes
                 endif
+
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dTypeInfo.name)
                 let dMember.typeinfo = dTypeInfo
                 let dMember.tag = dTmpTag
                 if !empty(dTmpTag)
+                    if len(dTypeInfo.types) >= 2
+                        " 联系数据库解析变量后, 再一次处理类型替换
+                        " eg.
+                        " using namespace std;
+                        " map<string, int>::iterator iter;
+                        " iter->|
+                        "
+                        " 获取到了 std::map::iterator 的 tag 后再处理类型替换
+                        let sTmpName = substitute(dTypeInfo.name, '::\w\+$', 
+                                    \'', '')
+                        let dCtnTag = s:GetFirstMatchTag(lSearchScopes, 
+                                    \sTmpName)
+                        let sTypeName = dTmpTag.path
+                        let lCtnTil = dTypeInfo.types[-2].til
+                        let dReplTypeInfo = 
+                                    \s:ResolveFirstVariableTypeReplacement(
+                                    \   sTypeName, dCtnTag, lCtnTil)
+                        if !empty(dReplTypeInfo)
+                            " 先展开搜索域
+                            let lSearchScopes = s:ExpandSearchScopes(
+                                        \[sTypeName] + lSearchScopes)
+                            " 再替换类型信息
+                            call extend(dTypeInfo, dReplTypeInfo, 'force')
+
+                            " 更新最终的 tag
+                            let dTmpTag = s:GetFirstMatchTag(lSearchScopes, 
+                                        \dTypeInfo.name)
+                            let dMember.tag = dTmpTag
+                        endif
+                    endif
+
                     let lSearchScopes = omnicpp#resolvers#ResolveTag(
                                 \dTmpTag, dMember.typeinfo)
                     let idx += 1
@@ -12657,7 +12872,8 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                                 \dCtnInfo.typeinfo.til[nTmpIdx]
                 endfor
                 if has_key(dTmpMap, dReplTypeInfo.name)
-                    let dReplTypeInfo.name = dTmpMap[dReplTypeInfo.name]
+                    let dReplTypeInfo.name = 
+                                \s:StripString(dTmpMap[dReplTypeInfo.name])
                 endif
             endif
             " 替换类型信息
@@ -12678,8 +12894,8 @@ endfunc
 "}}}
 " 处理类型替换
 " Param1: sTypeName, 当前需要替换的类型名, 绝对路径. eg. std::map::iterator
-" Param2: dCtnInfo, 需要处理的类型所属容器的信息, 主要用到它的 tag 和 typeinfo
-"         相当于上一个 MemberStack
+" Param2: dCtnTag, 需要处理的类型所属容器的 tag
+" Param3: lCtnTil, 需要处理的类型所属容器的模板初始化列表
 " Return: 替换后的类型信息 TypeInfo
 " 这个替换不完善, 只对以下情况有效
 " eg. std::map::iterator=pair<_Key, _Tp>
@@ -12728,7 +12944,8 @@ function! s:ResolveFirstVariableTypeReplacement(
                 let dTmpMap[lPrmtInfo[nTmpIdx].name] = lCtnTil[nTmpIdx]
             endfor
             if has_key(dTmpMap, dReplTypeInfo.name)
-                let dReplTypeInfo.name = dTmpMap[dReplTypeInfo.name]
+                let dReplTypeInfo.name = 
+                            \s:StripString(dTmpMap[dReplTypeInfo.name])
             endif
         endif
 
@@ -13610,7 +13827,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-620
+622
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -13685,7 +13902,9 @@ function! s:CanComplete() "{{{2
             return 0
         endif
         if g:VLOmniCpp_EnableSyntaxTest
-            for nID in synstack(nLine, nCol)
+            let lStack = synstack(nLine, nCol)
+            let lStack = empty(lStack) ? [] : lStack
+            for nID in lStack
                 if synIDattr(nID, 'name') 
                             \=~? 'comment\|string\|number\|float\|character'
                     return 0
@@ -14232,7 +14451,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-569
+576
 " Description:	Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -14422,7 +14641,9 @@ endfunc
 " 根据语法检测光标是否在注释或字符串中或 include 预处理中
 function! omnicpp#utils#IsCursorInCommentOrString() "{{{2
     " FIXME: case. |"abc" . 判定为在字符串中
-    for nID in synstack(line('.'), col('.'))
+    let lStack = synstack(line('.'), col('.'))
+    let lStack = empty(lStack) ? [] : lStack
+    for nID in lStack
         if synIDattr(nID, 'name') =~? 'comment\|string\|character'
             return 1
         endif
@@ -14658,22 +14879,27 @@ function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
             elseif dCurToken.value ==# '('
                 " 可能是一个 cast, 需要跳至匹配的 ')' 之后的位置
                 " eg. (A *)&B;
-                let nTmpIdx = idx
-                let nTmpCount = 0
-                while nTmpIdx < len(lTokens)
-                    let dTmpToken = lTokens[nTmpIdx]
-                    if dTmpToken.value ==# '('
-                        let nTmpCount += 1
-                    elseif dTmpToken.value ==# ')'
-                        let nTmpCount -= 1
-                        if nTmpCount == 0
-                            break
+                " 也可能是 for ( A a
+                if idx - 1 >= 0 && lTokens[idx-1].value ==# 'for'
+                    " for ( A a
+                else
+                    let nTmpIdx = idx
+                    let nTmpCount = 0
+                    while nTmpIdx < len(lTokens)
+                        let dTmpToken = lTokens[nTmpIdx]
+                        if dTmpToken.value ==# '('
+                            let nTmpCount += 1
+                        elseif dTmpToken.value ==# ')'
+                            let nTmpCount -= 1
+                            if nTmpCount == 0
+                                break
+                            endif
                         endif
-                    endif
-                    let nTmpIdx += 1
-                endwhile
+                        let nTmpIdx += 1
+                    endwhile
 
-                let idx = nTmpIdx
+                    let idx = nTmpIdx
+                endif
             endif
         elseif nState == 1
             if dCurToken.kind == 'cppWord'
