@@ -3039,17 +3039,17 @@ function! s:ProjectSettings(projName) "{{{2
 endfunction
 
 function! s:EditOptionsBtnCbk(ctl, data) "{{{2
-    let g:editDialog = g:VimDialog.New('Edit', a:ctl.owner)
+    let editDialog = g:VimDialog.New('Edit', a:ctl.owner)
     let content = join(split(a:ctl.GetValue(), ';'), "\n")
     if content !=# ''
         let content .= "\n"
     endif
-    call g:editDialog.SetIsPopup(1)
-    call g:editDialog.SetAsTextCtrl(1)
-    call g:editDialog.SetTextContent(content)
-    call g:editDialog.ConnectSaveCallback(
+    call editDialog.SetIsPopup(1)
+    call editDialog.SetAsTextCtrl(1)
+    call editDialog.SetTextContent(content)
+    call editDialog.ConnectSaveCallback(
                 \s:GetSFuncRef('s:EditOptionsSaveCbk'), a:ctl)
-    call g:editDialog.Display()
+    call editDialog.Display()
 endfunction
 
 function! s:EditOptionsSaveCbk(dlg, data) "{{{2
@@ -4933,7 +4933,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLCalltips.vim	[[[1
-298
+302
 " Description:  vim script for display function calltips
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 Jun 18
@@ -4985,10 +4985,13 @@ function! s:Test()
 endfunction
 
 " 接口函数, 用于外部调用
-function! g:DisplayVLCalltips(lCalltips, nCurIndex) "{{{2
+" 可选参数若非零, 不移动光标, 即使函数没有参数
+function! g:DisplayVLCalltips(lCalltips, nCurIndex, ...) "{{{2
     if empty(a:lCalltips)
         return ''
     endif
+
+    let bKeepCursor = a:0 > 0 ? a:1 : 0
 
     call s:StopCalltips()
     if type(a:lCalltips) == type('')
@@ -5016,7 +5019,8 @@ function! g:DisplayVLCalltips(lCalltips, nCurIndex) "{{{2
         let s:nArgIndex = s:GetArgIndex()
 
         "如果函数无参数, 自动结束
-        if len(s:lCalltips) == 1 && s:lCalltips[0] =~# '()\|(\s*void\s*)'
+        if !bKeepCursor && len(s:lCalltips) == 1 
+                    \&& s:lCalltips[0] =~# '()\|(\s*void\s*)'
             call s:StopCalltips()
             call search(')', 'Wc')
             normal! l
@@ -6237,7 +6241,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1
 plugin/vimdialog.vim	[[[1
-3243
+3269
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -8303,7 +8307,8 @@ function! g:VimDialog._CreateWin() "{{{2
 	let self.origBufNum = bufnr('%')
 
     if !has_key(self, "bufName")
-		"第一次进入，需要新建
+		"第一次调用本实例的显示函数
+
         let self.bufName = self.name
 		"NOTE: 处理空格。凡是用于命令行的，都要注意空格！
 		let l:bufName = substitute(self.bufName, ' ', '\\ ', "g")
@@ -8311,24 +8316,45 @@ function! g:VimDialog._CreateWin() "{{{2
 
 		"先跳至将要编辑的窗口
 		if self.isPopup
-			exec winheight(0).'new'
-		elseif self.splitOpen || winNum == -1 
-					\|| (winnr('$') == 1 && winNum == -1)
+			"Popup 类型的窗口为无名缓冲
+			exec (winheight(0)-2).'new'
+		elseif self.splitOpen
 			let maxWidthWinNr = g:GetMaxWidthWinNr()
 			call g:Exec(maxWidthWinNr . ' wincmd w')
 			new
+			"求好方案更改缓冲区的名称，这样的实现会关联本地的文件...
+			silent! exec "edit " . l:bufName
+		elseif winNum == -1 || (winnr('$') == 1 && winNum == -1)
+			if bufwinnr(self.bufName) != -1
+				"存在与要创建的缓冲同名的缓冲, 跳至那个缓冲然后结束
+				call g:Exec(bufwinnr(self.bufName) . ' wincmd w')
+				return 1
+			endif
+
+			let maxWidthWinNr = g:GetMaxWidthWinNr()
+			call g:Exec(maxWidthWinNr . ' wincmd w')
+			new
+			"求好方案更改缓冲区的名称，这样的实现会关联本地的文件...
+			silent! exec "edit " . l:bufName
 		else
 			"替换缓冲区
-			"FIXME: 当仅有一个无名缓冲区时，会把无名缓冲区完全替换掉
+			if bufwinnr(self.bufName) != -1
+				"存在与要创建的缓冲同名的缓冲, 跳至那个缓冲然后结束
+				call g:Exec(bufwinnr(self.bufName) . ' wincmd w')
+				return 1
+			endif
+
+			"NOTE: 当仅有一个无名缓冲区时，会把无名缓冲区完全替换掉
 			call g:Exec(winNum . ' wincmd w')
 			let self.rpmBufNum = bufnr('%')		"用于关闭时切换回来
+			"求好方案更改缓冲区的名称，这样的实现会关联本地的文件...
+			silent! exec "edit " . l:bufName
 		endif
-
-		"求好方案更改缓冲区的名称，这样的实现会关联本地的文件...
-		silent! exec "edit " . l:bufName
     else
-		if bufwinnr(self.bufName) != -1
-			"已有相同的窗口，直接跳至窗口
+		"重复调用本实例显示函数
+
+		if bufwinnr(self.bufNum) != -1
+			"已在某窗口打开着，直接跳至窗口
 			call s:exec(bufwinnr(self.bufNum) . " wincmd w")
 			return
 		else
@@ -8345,8 +8371,6 @@ function! g:VimDialog._CreateWin() "{{{2
 			endif
 		endif
     endif
-
-    setlocal winfixwidth
 
     "throwaway buffer options
     setlocal noswapfile
@@ -8390,7 +8414,7 @@ function! g:VimDialog._CreateWin() "{{{2
 
     setfiletype vimdialog
 
-	let self.bufNum = winbufnr(0)
+	let self.bufNum = bufnr('%')
 endfunction
 
 function! g:VimDialog._RefreshStatusLine() "{{{2
@@ -8445,7 +8469,11 @@ function! g:VimDialog.Display()
 	endif
 
 	"调用此函数后自动把光标放到对应的窗口里, 接着可直接操作当前窗口修改其内容
-	call self._CreateWin()
+	if self._CreateWin()
+		"跳到了复用的窗口, 直接结束
+		call self.Delete()
+		return
+	endif
 
 	setlocal ma
 	exec "silent 1," . line("$") . " delete _"
@@ -8852,9 +8880,8 @@ function! g:VimDialog.SetupKeyMappings()
 endfunction
 
 function! g:VimDialog.Close() "{{{2
-    let bak = &ei
-	"TODO: 需要完善的方案
-    set eventignore+=BufWinLeave "暂时屏蔽自删动作的自动命令
+    "let bak = &ei
+    "set eventignore+=BufWinLeave "暂时屏蔽自删动作的自动命令
 	let l:winnr = bufwinnr(self.bufNum)
     if l:winnr != -1
 		call s:exec(l:winnr . " wincmd w")
@@ -8871,7 +8898,7 @@ function! g:VimDialog.Close() "{{{2
 		endif
 		call s:exec(self.origWinNum . " wincmd w")
     endif
-    let &ei = bak
+    "let &ei = bak
 endfunction
 
 function! g:VimDialog.Save() "{{{2
@@ -8929,6 +8956,9 @@ function! g:VimDialog.Quit() "{{{2
 	if self.lock
 		return
 	endif
+
+	"删除自删的自动命令, 因为已经不需要了, 这个函数肯定能删除
+	autocmd! BufWinLeave <buffer>
 
 	if self.lockParent && !empty(self.parentDlg)
 		let self.parentDlg.lock = 0
@@ -12108,7 +12138,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-1717
+1782
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -12178,10 +12208,12 @@ endfunc
 " }
 "
 " 列表 OmniSS, 每个条目为 OmniScope
+" 'til' 一般在 'kind' 为 'container' 时才有效
 " OmniScope
 " {
 " 'kind': <'container'|'variable'|'function'|'cast'|'unknown'>
 " 'name': <name>
+" 'til' : <template initialization list>
 " }
 "
 " 如 case3, [{'kind': 'container', 'name': 'A'},
@@ -12216,7 +12248,8 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
     let lRevTokens = reverse(lTokens[:])
 
     let lOmniSS = []
-    let dOmniInfo = {'omniss': [], 'precast': ''}
+    " 'til' 对应于 'precast' 的值
+    let dOmniInfo = {'omniss': [], 'precast': '', 'til': []}
 
     " 反向遍历分析
     let idx = 0
@@ -12233,6 +12266,7 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
     " 3. 左括号
     " 4. 右括号
     let dPrevToken = {}
+    let til = [] " 保存最近一次分析的 til
     while idx < nLen
         let dToken = lRevTokens[idx]
 
@@ -12264,6 +12298,8 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                 let dOmniScope.name = dToken.value
                 if dPrevToken.value == '::'
                     let dOmniScope.kind = 'container'
+                    let dOmniScope.til = til
+                    let til = []
                 elseif dPrevToken.value =~# '->\|\.'
                     let dOmniScope.kind = 'variable'
                 else
@@ -12304,6 +12340,7 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                 " 期待单词
                 " 遇到右括号
                 " 可能是 precast 或者 postcast((A)::B.|) 或者是一个函数
+                "                                ^
                 " 判定是否函数
                 if lRevTokens[idx+1].value == '(' 
                             \&& lRevTokens[idx+2].kind == 'cppWord'
@@ -12317,34 +12354,27 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                     let dToken = lRevTokens[idx]
                     " 切换至期待操作符
                     let nState = 0
-                elseif lRevTokens[idx+1].kind == 'cppWord' 
-                            \&& dPrevToken.value != '::'
+                elseif (lRevTokens[idx+1].kind == 'cppWord' 
+                            \|| lRevTokens[idx+1].value ==# ')')
+                            \   && dPrevToken.value != '::'
                     " 是一个 precast
-                    " eg. ((A*)B)->C.|
-                    "          ^
+                    " eg. ((A*)B.b)->C.|
+                    "            ^|
+                    " eg. ((A*)B.b())->C.|
+                    "              ^|
+                    " eg. static_cast<A *>(B.b())->C.|
+                    "                          ^|
 
                     " 先添加变量 scope
                     let dOmniScope = s:NewOmniScope()
                     let dOmniScope.kind = 'variable'
-                    let dOmniScope.name = lRevTokens[idx+1].value
+                    "let dOmniScope.name = lRevTokens[idx+1].value
+                    let dOmniScope.name = "CODE" " 无需名字
                     let lOmniSS = [dOmniScope] + lOmniSS
 
                     " 直接处理完 precast. eg. ((A*)B)|
                     " 寻找匹配的左括号的位置
-                    let j = idx + 2
-                    try
-                        let dTmpToken = lRevTokens[j]
-                    catch
-                        echom 'syntax error: ' . dToken.value
-                        let lOmniSS = []
-                        break
-                    endtry
-                    if dTmpToken.value != ')'
-                        echom 'syntax error: ' . dToken.value
-                        let lOmniSS = []
-                        break
-                    endif
-                    let j += 1
+                    let j = idx + 1
                     let tmp = 1
                     while j < nLen
                         let dTmpToken = lRevTokens[j]
@@ -12359,12 +12389,61 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                         let j += 1
                     endwhile
 
-                    " 添加 precast 信息
-                    if lRevTokens[j-1].value =~# 'const\|struct'
-                        let dOmniInfo.precast = lRevTokens[j-2].value
+                    "let j -= 1
+                    if lRevTokens[j-1].value ==# '('
+                        " 传统的类型转换
+                        " 获取需要解析变量类型的 tokens
+                        let k = j - 2
+                        let tmp = 1
+                        while k >= 0
+                            let dTmpToken = lRevTokens[k]
+                            if dTmpToken.value == ')'
+                                let tmp -= 1
+                                if tmp == 0
+                                    break
+                                endif
+                            elseif dTmpToken.value == '('
+                                let tmp += 1
+                            endif
+                            let k -= 1
+                        endwhile
+
+                        let dTmpTypeInfo = omnicpp#utils#GetVariableType(
+                                    \reverse(lRevTokens[k+1 : j-2]))
+                        let dOmniInfo.precast = dTmpTypeInfo.name
+                        let dOmniInfo.til = dTmpTypeInfo.til
+                        " 应该保存整个 typeinfo 备用
+                        let dOmniInfo.pretypeinfo = dTmpTypeInfo
+                    elseif (j + 1) < nLen && lRevTokens[j+1].value ==# '>'
+                        " C++ 形式的类型转换
+                        " 获取需要解析变量类型的 tokens
+                        let k = j + 2
+                        let tmp = 1
+                        while k < nLen
+                            let dTmpToken = lRevTokens[k]
+                            if dTmpToken.value == '>'
+                                let tmp += 1
+                            elseif dTmpToken.value == '<'
+                                let tmp -= 1
+                                if tmp == 0
+                                    break
+                                endif
+                            endif
+                            let k += 1
+                        endwhile
+
+                        let dTmpTypeInfo = omnicpp#utils#GetVariableType(
+                                    \reverse(lRevTokens[j+1 : k+1]))
+                        let dOmniInfo.precast = dTmpTypeInfo.name
+                        let dOmniInfo.til = dTmpTypeInfo.til
+                        " 应该保存整个 typeinfo 备用
+                        let dOmniInfo.pretypeinfo = dTmpTypeInfo
                     else
-                        let dOmniInfo.precast = lRevTokens[j-1].value
-                    endi
+                        echom 'syntax error: ' . dToken.value
+                        let lOmniSS = []
+                        break
+                    endif
+
 
                     " 处理完毕
                     break
@@ -12372,6 +12451,7 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                             \&& dPrevToken.value == '::'
                     " postcast
                     " eg. (A**)::B.|
+                    "         |^^
                     let dOmniInfo.precast = '<global>'
                     break
                 else
@@ -12428,6 +12508,11 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
                     endif
                     let j += 1
                 endwhile
+
+                " 分析 til
+                let lTmpTokens = reverse(lRevTokens[idx : j+1])
+                let til = omnicpp#utils#GetVariableType(lTmpTokens).til
+
                 let dToken = dPrevToken " 保持 dPrevToken
                 let idx = j
             else
@@ -12437,10 +12522,16 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
             endif
         else
             " 遇到了其他字符, 结束. 前面判断的结果多数情况下是有用
-            if dPrevToken.kind == 'cppOperatorPunctuator' 
+            if !empty(dPrevToken) && dPrevToken.kind == 'cppOperatorPunctuator' 
                         \&& dPrevToken.value == '::'
                 let dOmniInfo.precast = '<global>'
             endif
+
+            " 检查是否 new 语法. eg. new A::B|
+            if dToken.kind == 'cppKeyword' && dToken.value ==# 'new'
+                let dOmniInfo.new = 1
+            endif
+
             break
         endif
 
@@ -12582,6 +12673,9 @@ function! omnicpp#resolvers#ResolveOmniInfo(lScopeStack, dOmniInfo) "{{{2
         else
             let dNewOmniScope.name = dOmniInfo.precast
             let dNewOmniScope.kind = 'container'
+            if has_key(dOmniInfo, 'pretypeinfo')
+                let dNewOmniScope.pretypeinfo = dOmniInfo.pretypeinfo
+            endif
             let lMemberStack = [dNewOmniScope] + lOmniSS[1:]
         endif
     endif
@@ -12594,9 +12688,10 @@ endfunc
 "}}}
 " 递归解析补全请求的补全 scope
 " 返回用于获取 tags 的 TagScopes
+" NOTE: 不支持嵌套定义的类模版, 也不打算支持, 因诸多原因.
 function! omnicpp#resolvers#ResolveOmniScopeStack(
             \lSearchScopes, lMemberStack, dScopeInfo) "{{{2
-    " TODO: 每次解析变量的 TypeInfo 时, 应该添加此变量的作用域到此类型的搜索域
+    " 每次解析变量的 TypeInfo 时, 应该添加此变量的作用域到此类型的搜索域
     " eg.
     " namespace A
     " {
@@ -13827,7 +13922,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-622
+689
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -14041,11 +14136,12 @@ function! s:RequestCalltips(...) " 可选参数标识是否刚在补全后发出
         let sLine = getline('.')
         let nCol = col('.')
         if sLine[nCol-3:] =~ '^()'
-            normal! h
-            let sFuncName = matchstr(sLine[: nCol-4], '\w\+$')
-
-            let lCalltips = s:GetCalltips(s:lTags, sFuncName)
-            call g:DisplayVLCalltips(lCalltips, 0)
+            let sFuncName = matchstr(sLine[: nCol-4], '\~\?\w\+$')
+            if sFuncName[0] !=# '~'
+                normal! h
+                let lCalltips = s:GetCalltips(s:lTags, sFuncName)
+                call g:DisplayVLCalltips(lCalltips, 0)
+            endif
         endif
     else " 普通情况，请求 calltips
         " 确定函数括号开始的位置
@@ -14059,34 +14155,142 @@ function! s:RequestCalltips(...) " 可选参数标识是否刚在补全后发出
             " 空则不跳过任何匹配
             let sSkipExpr = ''
         endif
+        " 括号开始位置
         let lStartPos = searchpairpos('(', '', ')', 'nWb', sSkipExpr)
         "考虑刚好在括号内，加 'c' 参数
         let lEndPos = searchpairpos('(', '', ')', 'nWc', sSkipExpr)
         let lCurPos = lOrigCursor[1:2]
 
         "不在括号内
-        if lStartPos ==# [0, 0]
+        if lStartPos == [0, 0]
             return ''
         endif
+
+        let bImpossible = 0 " 不可能是 A<B> a(|);
+        let bForceNew = 0   " 强制视为 new A<B>(|);
 
         "获取函数名称和名称开始的列，只能处理 '(' "与函数名称同行的情况，
         "允许之间有空格
         let sStartLine = getline(lStartPos[0])
-        let sFuncName = matchstr(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
-        let nFuncStartIdx = match(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
+        call cursor(lStartPos)
+        let lTokens = omnicpp#utils#TokenizeStatementBeforeCursor()
+        if empty(lTokens)
+            return ''
+        endif
+        if lTokens[-1].value ==# '>'
+            let bImpossible = 1
+            let idx = 2
+            let nLen = len(lTokens)
+            let nDeep = 1
+            while idx <= nLen
+                let dToken = lTokens[-idx]
+                if dToken.value ==# '>'
+                    let nDeep += 1
+                elseif dToken.value ==# '<'
+                    let nDeep -= 1
+                endif
+                if nDeep == 0
+                    break
+                endif
+                let idx += 1
+            endwhile
+            let lTokens = lTokens[: -idx - 1]
+        endif
+        if empty(lTokens)
+            return ''
+        endif
+        let sFuncName = lTokens[-1].value
+        try
+            if lTokens[-2].value ==# '~'
+                let bImpossible = 1
+                let sFuncName = '~' . sFuncName
+            endif
+        catch
+        endtry
+        let lFuncNameSPos = searchpos('\V' . sFuncName, 'bWn')
+        let lFuncNameEPos = lFuncNameSPos[:]
+        let lFuncNameEPos[1] += len(sFuncName)
+        if lFuncNameSPos == [0, 0]
+            return ''
+        endif
+
+        if !bImpossible
+            " 检查是否 A<B> a(|); 形式
+            try
+                let bTest1 = 0 " 条件一:
+                let bTest2 = 0 " 条件二:
+                if lTokens[-1].kind == 'cppWord'
+                    let bTest1 = 1
+                endif
+
+                let lTmp = lTokens[:-2]
+                if lTmp[-1].value ==# '>'
+                    " 剔除中间的 <>
+                    " eg. A<B> a(|);
+                    "      ^^^
+                    let bImpossible = 1
+                    let idx = 2
+                    let nLen = len(lTmp)
+                    let nDeep = 1
+                    while idx <= nLen
+                        let dToken = lTmp[-idx]
+                        if dToken.value ==# '>'
+                            let nDeep += 1
+                        elseif dToken.value ==# '<'
+                            let nDeep -= 1
+                        endif
+                        if nDeep == 0
+                            break
+                        endif
+                        let idx += 1
+                    endwhile
+                    let lTokens = lTmp[: -idx - 1] + [lTokens[-1]]
+                endif
+
+                if lTokens[-2].kind == 'cppWord'
+                    let bTest2 = 1
+                    call remove(lTokens, -1)
+                endif
+
+                if bTest1 && bTest2
+                    " 满足条件, 构造成 new A<B>(|)
+                    let bForceNew = 1
+                    let sFuncName = lTokens[-1].value
+                    let lFuncNameSPos = searchpos(sFuncName, 'bWn')
+                    let lFuncNameEPos = lFuncNameSPos[:]
+                    let lFuncNameEPos[1] += len(sFuncName)
+                endif
+            catch
+            endtry
+        endif
 
         let lCalltips = []
-        if sFuncName != ''
+        if sFuncName != '' && sFuncName[0] !=# '~'
             "找到了函数名，开始全能补全
-            call setpos('.', [0, lStartPos[0], lStartPos[1], 0])
+            call cursor(lFuncNameEPos)
             let nStartCol = omnicpp#complete#Complete(1, '')
-            call setpos('.', [0, lStartPos[0], nFuncStartIdx+1, 0])
+            call cursor(lFuncNameSPos)
+
+            " 用于支持 new CLS(|) 和 CLS cls(|) 形式的 calltips
+            let dOmniInfo = omnicpp#resolvers#GetOmniInfo(s:lTokens)
+            if has_key(dOmniInfo, 'new') || bForceNew
+                " eg. A::B *c = new A::B(|);
+                let dToken1 = {'kind': 'cppWord', 'value': sFuncName}
+                let dToken2 = {'kind': 'cppOperatorPunctuator', 'value': '::'}
+                call add(s:lTokens, dToken1)
+                call add(s:lTokens, dToken2)
+                " 必定是成员补全
+                let s:nCompletionType = s:CompletionType_MemberCompl
+                " TODO: 如果 sFuncName 是一个 typedef, 需要展开
+                " std::string::basic_string<char>(|)
+            endif
+
             let lTags = omnicpp#complete#Complete(0, sFuncName)
             let lCalltips = s:GetCalltips(lTags, sFuncName)
         endif
 
         call setpos('.', lOrigCursor)
-        call g:DisplayVLCalltips(lCalltips, 0)
+        call g:DisplayVLCalltips(lCalltips, 0, 1)
     endif
 
     return ''
@@ -14123,6 +14327,9 @@ function! s:GetCalltips(lTags, sFuncName) "{{{2
                 endif
                 call add(lCalltips, printf("%s%s%s", sQualifiers, 
                             \              sName, dTag.signature))
+            elseif dTag.kind ==# 'd' && has_key(dTag, 'signature')
+                " 处理函数形式的宏
+                call add(lCalltips, dTag.name . dTag.signature)
             endif
         endif
     endfor
@@ -14154,11 +14361,10 @@ function! omnicpp#complete#Complete(findstart, base) "{{{2
             return -1
         endif
 
-if 1
         " 基于 tokens 的预分析
         let lTokens = omnicpp#utils#TokenizeStatementBeforeCursor(1)
         let s:lTokens = lTokens
-        let b:lTokens = lTokens
+        let b:lTokens = s:lTokens
         if empty(lTokens)
             " (1) 无预输入的作用域内符号补全不支持, 因为可能太多符号
             let s:bDoNotComplete = 1
@@ -14168,6 +14374,7 @@ if 1
         if lTokens[-1].kind == 'cppKeyword' || lTokens[-1].kind == 'cppWord'
             " 肯定是有预输入的补全, 至于是不是成员补全需要进一步分析
             let s:lTokens = lTokens[:-2]
+            let b:lTokens = s:lTokens
 
             if  sLine[-1:-1] =~# '\s' || sLine[-1:-1] ==# ''
                 " 有预输入, 但是光标不邻接单词, 不能补全
@@ -14207,58 +14414,6 @@ if 1
             let s:bDoNotComplete = 1
             return -1
         endif
-else
-        " 基于字符的预分析
-        if sLine[nStartIdx - 1] =~ '\s' || sLine == ''
-            " 光标前的字符为空字符, 要么不能补全, 要么是无预输入的成员补全
-            let s:nCompletionType = s:CompletionType_MemberCompl
-
-            "跳过空格， . -> :: 之间是允许空格的...
-            let nStartIdx = match(sLine[:nStartIdx-1], '\S\s*$')
-
-            if sLine[:nStartIdx] =~# '->$\|::$\|\.$'
-                if sLine[nStartIdx] ==# ':'
-                    let s:bIsScopeOperation = 1
-                else
-                    let s:bIsScopeOperation = 0
-                endif
-                " 成员补全. eg. std::, MyClass->
-                let nCol = nStartIdx + 1
-                return col('.')
-            else
-                " 没有成员补全操作符, 补全失败
-                let s:bDoNotComplete = 1
-                return -1
-            endif
-        else
-            " 光标前的字符为非空字符, 无论如何都会请求补全
-            " 两种补全都有可能. eg. MyClass->|, MyClass.m_|
-            if sLine[: nStartIdx-1] =~# '->$\|::$\|\.$'
-                if sLine[nStartIdx-1] ==# ':'
-                    let s:bIsScopeOperation = 1
-                else
-                    let s:bIsScopeOperation = 0
-                endif
-                " 无预输入的成员补全. eg. std::, MyClass->
-                let nCol = nStartIdx + 1
-                let s:nCompletionType = s:CompletionType_MemberCompl
-                return col('.')
-            else
-                " 有预输入的作用域符号或成员补全
-                if sLine[: nStartIdx-1] =~# '\%(->\|::\|\.\)\s*\w\+$'
-                    if sLine[: nStartIdx-1] =~# '::\s*\w\+$'
-                        let s:bIsScopeOperation = 1
-                    else
-                        let s:bIsScopeOperation = 0
-                    endif
-                    let s:nCompletionType = s:CompletionType_MemberCompl
-                endif
-
-                " NOTE: 为什么这里返回的列数比实际的小 1 还能正常工作?
-                return match(sLine, '\<\w\+$')
-            endif
-        endif
-endif
     endif
 
     let lResult = []
@@ -14288,11 +14443,7 @@ endif
     else
         " (2) 作用域内成员补全模式
 
-        if exists('s:lTokens')
-            let dOmniInfo = omnicpp#resolvers#GetOmniInfo(s:lTokens)
-        else
-            let dOmniInfo = omnicpp#resolvers#GetOmniInfo()
-        endif
+        let dOmniInfo = omnicpp#resolvers#GetOmniInfo(s:lTokens)
         if empty(dOmniInfo.omniss) && dOmniInfo.precast ==# '<global>'
                     \&& sBase ==# ''
             " 禁用全局全符号补全, 因为会卡
@@ -14423,6 +14574,17 @@ function! s:ExtendTagToPopupMenuItem(dTag, ...) "{{{2
         endif
     endif
 
+    " 把函数形式的宏视为函数
+    if dTag.kind[0] ==# 'd'
+        let sString = substitute(dTag.cmd[2:-3], '\\t', ' ', 'g')
+        let sSignature = matchstr(sString, dTag.name . '\zs(.\{-1,})\ze')
+        if sSignature !=# ''
+            let dTag.signature = sSignature
+            let sWord .= '()'
+            let sAbbr .= '()'
+        endif
+    endif
+
     let sInfo = ''
 
     " If a function is a ctor we add a new key in the tag
@@ -14451,8 +14613,8 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-576
-" Description:	Omni completion utils script
+599
+" Description:  Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
 " License:      GPLv2
@@ -14467,8 +14629,30 @@ autoload/omnicpp/utils.vim	[[[1
 " 匹配了以下字符串后则认为在注释中, 近似测试
 " //, /*, */
 " BUG: 不知道为什么, 下面的表达式无法工作
-let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
-let omnicpp#utils#sCommentSkipExpr = ''
+"let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
+let omnicpp#utils#sCommentSkipExpr = 'omnicpp#utils#CommentSkipChecker()'
+
+function! omnicpp#utils#CommentSkipChecker() "{{{2
+    let sLine = getline('.')
+    let nCol = col('.')
+
+    " 简单地检查是否注释
+    "if sLine =~# '\V^\s*//'
+        "return 0
+    "endif
+
+    if nCol == 1
+        return 0
+    else
+        let sStr = sLine[nCol-2 : nCol]
+        if sStr ==# "'{'" || sStr ==# "'}'"
+            return 1
+        else
+            return 0
+        endif
+    endif
+endfunc
+"}}}
 
 let s:dCppBuiltinTypes = {
             \'bool': 1, 
@@ -14490,21 +14674,21 @@ let s:dCppBuiltinTypes = {
 
 " 比较两个光标位置 
 function! omnicpp#utils#CmpPos(pos1, pos2) "{{{2
-	let pos1 = a:pos1
-	let pos2 = a:pos2
-	if pos1[0] > pos2[0]
-		return 1
-	elseif pos1[0] < pos2[0]
-		return -1
-	else
-		if pos1[1] > pos2[1]
-			return 1
-		elseif pos1[1] < pos2[1]
-			return -1
-		else
-			return 0
-		endif
-	endif
+    let pos1 = a:pos1
+    let pos2 = a:pos2
+    if pos1[0] > pos2[0]
+        return 1
+    elseif pos1[0] < pos2[0]
+        return -1
+    else
+        if pos1[1] > pos2[1]
+            return 1
+        elseif pos1[1] < pos2[1]
+            return -1
+        else
+            return 0
+        endif
+    endif
 endfunc
 "}}}
 " 获取当前语句的开始位置, 若当前语句为空, 返回 [0, 0]
@@ -14555,8 +14739,8 @@ function! omnicpp#utils#GetCodeFromLine(szSingleLine) "{{{2
 
     " We set all strings to empty strings, it's safer for 
     " the next of the process
-	" TODO: '"\"", foo, "foo"'
-	" 方法是替换不匹配 \" 的 " 的最小长度的匹配
+    " TODO: '"\"", foo, "foo"'
+    " 方法是替换不匹配 \" 的 " 的最小长度的匹配
     let szResult = substitute(a:szSingleLine, '".*"', '""', 'g')
 
     " Removing C++ comments, we can use the pattern ".*" because
@@ -14592,7 +14776,7 @@ endfunc
 " and with empty strings if any
 " @return a string
 function! omnicpp#utils#GetCode(posStart, posEnd) "{{{2
-	"TODO: 处理反斜杠续行
+    "TODO: 处理反斜杠续行
     let posStart = a:posStart
     let posEnd = a:posEnd
     if a:posStart[0] > a:posEnd[0]
@@ -14706,70 +14890,71 @@ endfunc
 " cg3. static_cast<A*>(B)->C. -> (A*)B->C.
 " egx. A::B(C.D(), ((E*)F->G)). -> A::B().
 function! omnicpp#utils#SimplifyCodeForOmni(sOmniCode) "{{{2
-	let s = a:sOmniCode
-	
-    " 1. 把 C++ 的 cast 转为 标准 C 的 cast
+    let s = a:sOmniCode
+    
+    " 1. 清理函数函数
+    let s = s:StripFuncArgs(s)
+    " 2. 把 C++ 的 cast 转为 标准 C 的 cast
     "    %s/\%(static_cast\|dynamic_cast\)\s*<\(.\+\)>(\(\w\+\))/((\1)\2)/gc
-    let s = substitute(
-                \s, 
-                \'\C\%(static_cast\|dynamic_cast\|reinterpret_cast' 
-                \    .'\|const_cast\)\s*<\(.\+\)>(\(\w\+\))', 
-                \'((\1)\2)', 
-                \'g')
-	" 2. 清理函数函数
-	let s = s:StripFuncArgs(s)
-	" 3. 清理多余的括号, 不会检查匹配的情况. eg. ((A*)((B))) -> ((A*)B)
-	" TODO: 需要更准确
-	"let s = substitute(s, '\W\zs(\+\(\w\+\))\+\ze', '\1', 'g')
+    "let s = substitute(
+                "\s, 
+                "\'\C\%(static_cast\|dynamic_cast\|reinterpret_cast' 
+                "\    .'\|const_cast\)\s*<\(.\+\)>(\(\w\+\))', 
+                "\'((\1)\2)', 
+                "\'g')
+    " 逐字符处理 C++ 的 cast
+    " 3. 清理多余的括号, 不会检查匹配的情况. eg. ((A*)((B))) -> ((A*)B)
+    " TODO: 需要更准确
+    "let s = substitute(s, '\W\zs(\+\(\w\+\))\+\ze', '\1', 'g')
 
-	return s
+    return s
 endfunc
 "}}}
 " 剔除所有函数参数, 仅保留一个括号
 function! s:StripFuncArgs(szOmniCode) "{{{2
-	let s = a:szOmniCode
+    let s = a:szOmniCode
 
-	" 1. 清理引号内的 \" , 因为正则貌似是不能直接匹配 ("\"")
-	let s = substitute(s, '\\"', '', 'g')
-	" 2. 清理双引号的内容, 否则双引号内的括号会干扰括号替换
-	let s = substitute(s, '".\{-}"', '', 'g')
-	" 3. 清理 '(' 和 ')', 避免干扰
-	let s = substitute(s, "'('\\|')'", '', 'g')
+    " 1. 清理引号内的 \" , 因为正则貌似是不能直接匹配 ("\"")
+    let s = substitute(s, '\\"', '', 'g')
+    " 2. 清理双引号的内容, 否则双引号内的括号会干扰括号替换
+    let s = substitute(s, '".\{-}"', '', 'g')
+    " 3. 清理 '(' 和 ')', 避免干扰
+    let s = substitute(s, "'('\\|')'", '', 'g')
 
-	let szResult = ''
-	let nStart = 0
-	while nStart < len(s) && nStart != -1
-		let nEnd = matchend(s, '\w\s*(', nStart)
-		if nEnd != -1
-			let szResult .= s[nStart : nEnd - 1]
+    let szResult = ''
+    let nStart = 0
+    while nStart < len(s) && nStart != -1
+        let nEnd = matchend(s, '\w\s*(', nStart)
+        if nEnd != -1
+            let szResult .= s[nStart : nEnd - 1]
 
-			let nStart = nEnd
-			let nCount = 1
-			" 开始寻找匹配的 ) 的位置
-			for i in range(nStart, len(s) - 1)
+            let nStart = nEnd
+            let nCount = 1
+            " 开始寻找匹配的 ) 的位置
+            for i in range(nStart, len(s) - 1)
 
-				let c = s[i]
+                let c = s[i]
 
-				if c == '('
-					let nCount += 1
-				elseif c == ')'
-					let nCount -= 1
-				endif
+                if c == '('
+                    let nCount += 1
+                elseif c == ')'
+                    let nCount -= 1
+                endif
 
-				if nCount == 0
-					let nStart = i + 1
-					let szResult .= ')'
-					break
-				endif
-			endfor
+                if nCount == 0
+                    let nStart = i + 1
+                    let szResult .= ')'
+                    break
+                endif
+            endfor
 
-		else
-			let szResult .= s[nStart :]
-			break
-		endif
-	endwhile
+        else
+            let szResult .= s[nStart :]
+            break
+        endif
+    endwhile
 
-	return szResult
+    return szResult
 endfunc
 "}}}
 " 从一条语句中获取变量信息, 无法判断是否非法声明
@@ -15025,9 +15210,9 @@ function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
     endif
 
     return dTypeInfo
-endfunction
+endfunc
 "}}}
-" vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
+" vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
 386
 " Description:  Omni completion script for resolve namespace

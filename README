@@ -16,7 +16,7 @@ Such as taglist, tagbar, NERD_commenter, snipmate, etc.
 
 
 NOTE: Currently, VimLite is not stable enough.
-NOTE2: Currently, VimLite only support Linux(or Unix like?) 32bit platform.
+NOTE2: Currently, VimLite only support Linux(or Unix like?) platform.
 NOTE3: Currently, VimLite need Gvim.
 
 Please report bugs here http://code.google.com/p/vimlite/issues/list.
