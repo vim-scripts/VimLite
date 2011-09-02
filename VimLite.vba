@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-4803
+4804
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -4857,7 +4857,8 @@ class VimLiteWorkspace():
                     del ds
                     self.AddFileNode(row, name)
             elif choice == 'Add Existing Files...':
-                if useGui and vim.eval('has("browse")') != '0':
+                #if useGui and vim.eval('has("browse")') != '0':
+                if True and vim.eval('has("browse")') != '0':
                     if vim.eval("executable('zenity')") == '1':
                         # zenity 返回的是绝对路径
                         ds = Globals.DirSaver()
@@ -4931,7 +4932,7 @@ PYTHON_EOF
 endfunction
 
 
-" vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
+" vim:fdm=marker:fen:et:sts=4:fdl=1:
 plugin/VLCalltips.vim	[[[1
 302
 " Description:  vim script for display function calltips
@@ -6006,7 +6007,7 @@ plugin/VLUtils.vim	[[[1
 " License:  This file is placed in the public domain.
 
 if exists('g:loaded_VLUtils')
-	finish
+    finish
 endif
 let g:loaded_VLUtils = 1
 
@@ -6018,7 +6019,7 @@ let g:loaded_VLUtils = 1
 "Return: 1 表示赋值为默认, 否则为 0
 function g:InitVariable(varName, defaultVal)
     if !exists(a:varName)
-		let {a:varName} = a:defaultVal
+        let {a:varName} = a:defaultVal
         return 1
     endif
     return 0
@@ -6027,14 +6028,14 @@ endfunction
 "Function: g:EchoHl(msg, ...) {{{2
 "高亮显示 msg，默认高亮组为 WarningMsg
 function g:EchoHl(msg, ...)
-	let l:hlGroup = 'WarningMsg'
-	if exists('a:1')
-		let l:hlGroup = a:1
-	endif
+    let l:hlGroup = 'WarningMsg'
+    if exists('a:1')
+        let l:hlGroup = a:1
+    endif
 
-	exec 'echohl ' . l:hlGroup
-	echo a:msg
-	echohl None
+    exec 'echohl ' . l:hlGroup
+    echo a:msg
+    echohl None
 endfunction
 
 "FUNCTION: g:Exec(cmd) {{{2
@@ -6043,12 +6044,12 @@ endfunction
 function g:Exec(cmd)
     let bak = &ei
     set eventignore=all
-	try
-		exec a:cmd
-	catch
-	finally
-		let &ei = bak
-	endtry
+    try
+        exec a:cmd
+    catch
+    finally
+        let &ei = bak
+    endtry
 endfunction
 
 "Function: g:BufInWinCount(bufNumber) 打开指定缓冲区的窗口数目 {{{2
@@ -6072,32 +6073,32 @@ endfunction
 
 "FUNCTION: g:IsWindowUsable(winNumber) 判断窗口是否可用 "{{{2
 function g:IsWindowUsable(winNumber)
-	"如果仅有一个窗口打开，即自己是唯一窗口，怎样处理由外层决定
+    "如果仅有一个窗口打开，即自己是唯一窗口，怎样处理由外层决定
     "if winnr("$") == 1
         "return 0
     "endif
 
-	"特殊窗口，如特殊缓冲类型的窗口、预览窗口
+    "特殊窗口，如特殊缓冲类型的窗口、预览窗口
     let specialWindow = getwinvar(a:winNumber, '&buftype') != '' 
                 \|| getwinvar(a:winNumber, '&previewwindow')
     if specialWindow
         return 0
     endif
 
-	"窗口缓冲是否已修改
+    "窗口缓冲是否已修改
     let modified = getwinvar(a:winNumber, '&modified')
 
-	"如果可允许隐藏，则无论缓冲是否修改
+    "如果可允许隐藏，则无论缓冲是否修改
     if &hidden
         return 1
     endif
 
-	"如果缓冲区没有修改，或者，已修改，但是同时有其他窗口打开着，则表示可用
-	if !modified || g:BufInWinCount(winbufnr(a:winNumber)) >= 2
-		return 1
-	else
-		return 0
-	endif
+    "如果缓冲区没有修改，或者，已修改，但是同时有其他窗口打开着，则表示可用
+    if !modified || g:BufInWinCount(winbufnr(a:winNumber)) >= 2
+        return 1
+    else
+        return 0
+    endif
 endfunction
 
 
@@ -6106,9 +6107,9 @@ endfunction
 function g:GetFirstUsableWindow()
     let i = 1
     while i <= winnr("$")
-		if g:IsWindowUsable(i)
-			return i
-		endif
+        if g:IsWindowUsable(i)
+            return i
+        endif
 
         let i += 1
     endwhile
@@ -6117,129 +6118,129 @@ endfunction
 
 
 function g:GetMaxWidthWinNr() "{{{2
-	let i = 1
-	let nResult = 0
-	let nMaxWidth = 0
-	while i <= winnr("$")
-		let nCurWidth = winwidth(i)
-		if nCurWidth > nMaxWidth
-			let nMaxWidth = nCurWidth
-			let nResult = i
-		endif
-		let i += 1
-	endwhile
+    let i = 1
+    let nResult = 0
+    let nMaxWidth = 0
+    while i <= winnr("$")
+        let nCurWidth = winwidth(i)
+        if nCurWidth > nMaxWidth
+            let nMaxWidth = nCurWidth
+            let nResult = i
+        endif
+        let i += 1
+    endwhile
 
-	return nResult
+    return nResult
 endfunction
 
 
 function g:GetMaxHeightWinNr() "{{{2
-	let i = 1
-	let nResult = 0
-	let nMaxHeight = 0
-	while i <= winnr("$")
-		let nCurHeight = winheight(i)
-		if nCurHeight > nMaxHeight
-			let nMaxHeight = nCurHeight
-			let nResult = i
-		endif
-		let i += 1
-	endwhile
+    let i = 1
+    let nResult = 0
+    let nMaxHeight = 0
+    while i <= winnr("$")
+        let nCurHeight = winheight(i)
+        if nCurHeight > nMaxHeight
+            let nMaxHeight = nCurHeight
+            let nResult = i
+        endif
+        let i += 1
+    endwhile
 
-	return nResult
+    return nResult
 endfunction
 
 
 function g:NormalizeCmdArg(arg) "{{{2
-	return substitute(a:arg, ' ', '\\ ', "g")
+    return substitute(a:arg, ' ', '\\ ', "g")
 endfunction
 
 
 function s:SID() "{{{2
-	return matchstr(expand('<sfile>'), '<SNR>\zs\d\+\ze_SID$')
+    return matchstr(expand('<sfile>'), '<SNR>\zs\d\+\ze_SID$')
 endfunction
 
 function s:GetSFuncref(sFuncName) "{{{2
-	return function('<SNR>'.s:SID().'_'.a:sFuncName[2:])
+    return function('<SNR>'.s:SID().'_'.a:sFuncName[2:])
 endfunction
 
 
 let g:Timer = {'t1': 0, 't2': 0} "{{{1
 function g:Timer.Start() "{{{2
-	let self.t1 = reltime()
+    let self.t1 = reltime()
 endfunction
 
 function g:Timer.End() "{{{2
-	let self.t2 = reltime()
+    let self.t2 = reltime()
 endfunction
 
 function g:Timer.EchoMes() "{{{2
-	echom join(reltime(self.t1, self.t2), '.')
+    echom join(reltime(self.t1, self.t2), '.')
 endfunction
 
 function g:Timer.EndEchoMes() "{{{2
-	call self.End()
-	call self.EchoMes()
+    call self.End()
+    call self.EchoMes()
 endfunction
 
 
 function g:EchoSyntaxStack() "{{{2
-	let names = []
-	let li = synstack(line("."), col("."))
-	let li = empty(li) ? [] : li
-	for id in li
-		"echo synIDattr(id, "name")
-		call add(names, synIDattr(id, 'name'))
-	endfor
-	echo join(names, ', ')
+    let names = []
+    let li = synstack(line("."), col("."))
+    let li = empty(li) ? [] : li
+    for id in li
+        "echo synIDattr(id, "name")
+        call add(names, synIDattr(id, 'name'))
+    endfor
+    echo join(names, ', ')
 
-	return ''
+    return ''
 endfunction
 
 
 function g:Progress(n, ...) "{{{2
-	let n = a:n
-	if a:0 > 0
-		let m = a:1
-	else
-		let m = 100
-	endif
+    let n = a:n
+    if a:0 > 0
+        let m = a:1
+    else
+        let m = 100
+    endif
 
-	let nRange = 10
-	let nRatio = n * nRange / m
+    let nRange = 10
+    let nRatio = n * nRange / m
 
-	echoh Pmenu
-	echon repeat(' ', nRatio)
-	echoh None
-	echon repeat(' ', nRange - nRatio)
-	echon printf("%4d%%", n * 100 / m)
-	redraw
+    echoh Pmenu
+    echon repeat(' ', nRatio)
+    echoh None
+    echon repeat(' ', nRange - nRatio)
+    echon printf("%4d%%", n * 100 / m)
+    redraw
 endfunction
 
 
 function g:GetCmdOutput(sCmd) "{{{2
-	let bak_lang = v:lang
+    let bak_lang = v:lang
 
-	" 把消息统一为英文
-	exec ":lan mes en_US.UTF-8"
+    " 把消息统一为英文
+    exec ":lan mes en_US.UTF-8"
 
-	try
-		redir => sOutput
-		silent! exec a:sCmd
-	catch
-		" 把错误消息设置为最后的 ':' 后的字符串?
-		"let v:errmsg = substitute(v:exception, '^[^:]\+:', '', '')
-	finally
-		redir END
-	endtry
+    try
+        redir => sOutput
+        silent! exec a:sCmd
+    catch
+        " 把错误消息设置为最后的 ':' 后的字符串?
+        "let v:errmsg = substitute(v:exception, '^[^:]\+:', '', '')
+    finally
+        redir END
+    endtry
 
-	exec ":lan mes " . bak_lang
+    exec ":lan mes " . bak_lang
 
-	return sOutput
+    return sOutput
 endfunction
 
 
-" vim:fdm=marker:fen:fdl=1
+" vim:fdm=marker:fen:fdl=1:et:
 plugin/vimdialog.vim	[[[1
 3269
 " Vim interactive dialog and control library.
@@ -12138,7 +12139,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-1782
+1786
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -12492,7 +12493,11 @@ function! omnicpp#resolvers#GetOmniInfo(...) "{{{2
         elseif dToken.kind == 'cppOperatorPunctuator' && dToken.value == '>'
             " 处理模板实例化
             " eg. A<B, C>::|
-            if nState == 1 "期待单词时遇到 '>'
+            if nState == 0 " 期待操作符时遇到 '>'
+                " eg. if ( 1 > A.| )
+                " 结束
+                break
+            elseif nState == 1 " 期待单词时遇到 '>'
                 " 跳到匹配的 '<'
                 let j = idx + 1
                 let tmp = 1
