@@ -298,10 +298,10 @@ class Project:
     def SetProjectLastModifiedTime(self, time):
         self.modifyTime = time
     
-    def Save(self):
+    def Save(self, fileName = ''):
         self.tranActive = False
         if XmlUtils.GetRoot(self.doc):
-            self.DoSaveXmlFile()
+            self.DoSaveXmlFile(fileName)
     
     # internal methods
     #===========================================================================    
@@ -319,18 +319,20 @@ class Project:
         
         return None
         
-    def DoSaveXmlFile(self):
+    def DoSaveXmlFile(self, fileName = ''):
         try:
-            dirName = os.path.dirname(self.fileName)
+            if not fileName:
+                fileName = self.fileName
+            dirName = os.path.dirname(fileName)
             if not os.path.exists(dirName):
                 os.makedirs(dirName)
-            f = open(self.fileName, 'wb')
+            f = open(fileName, 'wb')
             #self.doc.writexml(f, encoding = 'utf-8')
             f.write(XmlUtils.ToPrettyXmlString(self.doc))
             self.SetProjectLastModifiedTime(self.GetProjFileLastModifiedTime())
             f.close()
         except IOError:
-            print 'IOError:', self.fileName
+            print 'IOError:', fileName
             raise IOError
 
 

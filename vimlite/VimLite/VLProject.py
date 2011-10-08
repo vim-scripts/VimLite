@@ -48,7 +48,7 @@ class VLProject(Project):
         filesIndex = {}
         for i in node.childNodes:
             if i.nodeName == 'File':
-                fileName = i.getAttribute('Name')
+                fileName = i.getAttribute('Name').encode('utf-8')
                 fileName = os.path.abspath(fileName)
                 filesIndex[fileName] = i
             # 递归遍历所有文件

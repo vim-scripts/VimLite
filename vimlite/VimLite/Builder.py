@@ -72,13 +72,21 @@ class Builder:
     # derived class
     # ================ API ==========================
 
-    def Export(self, project, confToBuild, isProjectOnly, force, errMsg):
+    def GetBuildCommand(self, project, confToBuild):
         pass
     
     def GetCleanCommand(self, project, confToBuild):
         pass
+
+    def GetBatchBuildCommand(self, projects, confToBuild):
+        '''获取批量构建的命令'''
+        pass
+
+    def GetBatchCleanCommand(self, projects, confToBuild):
+        '''获取批量清理的命令'''
+        pass
     
-    def GetBuildCommand(self, project, confToBuild):
+    def Export(self, project, confToBuild, isProjectOnly, force):
         pass
     
     ##-----------------------------------------------------------------

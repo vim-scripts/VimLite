@@ -58,8 +58,11 @@ class BuildConfigCommon:
             if compilerNode:
                 self.compileOptions = XmlUtils.ReadString(compilerNode, 'Options')
                 self.cCompileOptions = compilerNode.getAttribute('C_Options')
-                if not self.cCompileOptions:
-                    self.cCompileOptions = self.compileOptions
+                #if not self.cCompileOptions:
+                    # the attribute "C_Options" does not exist,
+                    # copy the values from the "Options" attribute
+                    # 只有这个属性不存在时才复制值, python 的实现不需要如此处理
+                    #self.cCompileOptions = self.compileOptions
                 
                 for i in compilerNode.childNodes:
                     if i.nodeName == 'IncludePath':

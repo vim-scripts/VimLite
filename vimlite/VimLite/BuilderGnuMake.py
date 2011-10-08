@@ -29,9 +29,15 @@ def GetMakeDirCmd(bldConf, relPath = ''):
         intermediateDirectory = intermediateDirectory[2:]
 
     text = ''
-    # TODO: 区分操作系统
-    text += '@test -d ' + relativePath + intermediateDirectory \
-            + ' || $(MakeDirCommand) ' + relativePath + intermediateDirectory
+    if Globals.IsLinuxOS():
+        text += '@test -d ' + relativePath + intermediateDirectory \
+                + ' || $(MakeDirCommand) ' + relativePath + intermediateDirectory
+    elif Globals.IsWindowsOS():
+        # TODO
+        pass
+    else:
+        # TODO
+        pass
 
     return text
 
@@ -42,8 +48,8 @@ class BuilderGnuMake(Builder):
                  buildToolOptions = '-f'):
         Builder.__init__(self, name, buildTool, buildToolOptions)
     
-    def Export(self, projName, confToBuild, isProjectOnly = False, 
-               force = False, errMsg = []):
+    def Export(self, projName, confToBuild = '', isProjectOnly = False, 
+               force = False):
         '''导出工作空间 makefile，如果没有指定 confToBuild，
         则导出工作空间当前选择的构建设置。
         
@@ -59,28 +65,45 @@ class BuilderGnuMake(Builder):
             print '%s not found' % (projName,)
             return False
         
-        bldConfName = confToBuild
+        if isProjectOnly:
+            return self.Export2([projName], confToBuild, force)
+        else:
+            bldConfName = confToBuild
+            if not confToBuild:
+                # 没有指定构建的配置，从 BuildMatrix 获取默认值
+                bldConf = VLWorkspaceST.Get().GetProjBuildConf(projName, '')
+                if not bldConf:
+                    print 'Cant find build configuration for project "%s"' \
+                            % (projName,)
+                    return False
+                bldConfName = bldConf.GetName()
+            
+            # 获取依赖的项目名称列表
+            deps = project.GetDependencies(bldConfName)
 
-        if not confToBuild:
-            # 没有指定构建的配置，从 BuildMatrix 获取默认值
-            bldConf = VLWorkspaceST.Get().GetProjBuildConf(projName, '')
-            if not bldConf:
-                print 'Cant find build configuration for project "%s"' \
-                        % (projName,)
-                return False
-            bldConfName = bldConf.GetName()
+            return self.Export2(deps + [projName], confToBuild, force)
+
+    # 灵活版本的 Export
+    def Export2(self, projects, confToBuild = '', force = False):
+        '''导出工作空间 makefile，如果没有指定 confToBuild（工作区的设置名），
+        则导出工作空间当前选择的构建设置。
         
-        deps = project.GetDependencies(bldConfName)     # 获取依赖的项目名称列表
+        因为工作空间的 Makefile 管理所有子 Makefile, 而每次的目标都可能不同,
+        所以每次调用此函数, 都会重新生成工作空间的 Makefile 的内容.
+        由于此 Makefile 的内容并不多, 每次都重新生成的开销可以接受.
+        绝大多数情况下，可不指定 confToBuild。'''
+        if not projects:
+            return False
+        
         removeList = []
-        if not isProjectOnly:
-            # 先检查依赖的项目是否都存在，现在的处理是简单地忽略
-            # make sure that all dependencies exists
-            for i in deps:
-                dependProj = VLWorkspaceST.Get().FindProjectByName(i)
-                if not dependProj:
-                    # Missing dependencies project, just ignore
-                    print 'Can not find project:', i
-                    # TODO: 添加移除选择
+        # 检查所有的项目是否都存在，现在的处理是简单地忽略不存在的项目
+        for projName in projects:
+            project = VLWorkspaceST.Get().FindProjectByName(projName)
+            if not project:
+                # Missing dependencies project, just ignore
+                removeList.append(projName)
+                print 'Can not find project: ', projName
+                # TODO: 添加移除选择
         
         wspMakefile = VLWorkspaceST.Get().GetName() + '_wsp.mk'
         # 转为绝对路径
@@ -89,184 +112,141 @@ class BuilderGnuMake(Builder):
 
         text = ''
         
-        text += '.PHONY: clean All\n\n'
-        text += 'All:\n'
+        text += '.PHONY: all clean\n\n'
+        text += 'all:\n'
         
-        # iterate over the dependencies projects and generate makefile
         buildTool = self.GetBuildToolCommand(False)
         # 展开环境变量
         buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
-        
         #replace all Windows like slashes to POSIX
         buildTool = buildTool.replace('\\', '/')
         
         # generate the makefile for the selected workspace configuration
         matrix = VLWorkspaceST.Get().GetBuildMatrix()
-        wspSelConfName = matrix.GetSelectedConfigurationName()
-        
-        if not isProjectOnly:
-            for i in deps:
-                isCustom = False
-                dependProj = VLWorkspaceST.Get().FindProjectByName(i)
-                if not dependProj:
-                    continue
-                
-                dependProjSelConfName = matrix.GetProjectSelectedConf(
-                    wspSelConfName, dependProj.GetName())
-                dependProjBldConf = VLWorkspaceST.Get().GetProjBuildConf(
-                    dependProj.GetName(), dependProjSelConfName)
-                
-                if dependProjBldConf and dependProjBldConf.IsCustomBuild():
-                    isCustom = True
-
-                # incase we manually specified the configuration to be built, 
-                # set the project as modified, so on next attempt to build it, 
-                # CodeLite will sync the configuration
-                # 手动指定构建配置名称，强制重建 makefile，但是这种情况很少出现
-                if confToBuild:
-                    dependProj.SetModified(True)
-
-                # 构建前缀显示
-                text += '\t@echo ' + Macros.BUILD_PROJECT_PREFIX \
-                        + dependProj.GetName() + ' - ' + dependProjSelConfName \
-                        + ' ]----------\n'
-
-                relProjFile = os.path.relpath(dependProj.GetFileName(), 
-                                              os.path.dirname(wspFile))
-
-                if isCustom:
-                    text += self.CreateCustomPreBuildEvents(dependProjBldConf)
-
-                    customWd = dependProjBldConf.GetCustomBuildWorkingDir()
-                    buildCmd = dependProjBldConf.GetCustomBuildCmd()
-                    customWdCmd = ''
-
-                    # 为 customWd 和 buildCmd 展开所有变量
-                    customWd = Globals.ExpandAllVariables(
-                        customWd, VLWorkspaceST.Get(), dependProj.GetName(), 
-                        dependProjBldConf.GetName(), '')
-                    buildCmd = Globals.ExpandAllVariables(
-                        buildCmd, VLWorkspaceST.Get(), dependProj.GetName(), 
-                        dependProjBldConf.GetName(), '')
-
-                    buildCmd = buildCmd.strip()
-
-                    if not buildCmd:
-                        buildCmd += '@echo Project has no custom build command!'
-
-                    # 如果提供自定义命令的工作目录，用之，否则使用项目默认的
-                    customWd = customWd.strip()
-                    if customWd:
-                        customWdCmd += '@cd "' + Globals.ExpandAllVariables(
-                            customWd, VLWorkspaceST.Get(), 
-                            dependProj.GetName(), '', '') + '" && '
-                    else:
-                        customWdCmd += self.GetCdCmd(wspFile, relProjFile)
-
-                    text += '\t' + customWdCmd + buildCmd + '\n'
-                    text += self.CreateCustomPostBuildEvents(dependProjBldConf)
-                else:
-                    # generate the dependency project makefile
-                    self.GenerateMakefile(dependProj, dependProjSelConfName, \
-                                          confToBuild and True or force)
-                    text += '\t' + self.GetCdCmd(wspFile, relProjFile)
-                    text += self.GetProjectMakeCommand(dependProj, confToBuild,\
-                                                       '\n', False, False, False)
-
-        # Generate makefile for the project itself
-        self.GenerateMakefile(project, confToBuild, 
-                              confToBuild and True or force)
-
-        # incase we manually specified the configuration to be built, 
-        # set the project as modified, so on next attempt to build it, 
-        # CodeLite will sync the configuration
         if confToBuild:
-            project.SetModified(True)
+            wspSelConfName = confToBuild
+        else:
+            wspSelConfName = matrix.GetSelectedConfigurationName()
+        
+        for projName in projects:
+            isCustom = False
+            project = VLWorkspaceST.Get().FindProjectByName(projName)
+            if not project:
+                continue
+            
+            projectSelConfName = matrix.GetProjectSelectedConf(
+                wspSelConfName, project.GetName())
+            projectBldConf = VLWorkspaceST.Get().GetProjBuildConf(
+                project.GetName(), projectSelConfName)
+            
+            if projectBldConf and projectBldConf.IsCustomBuild():
+                isCustom = True
 
-        projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, 
-                                                        projName)
-        if isProjectOnly and confToBuild:
-            # incase we use to generate a 'Project Only' makefile,
-            # we allow the caller to override the selected configuration 
-            # with 'confToBuild' parameter
-            projSelConfName = confToBuild
+            # 手动指定构建配置名称，强制重建 makefile，但是这种情况很少出现
+            if confToBuild:
+                project.SetModified(True)
 
-        text += '\t@echo ' + Macros.BUILD_PROJECT_PREFIX + projName + ' - ' \
-                + projSelConfName + ' ]----------\n'
+            # 构建前缀显示
+            text += '\t@echo ' + Macros.BUILD_PROJECT_PREFIX \
+                    + project.GetName() + ' - ' + projectSelConfName \
+                    + ' ]----------\n'
 
-        relProjFile = os.path.relpath(project.GetFileName(), 
-                                      os.path.dirname(wspFile))
-        text += '\t' + self.GetCdCmd(wspFile, relProjFile)
-        text += self.GetProjectMakeCommand(project, projSelConfName, '\n',
-                                          False, False, False)
+            relProjFile = os.path.relpath(project.GetFileName(), 
+                                          os.path.dirname(wspFile))
+
+            if isCustom:
+            # 如果是自定义构建，PreBuild 和 PostBuild 命令写到工作区的 Makefile
+                # Custom Build 项目的构建命令全部写到工作区的 Makefile
+                text += self.CreateCustomPreBuildEvents(projectBldConf)
+
+                customWd = projectBldConf.GetCustomBuildWorkingDir()
+                buildCmd = projectBldConf.GetCustomBuildCmd()
+                customWdCmd = ''
+
+                # 为 customWd 和 buildCmd 展开所有变量
+                customWd = Globals.ExpandAllVariables(
+                    customWd, VLWorkspaceST.Get(), project.GetName(), 
+                    projectBldConf.GetName(), '')
+                buildCmd = Globals.ExpandAllVariables(
+                    buildCmd, VLWorkspaceST.Get(), project.GetName(), 
+                    projectBldConf.GetName(), '')
+
+                buildCmd = buildCmd.strip()
+
+                if not buildCmd:
+                    buildCmd += '@echo Project has no custom build command!'
+
+                # 如果提供自定义命令的工作目录，用之，否则使用项目默认的
+                customWd = customWd.strip()
+                if customWd:
+                    customWdCmd += '@cd "' + Globals.ExpandAllVariables(
+                        customWd, VLWorkspaceST.Get(), 
+                        project.GetName(), '', '') + '" && '
+                else:
+                    customWdCmd += self.GetCdCmd(wspFile, relProjFile)
+
+                text += '\t' + customWdCmd + buildCmd + '\n'
+                text += self.CreateCustomPostBuildEvents(projectBldConf)
+            else:
+                # generate the project makefile
+                self.GenerateMakefile(project, projectSelConfName, \
+                                      confToBuild and True or force)
+                text += '\t' + self.GetCdCmd(wspFile, relProjFile)
+                text += self.GetProjectMakeCommand(project, confToBuild,\
+                                                   '\n', False, False, False)
 
         # create the clean target
         text += 'clean:\n'
-        if not isProjectOnly:
-            for i in deps:
-                isCustom = False
-                dependProjSelConfName = matrix.GetProjectSelectedConf(
-                    wspSelConfName, i)
-                dependProj = VLWorkspaceST.Get().FindProjectByName(i)
-                if not dependProj:
-                    continue
+        for projName in projects:
+            isCustom = False
+            projectSelConfName = matrix.GetProjectSelectedConf(
+                wspSelConfName, projName)
+            project = VLWorkspaceST.Get().FindProjectByName(projName)
+            if not project:
+                continue
 
-                text += '\t@echo ' + Macros.CLEAN_PROJECT_PREFIX \
-                        + dependProj.GetName() + ' - ' + dependProjSelConfName \
-                        + ' ]----------\n'
+            text += '\t@echo ' + Macros.CLEAN_PROJECT_PREFIX \
+                    + project.GetName() + ' - ' + projectSelConfName \
+                    + ' ]----------\n'
 
-                relProjFile = os.path.relpath(dependProj.GetFileName(), 
-                                              os.path.dirname(wspFile))
+            relProjFile = os.path.relpath(project.GetFileName(), 
+                                          os.path.dirname(wspFile))
 
-                dependProjBldConf = VLWorkspaceST.Get().GetProjBuildConf(
-                    dependProj.GetName(), dependProjSelConfName)
-                if dependProjBldConf and dependProjBldConf.IsCustomBuild():
-                    isCustom = True
+            projectBldConf = VLWorkspaceST.Get().GetProjBuildConf(
+                project.GetName(), projectSelConfName)
+            if projectBldConf and projectBldConf.IsCustomBuild():
+                isCustom = True
 
-                if not isCustom:
-                    text += '\t' + self.GetCdCmd(wspFile, relProjFile) \
-                            + buildTool + ' "' + dependProj.GetName() \
-                            + '.mk" clean\n'
+            if not isCustom:
+                text += '\t' + self.GetCdCmd(wspFile, relProjFile) \
+                        + buildTool + ' "' + project.GetName() \
+                        + '.mk" clean\n'
+            else:
+                customWd = projectBldConf.GetCustomBuildWorkingDir()
+                cleanCmd = projectBldConf.GetCustomCleanCmd()
+
+                # 为 customWd 和 buildCmd 展开所有变量
+                customWd = Globals.ExpandAllVariables(
+                    customWd, VLWorkspaceST.Get(), project.GetName(), 
+                    projectBldConf.GetName(), '')
+                buildCmd = Globals.ExpandAllVariables(
+                    buildCmd, VLWorkspaceST.Get(), project.GetName(), 
+                    projectBldConf.GetName(), '')
+
+                customWdCmd = ''
+
+                cleanCmd = cleanCmd.strip()
+                if not cleanCmd:
+                    cleanCmd += '@echo Project has no custom clean command!'
+
+                customWd = customWd.strip()
+                if customWd:
+                    customWdCmd += '@cd "' + Globals.ExpandAllVariables(
+                        customWd, VLWorkspaceST.Get(), 
+                        project.GetName(), '', '') + '" && '
                 else:
-                    customWd = dependProjBldConf.GetCustomBuildWorkingDir()
-                    cleanCmd = dependProjBldConf.GetCustomCleanCmd()
-
-                    # 为 customWd 和 buildCmd 展开所有变量
-                    customWd = Globals.ExpandAllVariables(
-                        customWd, VLWorkspaceST.Get(), dependProj.GetName(), 
-                        dependProjBldConf.GetName(), '')
-                    buildCmd = Globals.ExpandAllVariables(
-                        buildCmd, VLWorkspaceST.Get(), dependProj.GetName(), 
-                        dependProjBldConf.GetName(), '')
-
-                    customWdCmd = ''
-
-                    cleanCmd = cleanCmd.strip()
-                    if not cleanCmd:
-                        cleanCmd += '@echo Project has no custom clean command!'
-
-                    customWd = customWd.strip()
-                    if customWd:
-                        customWdCmd += '@cd "' + Globals.ExpandAllVariables(
-                            customWd, VLWorkspaceST.Get(), 
-                            dependProj.GetName(), '', '') + '" && '
-                    else:
-                        customWdCmd += self.GetCdCmd(wspFile, relProjFile)
-                    text += '\t' + customWdCmd + cleanCmd + '\n'
-
-        projSelConfName = matrix.GetProjectSelectedConf(wspSelConfName, projName)
-        if isProjectOnly and confToBuild:
-            # incase we use to generate a 'Project Only' makefile,
-            # we allow the caller to override the selected configuration with 
-            # 'confToBuild' parameter
-            projSelConfName = confToBuild
-
-        relProjFile = os.path.relpath(project.GetFileName(), 
-                                      os.path.dirname(wspFile))
-        text += '\t@echo ' + Macros.CLEAN_PROJECT_PREFIX + projName + ' - ' \
-                + projSelConfName + ' ]----------\n'
-        text += '\t' + self.GetCdCmd(wspFile, relProjFile) + buildTool \
-                + ' "' + project.GetName() + '.mk" clean\n'
+                    customWdCmd += self.GetCdCmd(wspFile, relProjFile)
+                text += '\t' + customWdCmd + cleanCmd + '\n'
 
         # dump the content to file
         try:
@@ -277,7 +257,29 @@ class BuilderGnuMake(Builder):
             print wspMakefile, 'open failed!'
             raise IOError
 
-        return text
+        return True
+
+    def GetBuildCommand(self, projName, confToBuild):
+        cmd = ''
+        bldConf = VLWorkspaceST.Get().GetProjBuildConf(projName, confToBuild)
+        if not bldConf:
+            print projName, 'have not any build config'
+            return ''
+
+        self.Export(projName, confToBuild, False, False)
+
+        matrix = VLWorkspaceST.Get().GetBuildMatrix()
+        buildTool = self.GetBuildToolCommand(True)
+        # 展开环境变量
+        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+
+        # Fix: replace all Windows like slashes to POSIX
+        buildTool = buildTool.replace('\\', '/')
+
+        type = self.NormalizeConfigName(matrix.GetSelectedConfigurationName())
+        cmd += buildTool + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
+
+        return cmd
 
     def GetBuildCommand(self, projName, confToBuild):
         cmd = ''
@@ -303,7 +305,33 @@ class BuilderGnuMake(Builder):
     
     def GetCleanCommand(self, projName, confToBuild):
         return self.GetBuildCommand(projName, confToBuild) + ' clean'
-    
+
+    def GetBatchBuildCommand(self, projects, confToBuild):
+        cmd = ''
+
+        if not projects:
+            return cmd
+
+        self.Export2(projects, confToBuild, False)
+
+        matrix = VLWorkspaceST.Get().GetBuildMatrix()
+        buildTool = self.GetBuildToolCommand(True)
+        # 展开环境变量
+        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+
+        # Fix: replace all Windows like slashes to POSIX
+        buildTool = buildTool.replace('\\', '/')
+
+        cmd += buildTool + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
+
+        return cmd
+
+    def GetBatchCleanCommand(self, projects, confToBuild):
+        if not projects:
+            return ''
+        else:
+            return self.GetBatchBuildCommand(projects, confToBuild) + ' clean'
+
     def GetSingleFileCmd(self, projName, confToBuild, fileName):
         '''利用已生成的 Makefile，直接 make 指定文件的对象文件的目标'''
         project = VLWorkspaceST.Get().FindProjectByName(projName)
@@ -475,6 +503,7 @@ class BuilderGnuMake(Builder):
         return text
     
     def CreateLinkTargets(self, type, bldConf):
+        '''执行顺序: makeDirStep PreBuild $(Objects) $(OutputFile) PostBuild'''
         # incase project is type exe or dll, force link
         # this is to workaround bug in the generated makefiles
         # which causes the makefile to report 'nothing to be done'
@@ -487,15 +516,23 @@ class BuilderGnuMake(Builder):
             text += 'all: '
             if readObjectsFromFile:
                 text += 'objects_file '
-            text += '$(OutputFile)\n\n'
+            #text += '$(OutputFile)\n\n'
+            text += 'PostBuild\n\n'
 
-            text += '$(OutputFile): makeDirStep $(Objects)\n'
+            #text += '$(OutputFile): makeDirStep $(Objects)\n'
+            # 添加 PreBuild 和 PostBuild 依赖
+            text += '$(OutputFile): makeDirStep PreBuild $(Objects)\n'
         else:
+            # TODO: 为什么静态链接时依赖目标是一个目录？
             text += 'all: $(IntermediateDirectory) '
             if readObjectsFromFile:
                 text += 'objects_file '
-            text += '$(OutputFile)\n\n'
-            text += '$(OutputFile): $(Objects)\n'
+            #text += '$(OutputFile)\n\n'
+            text += 'PostBuild\n\n'
+
+            #text += '$(OutputFile): $(Objects)\n'
+            # 添加 PreBuild
+            text += '$(OutputFile): PreBuild $(Objects)\n'
 
         if bldConf.IsLinkerRequired():
             text += self.CreateTargets(type, bldConf)
@@ -776,14 +813,17 @@ class BuilderGnuMake(Builder):
         # this is to workaround bug in the generated makefiles
         # which causes the makefile to report 'nothing to be done'
         # even when a dependency was modified
-        targetName = bldConf.GetIntermediateDirectory()
+        #targetName = bldConf.GetIntermediateDirectory()
         projType = settings.GetProjectType(bldConf.GetName())
         if projType == Project.EXECUTABLE or projType == Project.DYNAMIC_LIBRARY:
             targetName = 'makeDirStep'
+        else:
+            targetName = '$(IntermediateDirectory)'
         text += self.CreateLinkTargets(projType, bldConf)
 
-        # TODO: 添加 PostBuild 命令，现在的方法是直接添加到目标规则的后面，待改进
-        text += self.CreatePostBuildEvents(bldConf)
+        # 添加 PostBuild 命令，现在的方法是直接添加到目标规则的后面，待改进
+        # NOTE: 修改为单独的目标
+        #text += self.CreatePostBuildEvents(bldConf)
 
         # In any case add the 'objects_file' target here
         # this is a special target that creates a file with the content of the 
@@ -795,6 +835,8 @@ class BuilderGnuMake(Builder):
         text += self.CreateMakeDirsTarget(bldConf, targetName)
         # 添加 PreBuild 目标
         text += self.CreatePreBuildEvents(bldConf)
+        # 添加 PostBuild 目标
+        text += self.CreatePostBuildEvents(bldConf)
         # 添加预编译头目标
         text += self.CreatePreCompiledHeaderTarget(bldConf)
 
@@ -913,6 +955,7 @@ class BuilderGnuMake(Builder):
         text += '\n'
         text += targetName + ':\n'
         text += '\t' + GetMakeDirCmd(bldConf) + '\n'
+        #text += '\n'
         return text
     
     def CreateTargets(self, type, bldConf):
@@ -954,10 +997,10 @@ class BuilderGnuMake(Builder):
             text += 'PrePreBuild: ' + bldConf.GetPreBuildCustom() + '\n'
 
         cmds = bldConf.GetPreBuildCommands()    # BuildCommand 的列表
+        text += '\n'
+        text += 'PreBuild:\n'
         if cmds:
-            text += '\n'
             firstEnter = True
-            text += 'PreBuild:\n'
             for i in cmds:
                 if i.GetEnabled():
                     if firstEnter:
@@ -966,14 +1009,19 @@ class BuilderGnuMake(Builder):
                     text += '\t' + i.GetCommand() + '\n'
             if not firstEnter:
                 text += '\t@echo Done\n'
+        #text += '\n'
 
         return text
 
     def CreatePostBuildEvents(self, bldConf):
-        '''直接添加到输出文件目标的规则后面，不好，待改进'''
+        '''直接添加到输出文件目标的规则后面，不好，待改进
+        2011-09-21: 修改为单独的目标
+        '''
         text = ''
 
         cmds = bldConf.GetPostBuildCommands()
+        text += '\n'
+        text += 'PostBuild: $(OutputFile)\n'
         if cmds:
             firstEnter = True
             for i in cmds:
@@ -984,6 +1032,7 @@ class BuilderGnuMake(Builder):
                     text += '\t' + i.GetCommand() + '\n'
             if not firstEnter:
                 text += '\t@echo Done\n'
+        #text += '\n'
 
         return text
     
@@ -1016,7 +1065,7 @@ class BuilderGnuMake(Builder):
                 text += '\t@echo Done\n'
         return text
     
-    def CreateCustomPostBuildEvents(self, bldConf, text):
+    def CreateCustomPostBuildEvents(self, bldConf):
         text = ''
         cmds = bldConf.GetPostBuildCommands()
         if cmds:
@@ -1149,8 +1198,9 @@ class BuilderGnuMake(Builder):
             if prePreBuild:
                 makeCommand += basicMakeCommand + ' PrePreBuild && '
 
-            if self.HasPrebuildCommands(bldConf):
-                makeCommand += basicMakeCommand + ' PreBuild && '
+            # NOTE: 不需要在工作区 Makefile 文件指定 PreBuild 目标
+            #if self.HasPrebuildCommands(bldConf):
+                #makeCommand += basicMakeCommand + ' PreBuild && '
 
             if preCmpHeader:
                 makeCommand += basicMakeCommand + ' ' + preCmpHeader + '.gch' \

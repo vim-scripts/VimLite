@@ -10,6 +10,26 @@ import getpass
 
 import EnvVarSettings
 
+# 版本号 850 -> 0.8.5.0
+VIMLITE_VER = 850
+
+CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
+CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc'])
+
+def Cmp(s1, s2):
+    '''忽略大小写比较两个字符串'''
+    return cmp(s1.lower(), s2.lower())
+
+def IsLinuxOS():
+    '''判断系统是否 Linux'''
+    import platform
+    return platform.system() == 'Linux'
+
+def IsWindowsOS():
+    '''判断系统是否 Windows'''
+    import platform
+    return platform.system() == 'Windows'
+
 
 def GetFileModificationTime(fileName):
     '''获取文件最后修改时间
@@ -199,14 +219,14 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
 
 def IsSourceFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
-    if ext in set(['c', 'cpp', 'cxx', 'c++', 'cc']):
+    if ext in CPP_SOURCE_EXT:
         return True
     else:
         return False
 
 def IsHeaderFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
-    if ext in set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc']):
+    if ext in CPP_HEADER_EXT:
         return True
     else:
         return False

@@ -19,6 +19,10 @@ class VLWorkspaceSettings:
 
         self.envVarSetName = 'Default' # 选择的环境变量组, 默认为 'Default'
 
+        # 2011-09-06: 批量构建数据, 保存的是"名字"到"有序的项目名称"的字典
+        # 2011-09-16: 为了实现简单, 默认必须有一组空的"名字"
+        self.batchBuild = {'Default': []}
+
         # 如果指定了 fileName, 从文件载入, 不论成功与否
         self.Load()
 
@@ -67,6 +71,20 @@ class VLWorkspaceSettings:
     def SetEnvVarSetName(self, envVarSetName):
         self.envVarSetName = envVarSetName
 
+    def GetBatchBuildList(self, name):
+        if self.batchBuild.has_key(name):
+            return self.batchBuild[name]
+        else:
+            return []
+
+    def SetBatchBuildList(self, name, order):
+        self.batchBuild[name] = order
+
+    def GetBatchBuildNames(self):
+        li = self.batchBuild.keys()
+        li.sort()
+        return li
+
     def Load(self, fileName = ''):
         if not fileName and not self.fileName:
             return False
@@ -91,6 +109,7 @@ class VLWorkspaceSettings:
             self.tagsTypes = obj.tagsTypes
             try:
                 self.envVarSetName = obj.envVarSetName
+                self.batchBuild = obj.batchBuild
             except:
                 pass
             del obj

@@ -12,6 +12,25 @@ from VLProject import VLProject
 from BuildMatrix import BuildMatrix
 from BuildMatrix import ConfigMappingEntry
 
+TYPE_WORKSPACE = 0
+TYPE_PROJECT = 1
+TYPE_VIRTUALDIRECTORY = 2
+TYPE_FILE = 3
+TYPE_INVALID = -1
+
+EXPAND_PREFIX = '~'
+FOLD_PREFIX = '+'
+FILE_PREFIX = '-'
+
+WORKSPACE_FILE_SUFFIX = 'vlworkspace'
+PROJECT_FILE_SUFFIX = 'vlproject'
+
+
+def ConvertWspFileToNewFormat(fileName):
+    ins = VLWorkspace(fileName)
+    ins.ConvertToNewFileFormat()
+    del ins
+
 def Cmp(s1, s2):
     '''忽略大小写比较两个字符串'''
     return cmp(s1.lower(), s2.lower())
@@ -24,7 +43,6 @@ def MakeLevelPreStrDependList(list):
     string = ''
     if nCount == 0:
         return string
-
 
     if nCount == 1:
         if list[0] == 0:
@@ -73,20 +91,12 @@ def SortFileByNode(lNode):
     li = [dic[i] for i in li]
     return li
 
-TYPE_WORKSPACE = 0
-TYPE_PROJECT = 1
-TYPE_VIRTUALDIRECTORY = 2
-TYPE_FILE = 3
-TYPE_INVALID = -1
-
-EXPAND_PREFIX = '~'
-FOLD_PREFIX = '+'
-FILE_PREFIX = '-'
-
 # 工作空间为第 1 行，第一个项目为第 2 行，而 data 索引为 0，所以固有偏移为 2
 CONSTANT_OFFSET = 2
 
-# TODO ，处理工作空间节点
+# TODO: 处理工作空间节点
+# NOTE: getAttribute() 等从 xml 获取的字符串全是 unicode 字符串, 
+#       需要 encode('utf-8') 转为普通字符串以供 vim 解析
 class VLWorkspace:
     '''工作空间对象，保存一个工作空间的数据结构'''
     def __init__(self, fileName = ''):
@@ -105,6 +115,8 @@ class VLWorkspace:
         self.modifyTime = 0
         self.filesIndex = {} # 用于从文件名快速定位所在位置(项目，目录等)的数据
                              # {文件绝对路径: xml 节点}
+        self.fname2file = {} # 用于实现切换源文件/头文件
+                             # {文件名: set(文件绝对路径)}
 
         if fileName:
             try:
@@ -113,7 +125,8 @@ class VLWorkspace:
                 print 'IOError:', fileName
                 raise IOError
             self.rootNode = XmlUtils.GetRoot(self.doc)
-            self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')
+            self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')\
+                    .encode('utf-8')
             self.fileName = os.path.abspath(fileName)
             self.dirName, self.baseName = os.path.split(self.fileName)
             
@@ -123,8 +136,8 @@ class VLWorkspace:
             os.chdir(self.dirName)
             for i in self.rootNode.childNodes:
                 if i.nodeName == 'Project':
-                    name = i.getAttribute('Name')
-                    path = i.getAttribute('Path')
+                    name = i.getAttribute('Name').encode('utf-8')
+                    path = i.getAttribute('Path').encode('utf-8')
                     active = XmlUtils.ReadBool(i, 'Active')
                     if not os.path.isfile(path):
                         print 'Can not open %s, remove from workspace.' \
@@ -437,8 +450,14 @@ class VLWorkspace:
 
         if nodeType == TYPE_FILE:
             # 添加此 filesIndex
-            self.filesIndex[os.path.abspath(
-                os.path.join(parentDatum['project'].dirName, name))] = newNode
+            key = os.path.abspath(
+                os.path.join(parentDatum['project'].dirName, name))
+            self.filesIndex[key] = newNode
+            # 添加此 fname2file
+            key2 = os.path.basename(key)
+            if not self.fname2file.has_key(key2):
+                self.fname2file[key2] = set()
+            self.fname2file[key2].add(key)
 
         # 保存
         if save:
@@ -787,10 +806,28 @@ class VLWorkspace:
                 #print absOldFile
                 #print absNewFile
                 os.rename(absOldFile, absNewFile)
+            else:
+                pass
+
+            # 修正 filesIndex
+            self.filesIndex[absNewFile] = self.filesIndex[absOldFile]
+            del self.filesIndex[absOldFile]
+
+            # 修正 fname2file
+            oldKey = os.path.basename(absOldFile)
+            self.fname2file[oldKey].remove(absOldFile)
+            if not self.fname2file[oldKey]:
+                del self.fname2file[oldKey]
+            newKey = os.path.basename(absNewFile)
+            if not self.fname2file.has_key(newKey):
+                self.fname2file[newKey] = set()
+            self.fname2file[newKey].add(absNewFile)
+
 
         xmlNode.setAttribute('Name', 
                              os.path.join(os.path.dirname(oldName), newName))
         project.Save()
+
         #TODO: 重新排序
 
     def DeleteNode(self, lineNum):
@@ -833,6 +870,11 @@ class VLWorkspace:
                 os.path.join(project.dirName, delNode.getAttribute('Name')))
             if self.filesIndex.has_key(key):
                 del self.filesIndex[key]
+            # 删除此 fname2file
+            try:
+                self.fname2file[os.path.basename(key)].remove(key)
+            except KeyError:
+                pass
 
         # 删除 xml 节点
         if type == TYPE_PROJECT:
@@ -962,6 +1004,13 @@ class VLWorkspace:
         self.filesIndex.clear()
         for k, v in self.projects.iteritems():
             self.filesIndex.update(v.GetFilesIndex())
+        # 从 filesIndex 重建 fname2file
+        self.fname2file.clear()
+        for k in self.filesIndex.iterkeys():
+            key2 = os.path.basename(k)
+            if not self.fname2file.has_key(key2):
+                self.fname2file[key2] = set()
+            self.fname2file[key2].add(k)
 
     def GetProjectByFileName(self, fileName):
         '''从绝对路径的文件名中获取文件所在的项目实例'''
@@ -1013,7 +1062,8 @@ class VLWorkspace:
             return False
 
         # Create new
-        self.fileName = os.path.abspath(os.path.join(path, name + '.workspace'))
+        self.fileName = os.path.abspath(os.path.join(path, name + os.extsep 
+                                                     + WORKSPACE_FILE_SUFFIX))
 
         #ds = Globals.DirSaver()
         #os.chdir(path)
@@ -1067,7 +1117,7 @@ class VLWorkspace:
         node.setAttribute('Name', name)
         
         # make the project path to be relative to the workspace
-        projFile = os.path.join(path, name + '.project')
+        projFile = os.path.join(path, name + os.extsep + PROJECT_FILE_SUFFIX)
         relFile = os.path.relpath(os.path.abspath(projFile), self.dirName)
         node.setAttribute('Path', relFile)
         
@@ -1101,7 +1151,7 @@ class VLWorkspace:
             print 'Invalid Path'
             return False
 
-        projFile = os.path.join(path, name + '.project')
+        projFile = os.path.join(path, name + os.extsep + PROJECT_FILE_SUFFIX)
         if os.path.exists(projFile):
             print 'The target project file already exists on the disk, '\
                     'just add the project to workspace instead.'
@@ -1181,7 +1231,14 @@ class VLWorkspace:
                 self.SetActiveProject(project.GetName())
 
             # 更新 filesIndex
-            self.filesIndex.update(project.GetFilesIndex())
+            projectFilesIndex = project.GetFilesIndex()
+            self.filesIndex.update(projectFilesIndex)
+            # 更新 fname2file
+            for k in projectFilesIndex.iterkeys():
+                key2 = os.path.basename(k)
+                if not self.fname2file.has_key(key2):
+                    self.fname2file[key2] = set()
+                self.fname2file[key2].add(k)
 
             # 更新 vimLineData
             datum = {}
@@ -1354,6 +1411,28 @@ class VLWorkspace:
 
         for i in self.projects.itervalues():
             i.Save()
+
+    def ConvertToNewFileFormat(self):
+        if not self.fileName:
+            return
+
+        # 修改工作区文件中关于项目路径的文本
+        for i in self.rootNode.childNodes:
+            if i.nodeName == 'Project':
+                path = i.getAttribute('Path').encode('utf-8')
+                newPath = os.path.splitext(path)[0] + os.extsep \
+                        + PROJECT_FILE_SUFFIX
+                i.setAttribute('Path', newPath)
+
+        newFileName = os.path.splitext(self.fileName)[0] + os.extsep \
+                + WORKSPACE_FILE_SUFFIX
+        self.Save(newFileName)
+
+        for i in self.projects.itervalues():
+            newFileName = os.path.splitext(i.fileName)[0] + os.extsep \
+                    + PROJECT_FILE_SUFFIX
+            i.Save(newFileName)
+
 
     
     #===========================================================================
