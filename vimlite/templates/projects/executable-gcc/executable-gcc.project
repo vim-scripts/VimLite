@@ -13,7 +13,7 @@ Note that this project is set to work with the GNU toolchain (gdb, gcc)</Descrip
       <ResourceCompiler Options=""/>
     </GlobalSettings>
     <Configuration Name="Debug" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Type="" BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append">
-      <Compiler Options="-g;-Wall" Required="yes">
+      <Compiler C_Options="-g;-Wall" Options="-g;-Wall" Required="yes">
         <IncludePath Value="."/>
       </Compiler>
       <Linker Options="" Required="yes"/>

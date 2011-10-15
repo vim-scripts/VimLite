@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-5220
+5352
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -255,6 +255,9 @@ command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
 command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
 
 command! -nargs=0 -bar VLWSwapSourceHeader  call <SID>SwapSourceHeader()
+
+command! -nargs=? -bar VLWFindFiles         call <SID>FindFiles(<q-args>)
+command! -nargs=? -bar VLWFindFilesNoCase   call <SID>FindFiles(<q-args>, 1)
 
 
 function! g:VLWGetAllFiles() "{{{2
@@ -884,7 +887,7 @@ endfunction
 
 
 function! s:AddProjectNode(lnum, projFile) "{{{2
-    py ws.AddProjectNode(vim.eval(vim.eval('a:lnum')), vim.eval('a:projFile'))
+    py ws.AddProjectNode(vim.eval('a:lnum'), vim.eval('a:projFile'))
 endfunction
 
 
@@ -1194,7 +1197,8 @@ function! s:DbgStart() "{{{2
             " 正在运行, 中断之, 重新运行
             Csigint
         endif
-        Crun
+        " 为避免修改了程序参数, 需要重新设置程序参数
+        py ws.DebugActiveProject(False, False)
     endif
 endfunction
 
@@ -1241,7 +1245,8 @@ endfunction
 "{{{1
 function! s:CreateWorkspacePostCbk(dlg, data) "{{{2
     if a:data ==# 'True'
-        call s:RefreshBuffer()
+        "call s:RefreshBuffer()
+        py ws.ReloadWorkspace()
     endif
 endfunction
 
@@ -1293,7 +1298,8 @@ function! s:CreateWorkspace(...) "{{{2
             "echo l:file
             py ret = ws.VLWIns.CreateWorkspace(vim.eval('sWspName'), 
                         \os.path.dirname(vim.eval('l:file')))
-            py if ret: ws.OpenTagsDatabase()
+            "py if ret: ws.LoadWspSettings()
+            "py if ret: ws.OpenTagsDatabase()
             py vim.command('call dialog.ConnectPostCallback('
                         \'s:GetSFuncRef("s:CreateWorkspacePostCbk"), "%s")' 
                         \% str(ret))
@@ -1785,6 +1791,17 @@ endfunction
 function! s:SwapSourceHeader() "{{{2
     let sFile = expand("%:p")
     py ws.SwapSourceHeader(vim.eval("sFile"))
+endfunction
+"========== Find Files =========
+function! s:FindFiles(sMatchName, ...) "{{{2
+    let sMatchName = a:sMatchName
+    let bNoCase = a:0 > 0 ? a:1 : 0
+    if sMatchName ==# ''
+        echohl Question
+        let sMatchName = input("Input name to be matched:\n")
+        echohl None
+    endif
+    py ws.FindFiles(vim.eval('sMatchName'), int(vim.eval('bNoCase')))
 endfunction
 "}}}1
 "===============================================================================
@@ -4187,6 +4204,7 @@ class VimLiteWorkspace():
 #            'Re-Tag Project (Unrealized)', 
 #            'Sort Items (Unrealized)', 
             'New Virtual Folder...', 
+            'Import Files From Directory...', 
             '-Sep4-', 
 #            'Rename Project... (Unrealized)', 
             'Remove Project', 
@@ -4204,6 +4222,7 @@ class VimLiteWorkspace():
             'Add a New File...', 
             'Add Existing Files...', 
             'New Virtual Folder...', 
+            'Import Files From Directory...', 
 #            'Sort Items (Unrealized)', 
             'Rename...', 
             'Remove Virtual Folder' ]
@@ -4242,6 +4261,12 @@ class VimLiteWorkspace():
     def CloseWorkspace(self):
         self.VLWIns.CloseWorkspace()
         self.tagsManager.CloseDatabase()
+
+    def ReloadWorkspace(self):
+        fileName = self.VLWIns.fileName
+        self.CloseWorkspace()
+        self.OpenWorkspace(fileName)
+        self.RefreshBuffer()
 
     def LoadWspSettings(self):
         if self.VLWIns.fileName:
@@ -4388,6 +4413,49 @@ class VimLiteWorkspace():
             choice = int(choice) - 1
             if choice >= 0 and choice < len(swapFiles):
                 vim.command("e %s" % swapFiles[choice])
+
+    def FindFiles(self, matchName, noCase = False):
+        if not matchName:
+            return
+
+        fnames = self.VLWIns.fname2file.keys()
+        fnames.sort()
+        result = []
+        questionList = []
+        for fname in fnames:
+            fname2 = fname
+            matchName2 = matchName
+            if noCase:
+                fname2 = fname.lower()
+                matchName2 = matchName.lower()
+            if matchName2 in fname2:
+                tmpList = []
+                for absFileName in self.VLWIns.fname2file[fname]:
+                    result.append(absFileName)
+                    tmpList.append('%s --> %s' % (fname, absFileName))
+                tmpList.sort()
+                questionList.extend(tmpList)
+
+        if not result:
+            vim.command('echohl WarningMsg')
+            vim.command('echo "No matched file was found!"')
+            vim.command('echohl None')
+            return
+
+        try:
+            # 如果按 q 退出了, 会抛出错误
+            choice = vim.eval("inputlist(%s)" 
+                % GenerateMenuList(['Pleace select:'] + questionList))
+            #echoList = GenerateMenuList(['Pleace select:'] + questionList)
+            #vim.command('echo "%s"' % '\n'.join(echoList))
+            #choice = vim.eval(
+                #'input("Type number and <Enter> (empty cancels): ")')
+            choice = int(choice) - 1
+            if choice >= 0 and choice < len(questionList):
+                vim.command("call s:OpenFile('%s')" % result[choice])
+        except:
+            pass
+
 
     #===========================================================================
     #基本操作 ===== 开始
@@ -4639,6 +4707,7 @@ class VimLiteWorkspace():
         if ln == ret:
             ln = row
 
+        # 获取 n+1 行文本，替换原来的 n 行文本，也就是新增了 1 行文本
         texts = []
         for i in range(ln, ret + 1):
             texts.append(self.VLWIns.GetLineText(i).encode('utf-8'))
@@ -4660,6 +4729,7 @@ class VimLiteWorkspace():
         if ln == ret:
             ln = row
 
+        # 获取 n+1 行文本，替换原来的 n 行文本，也就是新增了 1 行文本
         texts = []
         for i in range(ln, ret + 1):
             texts.append(self.VLWIns.GetLineText(i).encode('utf-8'))
@@ -4667,6 +4737,21 @@ class VimLiteWorkspace():
             self.buffer[ln - 1 : ret - 1] = texts
 
         self.HlActiveProject()
+
+    def ImportFilesFromDirectory(self, row, importDir,filters):
+        self.ExpandNode()
+        ret = self.VLWIns.ImportFilesFromDirectory(row, importDir, filters)
+        if ret:
+            # 只需刷新添加的节点的上一个兄弟节点到添加的节点之间的显示
+            se = StartEdit()
+            ln = self.VLWIns.GetPrevSiblingLineNum(ret)
+            if ln == ret:
+                ln = row
+            texts = []
+            for i in range(ln, ret + 1):
+                texts.append(self.VLWIns.GetLineText(i).encode('utf-8'))
+            if texts:
+                self.buffer[ln - 1 : ret - 1] = texts
 
     def DeleteNode(self):
         row, col = self.window.cursor
@@ -4707,7 +4792,7 @@ class VimLiteWorkspace():
         if texts:
             self.buffer[start-1:end-1] = texts
 
-    def DebugProject(self, projName, hasProjFile = False):
+    def DebugProject(self, projName, hasProjFile = False, firstRun = True):
         if not self.VLWIns.FindProjectByName(projName):
             return
 
@@ -4743,7 +4828,8 @@ class VimLiteWorkspace():
         args = Globals.ExpandAllVariables(args, self.VLWIns, projName, 
             confToBuild, '')
         #print args
-        if prog:
+        if firstRun and prog:
+        # 第一次运行, 只要启动 pyclewn 即可
             # BUG: 在 python 中运行以下两条命令, 会出现同名但不同缓冲区的大问题!
             # 暂时只能由外部运行 Pyclewn
             #vim.command("silent cd %s" % os.getcwd())
@@ -4757,10 +4843,15 @@ class VimLiteWorkspace():
             #vim.command("silent cd -")
             #if not hasProjFile:
                 #vim.command("Cstart")
+        else:
+        # 非第一次运行, 只要运行 Crun 即可
+            # 为避免修改了程序参数, 需要重新设置程序参数, 即使为空, 也要设置
+            vim.command("Cset args %s" % args)
+            vim.command("Crun")
 
-    def DebugActiveProject(self, hasProjFile = False):
+    def DebugActiveProject(self, hasProjFile = False, firstRun = True):
         actProjName = self.VLWIns.GetActiveProjectName()
-        self.DebugProject(actProjName, hasProjFile)
+        self.DebugProject(actProjName, hasProjFile, firstRun)
 
     def BuildProject(self, projName):
         ds = Globals.DirSaver()
@@ -4938,6 +5029,10 @@ class VimLiteWorkspace():
                     tmpIncPaths = bldConf.GetIncludePath().split(';')
                     for tmpPath in tmpIncPaths:
                         if tmpPath:
+                            # 需要先展开变量(宏)
+                            tmpPath = Globals.ExpandAllVariables(
+                                tmpPath, self.VLWIns, project.GetName(),
+                                projSelConfName)
                             projIncludePaths.add(os.path.abspath(tmpPath))
             projIncludePaths = list(projIncludePaths)
             projIncludePaths.sort()
@@ -5022,8 +5117,8 @@ class VimLiteWorkspace():
             names = self.VLWSettings.GetBatchBuildNames()
             if names:
                 try:
-                    idx = popupMenuW.index('Batch Builds') + 1
-                    del popupMenuW[idx - 1]
+                    idx = popupMenuW.index('Batch Builds')
+                    del popupMenuW[idx]
                 except ValueError:
                     idx = len(popupMenuW)
                 popupMenuW.insert(idx, 'Batch Cleans ->')
@@ -5152,10 +5247,7 @@ class VimLiteWorkspace():
                 self.CloseWorkspace()
                 self.RefreshBuffer()
             elif choice == 'Reload Workspace':
-                fileName = self.VLWIns.fileName
-                self.CloseWorkspace()
-                self.OpenWorkspace(fileName)
-                self.RefreshBuffer()
+                self.ReloadWorkspace()
             elif choice == 'Parse Workspace (Full)':
                 self.ParseWorkspace(True)
             elif choice == 'Parse Workspace (Quick)':
@@ -5179,11 +5271,7 @@ class VimLiteWorkspace():
         elif nodeType == VLWorkspace.TYPE_PROJECT: #项目右键菜单
             project = self.VLWIns.GetDatumByLineNum(row)['project']
             projName = project.GetName()
-            if choice == 'Import Files From Directroy...':
-                importDir = vim.eval('browsedir("Import Files", "%s")' 
-                    % project.dirName)
-                print importDir
-            elif choice == 'Build':
+            if choice == 'Build':
                 vim.command("call s:BuildProject('%s')" % projName)
             elif choice == 'Rebuild':
                 vim.command("call s:RebuildProject('%s')" % projName)
@@ -5199,6 +5287,28 @@ class VimLiteWorkspace():
                     'inputdialog("\nEnter the Virtual Directory Name:\n")')
                 if name:
                     self.AddVirtualDirNode(row, name)
+            elif choice == 'Import Files From Directory...':
+                filters = '*.cpp;*.cc;*.cxx;*.h;*.hpp;*.c;*.c++;*.tcc'
+                filters = vim.eval(
+                    'inputdialog("\nFile extension to import '\
+                    '(\\".\\" means no extension):\n", \'%s\', "None")' \
+                    % filters)
+                if filters == 'None':
+                    return
+                if useGui:
+                    importDir = vim.eval('browsedir("Import Files", "%s")' 
+                        % project.dirName)
+                else:
+                    ds = Globals.DirSaver()
+                    os.chdir(project.dirName)
+                    importDir = vim.eval('input("Import Files:\n", "%s", "dir")'
+                        % os.getcwd())
+                    if importDir:
+                        importDir = importDir.rstrip(os.sep)
+                    del ds
+                if not importDir:
+                    return
+                self.ImportFilesFromDirectory(row, importDir, filters)
             elif choice == 'Remove Project':
                 input = vim.eval('confirm("\nAre you sure to remove project '\
                 '\\"%s\\" ?", ' '"&Yes\n&No\n&Cancel")' % projName)
@@ -5288,8 +5398,8 @@ class VimLiteWorkspace():
                         del ds
                     else:
                         names = []
-                        # NOTE: 返回的也有可能是相对于当前目录, 
-                        # 不是参数的目录, 的相对路径
+                        # NOTE: 返回的也有可能是相对于当前目录而不是参数的目录的
+                        #       相对路径
                         fileName = vim.eval(
                             'browse("", "Add Existing file", "%s", "")' 
                             % project.dirName)
@@ -5303,6 +5413,28 @@ class VimLiteWorkspace():
                     'inputdialog("\nEnter the Virtual Directory Name:\n")')
                 if name:
                     self.AddVirtualDirNode(row, name)
+            elif choice == 'Import Files From Directory...':
+                filters = '*.cpp;*.cc;*.cxx;*.h;*.hpp;*.c;*.c++;*.tcc'
+                filters = vim.eval(
+                    'inputdialog("\nFile extension to import '\
+                    '(\\".\\" means no extension):\n", \'%s\', "None")' \
+                    % filters)
+                if filters == 'None':
+                    return
+                if useGui:
+                    importDir = vim.eval('browsedir("Import Files", "%s")' 
+                        % project.dirName)
+                else:
+                    ds = Globals.DirSaver()
+                    os.chdir(project.dirName)
+                    importDir = vim.eval('input("Import Files:\n", "%s", "dir")'
+                        % os.getcwd())
+                    if importDir:
+                        importDir = importDir.rstrip(os.sep)
+                    del ds
+                if not importDir:
+                    return
+                self.ImportFilesFromDirectory(row, importDir, filters)
             elif choice == 'Rename...':
                 oldName = self.VLWIns.GetDispNameByLineNum(row)
                 newName = vim.eval('inputdialog("\nEnter new name:", "%s")' \
@@ -6658,7 +6790,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:
 plugin/vimdialog.vim	[[[1
-3288
+3345
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -6838,6 +6970,19 @@ function! g:VCBlankLine.ClearHighlight()
 	if hlexists('VCLabel_' . self.hiGroup)
 		exec 'syn clear ' . 'VCLabel_' . self.hiGroup
 	endif
+endfunction
+
+function! g:VCBlankLine.GotoNextCtl(...) "{{{2
+	"跳至下一个控件, 返回零表示处理完毕
+	"可选参数非零表示第一次调用
+	let bFirstEnter = a:0 > 0 ? a:1 : 0
+	return 0
+endfunction
+
+function! g:VCBlankLine.GotoPrevCtl(...) "{{{2
+	"跳至下一个控件, 返回零表示处理完毕
+	"可选参数非零表示第一次调用
+	return 0
 endfunction
 
 "Function: g:VCBlankLine.Delete() 销毁对象 {{{2
@@ -8554,6 +8699,37 @@ endfunction
 function! g:VCButtonLine.RestoreValueAction() "{{{2
 endfunction
 
+function! g:VCButtonLine.GotoNextCtl(...) "{{{2
+	let bFirstEnter = a:0 > 0 ? a:1 : 0
+	if bFirstEnter
+		return 1
+	else
+		let lOrigPos = getpos('.')
+		normal! f[
+		if getpos('.') == lOrigPos
+			return 0
+		else
+			return 1
+		endif
+	endif
+endfunction
+
+function! g:VCButtonLine.GotoPrevCtl(...) "{{{2
+	let bFirstEnter = a:0 > 0 ? a:1 : 0
+	if bFirstEnter
+		normal! $F[
+		return 1
+	else
+		let lOrigPos = getpos('.')
+		normal! F[
+		if getpos('.') == lOrigPos
+			return 0
+		else
+			return 1
+		endif
+	endif
+endfunction
+
 "===============================================================================
 "-------------------------------------------------------------------------------
 "===============================================================================
@@ -9531,10 +9707,17 @@ endfunction
 function! g:VimDialog.GotoNextEdiableCtl() "{{{2
 	let origRow = line('.')
 	let origCtl = self.GetControlByLnum(origRow)
+
+	if !empty(origCtl) && origCtl.GotoNextCtl()
+	"控件自身还有空控件没有跳转完毕
+		return
+	endif
+
 	for row in range(origRow, line('$'))
 		let ctl = self.GetControlByLnum(row)
 		if !empty(ctl) && ctl isnot origCtl && ctl.IsEditable()
 			exec row
+			call ctl.GotoNextCtl(1)
 			break
 		endif
 	endfor
@@ -9543,6 +9726,11 @@ endfunction
 function! g:VimDialog.GotoPrevEdiableCtl() "{{{2
 	let origRow = line('.')
 	let origCtl = self.GetControlByLnum(origRow)
+
+	if !empty(origCtl) && origCtl.GotoPrevCtl()
+		return
+	endif
+
 	for row in range(origRow, 1, -1)
 		let ctl = self.GetControlByLnum(row)
 		if !empty(ctl) && ctl isnot origCtl && ctl.IsEditable()
@@ -9556,6 +9744,7 @@ function! g:VimDialog.GotoPrevEdiableCtl() "{{{2
 			endfor
 
 			exec row
+			call ctl.GotoPrevCtl(1)
 			break
 		endif
 	endfor
@@ -10097,7 +10286,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-600
+605
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -10325,7 +10514,7 @@ The key to popup gui menu, this default value probably does not work. >
 ------------------------------------------------------------------------------
 4.2. Commands                           *VimLite-ProjectManager-Commands*
 
-    VLWorkspaceOpen [.workspace]        Open a workspace file or default
+    VLWorkspaceOpen [workspace_file]    Open a workspace file or default
                                         workspace.
 
     VLWBuildActiveProject               Build active projcet.
@@ -10338,6 +10527,11 @@ The key to popup gui menu, this default value probably does not work. >
                                         successfully.
 
     VLWSwapSourceHeader                 Toggle editing source and header
+
+    VLWFindFiles [name]                 Find workspace files
+
+    VLWFindFilesNoCase [name]           Find workspace files with no case
+                                        sensitive
 
 ------------------------------------------------------------------------------
 4.3. Cscope                             *VimLite-ProjectManager-Cscope*
@@ -12546,7 +12740,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-2125
+2171
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -13104,14 +13298,6 @@ function! omnicpp#resolvers#ResolveOmniInfo(lScopeStack, dOmniInfo) "{{{2
         endif
     endif
 
-    " 处理好起点
-    if lMemberStack[0].kind ==# 'container'
-    elseif lMemberStack[0].kind ==# 'variable'
-    elseif lMemberStack[0].kind ==# 'function'
-    else
-        " Nothing to be done.
-    endif
-
     let lResult = omnicpp#resolvers#ResolveOmniScopeStack(
                 \lSearchScopes, lMemberStack, dScopeInfo)
 
@@ -13240,8 +13426,34 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                     let dMember.tag = dTmpTag
 
                     try
+                        let dOrigTypeInfo = copy(dMember.typeinfo)
                         let sCurName = omnicpp#resolvers#ResolveTemplate(
                                     \dMember, lMemberStack[idx-1])
+                        "if dOrigTypeInfo != dMember.typeinfo
+                        if dOrigTypeInfo.name !=# dMember.typeinfo.name
+                            " 处理了模版替换, 需要重头再来
+                            let sCode = omnicpp#utils#GenCodeFromTypeInfo(
+                                        \dMember.typeinfo)
+                            " 解析完毕的类型必然是容器, 所以附加 '::'
+                            let dTmpOmniInfo = omnicpp#resolvers#GetOmniInfo(
+                                        \sCode . '::')
+                            " 替换 dMember
+                            call remove(lMemberStack, 0, idx)
+                            call extend(lMemberStack, dTmpOmniInfo.omniss, 0)
+
+                            " TODO: 是否需要添加局部搜索域?
+                            let lSearchScopes = lOrigScopes
+                            if dTmpOmniInfo.precast ==# '<global>'
+                            " 可能带 '::' 前缀
+                                let lOrigScopes = dScopeInfo.global
+                                let lSearchScopes = lOrigScopes
+                            endif
+
+                            " 重头再来
+                            let idx = 0
+                            let bNeedExpandUsing = 1
+                            continue
+                        endif
                     catch
                         " 语法错误
                         let lSearchScopes = []
@@ -13297,7 +13509,7 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
 
                 " 重头再来
                 let idx = 0
-                let bNeedExpandUsing = 0
+                let bNeedExpandUsing = 0 " 函数的返回不能依赖 using
                 continue
             else
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dMember.name)
@@ -13313,8 +13525,36 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                 let dMember.typeinfo = dTypeInfo
                 let dMember.tag = dTmpTag
                 try
+                    "let sCurName = omnicpp#resolvers#ResolveTemplate(
+                                "\dMember, lMemberStack[idx-1])
+                    let dOrigTypeInfo = copy(dMember.typeinfo)
                     let sCurName = omnicpp#resolvers#ResolveTemplate(
                                 \dMember, lMemberStack[idx-1])
+                    "if dOrigTypeInfo != dMember.typeinfo
+                    if dOrigTypeInfo.name !=# dMember.typeinfo.name
+                        " 处理了模版替换, 需要重头再来
+                        let sCode = omnicpp#utils#GenCodeFromTypeInfo(
+                                    \dMember.typeinfo)
+                        " 解析完毕的类型必然是容器, 所以附加 '::'
+                        let dTmpOmniInfo = omnicpp#resolvers#GetOmniInfo(
+                                    \sCode . '::')
+                        " 替换 dMember
+                        call remove(lMemberStack, 0, idx)
+                        call extend(lMemberStack, dTmpOmniInfo.omniss, 0)
+
+                        " TODO: 是否需要添加局部搜索域?
+                        let lSearchScopes = lOrigScopes
+                        if dTmpOmniInfo.precast ==# '<global>'
+                        " 可能带 '::' 前缀
+                            let lOrigScopes = dScopeInfo.global
+                            let lSearchScopes = lOrigScopes
+                        endif
+
+                        " 重头再来
+                        let idx = 0
+                        let bNeedExpandUsing = 1
+                        continue
+                    endif
                 catch
                     " 语法错误
                     let lSearchScopes = []
@@ -13381,7 +13621,7 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
 
             " 重头再来
             let idx = 0
-            let bNeedExpandUsing = 0
+            let bNeedExpandUsing = 0 " 类型替换不能依赖 using
             let lSearchScopes = lOrigScopes
             continue
         endif
@@ -13408,7 +13648,7 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
 
             " 重头再来
             let idx = 0
-            let bNeedExpandUsing = 0
+            let bNeedExpandUsing = 0 " 类型替换不能依赖 using
             let lSearchScopes = lOrigScopes
             continue
         endif
@@ -14111,7 +14351,7 @@ endfunc
 " 解析模版
 " Param1: 当前变量信息
 " Param2: 包含 Param1 成员的容器变量信息
-" Return: 解析完成的 TB (typename) 的具体值(实例化后的类型名)
+" Return: 解析完成的 TB (typename) 的具体值(实例化后的类型名), 非绝对路径
 function! omnicpp#resolvers#ResolveTemplate(dCurVarInfo, dCtnVarInfo) "{{{2
     " 同时处理类内的模版补全
     " 如果在类内要求补全模版, 因为没有 til, 所以需要检查 til

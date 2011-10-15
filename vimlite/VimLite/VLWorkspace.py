@@ -35,6 +35,70 @@ def Cmp(s1, s2):
     '''忽略大小写比较两个字符串'''
     return cmp(s1.lower(), s2.lower())
 
+def Glob(sDir, filters):
+    '''展开通配符的文件
+    
+    sDir: 所在的目录, 会添加到通配符前
+    lFilters: 通配符字符串列表, 支持匹配无后缀名的文件('.')'''
+    import glob
+    lFiles = []
+    lFilters = filters
+    if isinstance(filters, str):
+        lFilters = [i.strip() for i in filters.split(';')]
+    for sFilter in lFilters:
+        if sFilter != '.':
+            lFiles.extend(glob.glob(os.path.join(sDir, sFilter)))
+        else:
+            # 自定义的匹配无后缀名文件的模式 '.'
+            sCurDir = sDir
+            if not sCurDir:
+                sCurDir = '.'
+            for sFile in os.listdir(sCurDir):
+                if not '.' in sFile:
+                    lFiles.append(os.path.join(sDir, sFile))
+    return lFiles
+
+def DirectoryToXmlNode(sDir, filters,
+                       relStartPath = os.path.curdir,
+                       _doc = minidom.getDOMImplementation().createDocument(
+                           None, None, None)):
+    '''广度优先获取指定导入目录的文件'''
+    if not sDir or not os.path.isdir(sDir):
+        return
+
+    doc = _doc
+    xmlNode = doc.createElement('VirtualDirectory')
+    xmlNode.setAttribute('Name', os.path.basename(sDir))
+
+    # 标识当前目录是否拥有至少一个子文件/目录以决定是否返回 None
+    bHasChild = False
+
+    if not sDir:
+        lFileList = os.listdir('.')
+    else:
+        lFileList = os.listdir(sDir)
+    for sFile in lFileList:
+        sFile = os.path.join(sDir, sFile)
+        if os.path.isdir(sFile):
+            newXmlNode = DirectoryToXmlNode(sFile, filters, relStartPath)
+            if newXmlNode:
+                xmlNode.appendChild(newXmlNode)
+                bHasChild = True
+
+    lFiles = Glob(sDir, filters)
+    for sFile in lFiles:
+        if not os.path.isfile(sFile):
+            continue
+        newXmlNode = doc.createElement('File')
+        newXmlNode.setAttribute('Name', os.path.relpath(sFile, relStartPath))
+        xmlNode.appendChild(newXmlNode)
+        bHasChild = True
+
+    if not bHasChild:
+        xmlNode = None
+
+    return xmlNode
+
 # 由列表生成前缀字符
 # 1 表示有下一个兄弟节点， 0 表示没有，即为父节点最后的子节点
 # 从项目算起，可由 list 的长度获得深度，项目的深度为 1
@@ -348,7 +412,7 @@ class VLWorkspace:
         return self.GetLastLineNum()
 
     def DoInsertProject(self, lineNum, datum):
-        '''按照排序顺序插入子节点到相应的位置，不能插入返回 0'''
+        '''按照排序顺序插入子节点到相应的位置，不能插入，返回 0'''
         parentType = self.GetNodeType(lineNum)
         if parentType != TYPE_WORKSPACE or not datum:
             return 0
@@ -409,9 +473,12 @@ class VLWorkspace:
         self.vimLineData.insert(self.GetLastLineNum() + 1, datum)
         return self.GetLastLineNum()
 
-    def DoAddVdirOrFileNode(self, lineNum, nodeType, name, save = True):
+    def DoAddVdirOrFileNode(self, lineNum, nodeType, name, save = True,
+                            insertingNode = None):
         '''会自动修正 name 为正确的相对路径，返回节点添加后所在的行号。
-        如无法插入，如存在同名，则返回 0'''
+        如无法插入，如存在同名，则返回 0
+        
+        insertingNode: 指定插入的 xml 节点'''
         index = self.DoGetIndexByLineNum(lineNum)
         type = self.GetNodeType(lineNum)
         if index < 0 or type == TYPE_FILE or type == TYPE_INVALID \
@@ -435,6 +502,10 @@ class VLWorkspace:
             return 0
         
         newNode.setAttribute('Name', name)
+        if insertingNode:
+            # 若指定了 xml 节点，替换之
+            newNode = insertingNode
+
         newDatum['node'] = newNode
         newDatum['expand'] = 0
         newDatum['project'] = parentDatum['project']
@@ -443,8 +514,8 @@ class VLWorkspace:
         ret = self.DoInsertChild(lineNum, newDatum)
         # 插入失败（同名冲突），返回
         if not ret:
-            print 'Name Conflict'
-            return ret
+            print 'Name Conflict!'
+            return 0
 
         parentNode.appendChild(newNode)
 
@@ -793,7 +864,7 @@ class VLWorkspace:
         if oldName == newName:
             return
         if self.DoCheckNameConflict(xmlNode.parentNode, newName):
-            print 'Name Conflict'
+            print 'Name Conflict!'
             return
         if type == TYPE_FILE:
             absOldFile = self.GetFileByLineNum(lineNum, True)
@@ -894,13 +965,52 @@ class VLWorkspace:
         return delLineCount
 
     def AddVirtualDirNode(self, lineNum, name):
+        '''添加虚拟目录并保存'''
         return self.DoAddVdirOrFileNode(lineNum, TYPE_VIRTUALDIRECTORY, name)
 
     def AddFileNode(self, lineNum, name):
+        '''添加文件节点并保存'''
         return self.DoAddVdirOrFileNode(lineNum, TYPE_FILE, name)
 
     def AddFileNodeQuickly(self, lineNum, name):
+        '''添加文件节点，不保存'''
         return self.DoAddVdirOrFileNode(lineNum, TYPE_FILE, name, False)
+
+    def ImportFilesFromDirectory(self, lineNum, directory, filters):
+        '''从指定目录递归导入指定匹配的文件
+        
+        lineNum: 请求操作的行号，一般只允许在项目和虚拟目录节点时请求
+        directory: 需要导入的目录
+        filters: 匹配的文件，如 "*.cpp;*.cc;*.cxx;*.h;*.hpp;*.c;*.c++;*.tcc"
+        '''
+        # 为了实现的简单性，directory 不允许是已经存在的虚拟目录
+        datum = self.GetDatumByLineNum(lineNum)
+        type = self.GetNodeType(lineNum)
+        if not datum or type == TYPE_INVALID or type == TYPE_FILE \
+           or type == TYPE_WORKSPACE or not os.path.isdir(directory):
+            return 0
+
+        directory = os.path.abspath(directory)
+        project = datum['project']
+        rootNode = datum['node']
+        xmlNode = DirectoryToXmlNode(directory, filters, project.dirName)
+        if xmlNode:
+            #print directory
+            #print xmlNode.toprettyxml()
+            ret = self.DoAddVdirOrFileNode(lineNum, TYPE_VIRTUALDIRECTORY,
+                                           os.path.basename(directory),
+                                           insertingNode = xmlNode)
+            if not ret:
+                return 0
+            #if self.DoCheckNameConflict(rootNode, os.path.basename(directory)):
+                #print 'Name Conflict!'
+                #return 0
+            #rootNode.appendChild(xmlNode)
+            #project.Save()
+            self.GenerateFilesIndex()
+            return ret
+
+        return 0
 
     def SetActiveProjectByLineNum(self, lineNum):
         type = self.GetNodeType(lineNum)
@@ -909,7 +1019,7 @@ class VLWorkspace:
         
         xmlNode = XmlUtils.FindNodeByName(
             self.rootNode, 'Project', self.activeProject)
-        #可能是刚加进来，根本没有上一个已激活的项目
+        # 可能是刚加进来，根本没有上一个已激活的项目
         if xmlNode:
             xmlNode.setAttribute('Active', 'No')
         

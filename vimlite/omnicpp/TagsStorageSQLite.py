@@ -1317,8 +1317,12 @@ def ParseFilesAndStore(files, storage, replacements = [], filterNonNeed = True,
             f = tmpFiles[idx]
             if filesMap.has_key(f):
                 # 开始比较时间戳
-                if int(os.path.getmtime(f)) \
-                   < filesMap[f].GetLastRetaggedTimestamp():
+                try:
+                    mtime = int(os.path.getmtime(f))
+                except OSError:
+                    # 可能文件 f 不存在, 设置为 0, 即跳过
+                    mtime = 0
+                if filesMap[f].GetLastRetaggedTimestamp() >= mtime:
                     # 过滤掉
                     del tmpFiles[idx]
                     mapLen -= 1
