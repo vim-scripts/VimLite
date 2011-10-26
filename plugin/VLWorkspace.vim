@@ -1516,10 +1516,10 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
         if filereadable(sCsOutFile)
             set csto=0
             set cst
-            set nocsverb
+            "set nocsverb
             exec 'silent! cs kill '.sCsOutFile
             exec 'cs add '.sCsOutFile
-            set csverb
+            "set csverb
         endif
         py del l_ds
         return
@@ -1564,6 +1564,7 @@ PYTHON_EOF
         call writefile(lFiles, sCsFilesFile)
     endif
 
+    let sIncludeOpts = ''
     if !empty(lIncludePaths)
         let sIncludeOpts = '-I"' . join(lIncludePaths, '" -I"') . '"'
     endif
@@ -1594,10 +1595,10 @@ PYTHON_EOF
 
     set csto=0
     set cst
-    set nocsverb
+    "set nocsverb
     exec 'silent! cs kill '. sCsOutFile
     exec 'cs add '. sCsOutFile
-    set csverb
+    "set csverb
 
     py del l_ds
 endfunction
@@ -1637,6 +1638,7 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
         py vim.command("let lIncludePaths = %s" 
                     \% str(ws.GetWorkspaceIncludePaths()))
     endif
+    let sIncludeOpts = ''
     if !empty(lIncludePaths)
         let sIncludeOpts = '-I"' . join(lIncludePaths, '" -I"') . '"'
     endif
@@ -3942,7 +3944,7 @@ python << PYTHON_EOF
 import sys, os, os.path
 import vim
 
-sys.path.extend([os.path.expanduser('~/.vimlite/VimLite')])
+sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
 import Globals
 import VLWorkspace
 from VLWorkspace import VLWorkspaceST
@@ -4863,6 +4865,8 @@ class VimLiteWorkspace():
             cmd = self.builder.GetBatchBuildCommand(buildOrder, wspSelConfName)
 
         if cmd:
+            # 强制设置成英语 locale 以便 quickfix 处理
+            cmd = "LANG=en_US " + cmd
             if vim.eval("g:VLWorkspaceSaveAllBeforeBuild") != '0':
                 vim.command("wa")
             tempFile = vim.eval('tempname()')
@@ -4956,6 +4960,8 @@ class VimLiteWorkspace():
             tmpIncPaths = bldConf.GetIncludePath().split(';')
             for tmpPath in tmpIncPaths:
                 # 从 xml 里提取的字符串全部都是 unicode
+                tmpPath = Globals.ExpandAllVariables(tmpPath, self.VLWIns,
+                                                     projName, projConfName)
                 result.append(os.path.abspath(tmpPath).encode('utf-8'))
 
         return result

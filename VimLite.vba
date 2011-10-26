@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-5352
+5358
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -1647,10 +1647,10 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
         if filereadable(sCsOutFile)
             set csto=0
             set cst
-            set nocsverb
+            "set nocsverb
             exec 'silent! cs kill '.sCsOutFile
             exec 'cs add '.sCsOutFile
-            set csverb
+            "set csverb
         endif
         py del l_ds
         return
@@ -1695,6 +1695,7 @@ PYTHON_EOF
         call writefile(lFiles, sCsFilesFile)
     endif
 
+    let sIncludeOpts = ''
     if !empty(lIncludePaths)
         let sIncludeOpts = '-I"' . join(lIncludePaths, '" -I"') . '"'
     endif
@@ -1725,10 +1726,10 @@ PYTHON_EOF
 
     set csto=0
     set cst
-    set nocsverb
+    "set nocsverb
     exec 'silent! cs kill '. sCsOutFile
     exec 'cs add '. sCsOutFile
-    set csverb
+    "set csverb
 
     py del l_ds
 endfunction
@@ -1768,6 +1769,7 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
         py vim.command("let lIncludePaths = %s" 
                     \% str(ws.GetWorkspaceIncludePaths()))
     endif
+    let sIncludeOpts = ''
     if !empty(lIncludePaths)
         let sIncludeOpts = '-I"' . join(lIncludePaths, '" -I"') . '"'
     endif
@@ -4073,7 +4075,7 @@ python << PYTHON_EOF
 import sys, os, os.path
 import vim
 
-sys.path.extend([os.path.expanduser('~/.vimlite/VimLite')])
+sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
 import Globals
 import VLWorkspace
 from VLWorkspace import VLWorkspaceST
@@ -4994,6 +4996,8 @@ class VimLiteWorkspace():
             cmd = self.builder.GetBatchBuildCommand(buildOrder, wspSelConfName)
 
         if cmd:
+            # 强制设置成英语 locale 以便 quickfix 处理
+            cmd = "LANG=en_US " + cmd
             if vim.eval("g:VLWorkspaceSaveAllBeforeBuild") != '0':
                 vim.command("wa")
             tempFile = vim.eval('tempname()')
@@ -5087,6 +5091,8 @@ class VimLiteWorkspace():
             tmpIncPaths = bldConf.GetIncludePath().split(';')
             for tmpPath in tmpIncPaths:
                 # 从 xml 里提取的字符串全部都是 unicode
+                tmpPath = Globals.ExpandAllVariables(tmpPath, self.VLWIns,
+                                                     projName, projConfName)
                 result.append(os.path.abspath(tmpPath).encode('utf-8'))
 
         return result
@@ -10286,7 +10292,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-605
+608
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -10850,6 +10856,9 @@ behaviour of the popup menu selection.
 Map <CR> (return) key to auto trigger function calltips after select a
 function item in the code completion popup menu. >
     let g:VLOmniCpp_MapReturnToDispCalltips = 1
+
+Use python code which can improve the completing speed. >
+    let g:VLOmniCpp_UsePython = 1
 
 ------------------------------------------------------------------------------
 7.4. Clang Options                      *VimLite-Options-Clang*
@@ -15626,7 +15635,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-697
+730
 " Description:  Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -15761,7 +15770,11 @@ function! omnicpp#utils#GetCodeFromLine(szSingleLine) "{{{2
     let szResult = substitute(szResult, '\/\/.*', '', 'g')
 
     " Now we have the entire code in one line and we can remove C comments
-    return s:RemoveCComments(szResult)
+    if !g:VLOmniCpp_UsePython
+        let szResult = s:RemoveCComments(szResult)
+    endif
+
+    return szResult
 endfunc
 "}}}
 " Remove C comments on a line
@@ -15831,7 +15844,31 @@ function! omnicpp#utils#GetCode(posStart, posEnd) "{{{2
     endif
 
     " Now we have the entire code in one line and we can remove C comments
-    return s:RemoveCComments(result)
+    if !g:VLOmniCpp_UsePython
+        let result = s:RemoveCComments(result)
+    endif
+
+    return result
+endfunc
+"}}}
+"{{{2
+function! omnicpp#utils#GetCodeLines(lStartPos, lEndPos)
+    let lStartPos = a:lStartPos
+    let lEndPos = a:lEndPos
+    let lLines = getline(lStartPos[0], lEndPos[0])
+
+    if empty(lLines)
+        return []
+    endif
+
+    if lStartPos[0] == lEndPos[0]
+        let lLines[0] = lLines[0][lStartPos[1] : lEndPos[1]-1]
+    else
+        let lLines[0] = lLines[0][lStartPos[1] :]
+        let lLines[-1] = lLines[-1][: lEndPos[1]-1]
+    endif
+
+    return lLines
 endfunc
 "}}}
 " Check if the cursor is in comment or string
@@ -15874,7 +15911,8 @@ function! omnicpp#utils#TokenizeStatementBeforeCursor(...) "{{{2
     else
         let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:] . szAppendText
     endif
-    if bSimplify
+    " 若使用 python 实现的 omnicpp#tokenizer#Tokenize(), 无须预处理
+    if bSimplify && !g:VLOmniCpp_UsePython
         let szCode = omnicpp#utils#SimplifyCodeForOmni(szCode)
     endif
     return omnicpp#tokenizer#Tokenize(szCode)
@@ -15890,7 +15928,8 @@ function! omnicpp#utils#GetCurStatementBeforeCursor(...) "{{{
     let startPos = omnicpp#utils#GetCurStatementStartPos()
     " 不包括光标下的字符
     let szCode = omnicpp#utils#GetCode(startPos, curPos)[:-2]
-    if bSimplify
+    " 若使用 python 实现的 omnicpp#tokenizer#Tokenize(), 无须预处理
+    if bSimplify && !g:VLOmniCpp_UsePython
         let szCode = omnicpp#utils#SimplifyCodeForOmni(szCode)
     endif
 
@@ -15928,10 +15967,13 @@ function! s:StripFuncArgs(szOmniCode) "{{{2
     let s = a:szOmniCode
 
     " 1. 清理引号内的 \" , 因为正则貌似是不能直接匹配 ("\"")
-    let s = substitute(s, '\\"', '', 'g')
+    "let s = substitute(s, '\\"', '', 'g')
     " 2. 清理双引号的内容, 否则双引号内的括号会干扰括号替换
-    let s = substitute(s, '".\{-}"', '', 'g')
+    "let s = substitute(s, '".\{-}"', '', 'g')
+    " 1.2. 清理双引号内的内容, 替换成仅双引号
+    let s = substitute(s, '"\([^"]\|\\\@<="\)*"', '""', 'g')
     " 3. 清理 '(' 和 ')', 避免干扰
+    " 也可直接替换成标准的单个 char, 如 'x'
     let s = substitute(s, "'('\\|')'", '', 'g')
 
     let szResult = ''
@@ -16189,7 +16231,7 @@ function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
                         let nTmpCount += 1
                     elseif dTmpToken.value ==# '>'
                         let nTmpCount -= 1
-                    " Tokenize 函数有 bug, '"",' 和 "''," 作为单个 token
+                    " NOTE: Tokenize 函数有 bug, '"",' 和 "''," 作为单个 token
                     elseif dTmpToken.value ==# ','
                                 \|| dTmpToken.value ==# '"",' 
                                 \|| dTmpToken.value ==# "'',"
@@ -16325,7 +16367,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
-405
+408
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 13
@@ -16452,16 +16494,19 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
         " or when we are at the beginning of the file.
         if lEndPos != [0, 0]
             " We remove the last character which is a '{'
-            " We also remove starting { or } or ; if exits
+            " We also remove starting { or } or ; if exists
 			" 获取 {} 块前的一条有效语句代码并剔除前面和后面的多余字符
 			" 结果 eg. '   int main(int argc, char **argv)'
-            let sCodeWithoutComments = substitute(
-                        \omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
-                        \'^[;{}]', '', 'g')
-            "let sCode = {'startLine' : lStartPos[0], 
-                        "\'code' : sCodeWithoutComments}
-
-            let lTokens = omnicpp#tokenizer#Tokenize(sCodeWithoutComments)
+            if exists('g:VLOmniCpp_UsePython') && g:VLOmniCpp_UsePython
+                let lLines = omnicpp#utils#GetCodeLines(lStartPos, lEndPos)
+                let g:lLines = lLines
+                let lTokens = omnicpp#tokenizer#TokenizeLines(lLines)
+            else
+                let sCode= substitute(
+                            \omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
+                            \'^[;{}]', '', 'g')
+                let lTokens = omnicpp#tokenizer#Tokenize(sCode)
+            endif
             let dCurScope = s:NewScope()
 
             let nLen = len(lTokens)
@@ -16732,7 +16777,7 @@ endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/settings.vim	[[[1
-49
+52
 " Description:  Omnicpp completion init settings
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -16779,18 +16824,20 @@ function! omnicpp#settings#Init() "{{{1
     "   2 = select first item (without inserting it to the text)
     "   default = 2
     call s:InitVariable('g:VLOmniCpp_ItemSelectionMode', 2)
+
+    " 尽量使用 python
+    call s:InitVariable('g:VLOmniCpp_UsePython', 1)
 endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/tokenizer.vim	[[[1
-124
+148
 " Description:  Omnicpp completion tokenizer
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
 " License:      GPLv2
 
 " TODO: Generic behaviour for Tokenize()
-
 
 " C++ 的关键词列表
 " From the C++ BNF
@@ -16828,7 +16875,29 @@ let s:reComment = s:reCComment.'\|'.s:reCppComment
 let s:reCppOperatorOrPunctuator = escape(
             \join(s:cppOperatorPunctuator, '\|'), '*./^~[]')
 
+try
+    call omnicpp#settings#Init()
+catch
+    " 默认使用 python
+    let g:VLOmniCpp_UsePython = 1
+endtry
 
+if exists('g:VLOmniCpp_UsePython') && g:VLOmniCpp_UsePython
+"py import sys
+"py sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
+"py import vim
+py import CppTokenizer
+"===============================================================================
+" 用 python 的正则表达式速度快很多
+function! omnicpp#tokenizer#Tokenize(sCode)
+    py vim.command("return %s" % CppTokenizer.Tokenize(vim.eval('a:sCode')))
+endfunc
+
+function! omnicpp#tokenizer#TokenizeLines(lLines)
+    py vim.command("return %s" % CppTokenizer.TokenizeLines(vim.eval('a:lLines')))
+endfunc
+else
+"===============================================================================
 " Tokenize a c++ code
 " a token is dictionary where keys are:
 "   -   kind    = cppKeyword|cppWord|cppOperatorPunctuator|cComment|
@@ -16836,7 +16905,8 @@ let s:reCppOperatorOrPunctuator = escape(
 "   -   value   = <text>
 "   Note: a cppWord is any word that is not a cpp keyword
 "   Note: 不能解析的, 被忽略. 中文会解析错误.
-"   TODO: 忽略注释
+"   TODO: 处理注释中的非 ascii 码.
+"         理论上应该把代码的字符串, 注释剔除完再 token 化
 function! omnicpp#tokenizer#Tokenize(szCode) "{{{2
     let result = []
 
@@ -16905,6 +16975,8 @@ function! omnicpp#tokenizer#Tokenize(szCode) "{{{2
 
     return result
 endfunc
+"}}}
+endif
 
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:

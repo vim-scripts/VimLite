@@ -5,7 +5,6 @@
 
 " TODO: Generic behaviour for Tokenize()
 
-
 " C++ 的关键词列表
 " From the C++ BNF
 let s:cppKeyword = ['asm', 'auto', 'bool', 'break', 'case', 'catch', 'char', 
@@ -42,7 +41,29 @@ let s:reComment = s:reCComment.'\|'.s:reCppComment
 let s:reCppOperatorOrPunctuator = escape(
             \join(s:cppOperatorPunctuator, '\|'), '*./^~[]')
 
+try
+    call omnicpp#settings#Init()
+catch
+    " 默认使用 python
+    let g:VLOmniCpp_UsePython = 1
+endtry
 
+if exists('g:VLOmniCpp_UsePython') && g:VLOmniCpp_UsePython
+"py import sys
+"py sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
+"py import vim
+py import CppTokenizer
+"===============================================================================
+" 用 python 的正则表达式速度快很多
+function! omnicpp#tokenizer#Tokenize(sCode)
+    py vim.command("return %s" % CppTokenizer.Tokenize(vim.eval('a:sCode')))
+endfunc
+
+function! omnicpp#tokenizer#TokenizeLines(lLines)
+    py vim.command("return %s" % CppTokenizer.TokenizeLines(vim.eval('a:lLines')))
+endfunc
+else
+"===============================================================================
 " Tokenize a c++ code
 " a token is dictionary where keys are:
 "   -   kind    = cppKeyword|cppWord|cppOperatorPunctuator|cComment|
@@ -50,7 +71,8 @@ let s:reCppOperatorOrPunctuator = escape(
 "   -   value   = <text>
 "   Note: a cppWord is any word that is not a cpp keyword
 "   Note: 不能解析的, 被忽略. 中文会解析错误.
-"   TODO: 忽略注释
+"   TODO: 处理注释中的非 ascii 码.
+"         理论上应该把代码的字符串, 注释剔除完再 token 化
 function! omnicpp#tokenizer#Tokenize(szCode) "{{{2
     let result = []
 
@@ -119,6 +141,8 @@ function! omnicpp#tokenizer#Tokenize(szCode) "{{{2
 
     return result
 endfunc
+"}}}
+endif
 
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:

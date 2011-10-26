@@ -124,16 +124,19 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
         " or when we are at the beginning of the file.
         if lEndPos != [0, 0]
             " We remove the last character which is a '{'
-            " We also remove starting { or } or ; if exits
+            " We also remove starting { or } or ; if exists
 			" 获取 {} 块前的一条有效语句代码并剔除前面和后面的多余字符
 			" 结果 eg. '   int main(int argc, char **argv)'
-            let sCodeWithoutComments = substitute(
-                        \omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
-                        \'^[;{}]', '', 'g')
-            "let sCode = {'startLine' : lStartPos[0], 
-                        "\'code' : sCodeWithoutComments}
-
-            let lTokens = omnicpp#tokenizer#Tokenize(sCodeWithoutComments)
+            if exists('g:VLOmniCpp_UsePython') && g:VLOmniCpp_UsePython
+                let lLines = omnicpp#utils#GetCodeLines(lStartPos, lEndPos)
+                let g:lLines = lLines
+                let lTokens = omnicpp#tokenizer#TokenizeLines(lLines)
+            else
+                let sCode= substitute(
+                            \omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
+                            \'^[;{}]', '', 'g')
+                let lTokens = omnicpp#tokenizer#Tokenize(sCode)
+            endif
             let dCurScope = s:NewScope()
 
             let nLen = len(lTokens)

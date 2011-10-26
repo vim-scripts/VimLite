@@ -562,6 +562,9 @@ Map <CR> (return) key to auto trigger function calltips after select a
 function item in the code completion popup menu. >
     let g:VLOmniCpp_MapReturnToDispCalltips = 1
 
+Use python code which can improve the completing speed. >
+    let g:VLOmniCpp_UsePython = 1
+
 ------------------------------------------------------------------------------
 7.4. Clang Options                      *VimLite-Options-Clang*
 

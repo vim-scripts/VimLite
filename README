@@ -15,7 +15,7 @@ If you need more features, you can search other plugins.
 Such as taglist, tagbar, NERD_commenter, snipmate, etc.
 
 
-NOTE: Currently, VimLite is not stable enough.
+NOTE1: Currently, VimLite is not stable enough.
 NOTE2: Currently, VimLite only support Linux(or Unix like?) platform.
 NOTE3: Currently, VimLite need GVim.
 
@@ -32,3 +32,9 @@ http://forum.ubuntu.org.cn/download/file.php?id=135903&mode=view/cltest02.png
 http://forum.ubuntu.org.cn/download/file.php?id=136304&mode=view/Screenshot.png
 http://forum.ubuntu.org.cn/download/file.php?id=136703&mode=view/quickfix.png
 http://forum.ubuntu.org.cn/download/file.php?id=141025&mode=view/Working.png
+
+TODO:
+1. Improve debugger integration.
+2. Filter symbols which are not include.
+3. Port to Windows.
+4. Parse saved file asynchronously.

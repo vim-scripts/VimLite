@@ -154,24 +154,27 @@ function s:split(bufname, location)
     set eventignore+=WinEnter,WinLeave
     let prevbuf_winnr = bufwinnr(bufname("%"))
     if winnr("$") == 1 && (a:location == "right" || a:location == "left")
-	let split = "vsplit"
-	if a:location == "right"
-	    set splitright
+        let split = "vsplit"
+        if a:location == "right"
+            set splitright
         else
             let prevbuf_winnr = 2
-	endif
+        endif
     else
-	if a:location == "bottom"
- 	    let nr = winnr("$")
-	    set splitbelow
+        if a:location == "bottom"
+            let nr = winnr("$")
+            set splitbelow
         else
             let prevbuf_winnr = prevbuf_winnr + 1
-	endif
-	if a:location != ""
-	    exe nr . "wincmd w"
-	endif
+        endif
+        if a:location != ""
+            exe nr . "wincmd w"
+        endif
     endif
+
     exe &previewheight . split . " " . a:bufname
+    setlocal winfixheight
+
     let &splitright = spr
     let &splitbelow = sb
     exe prevbuf_winnr . "wincmd w"
@@ -788,6 +791,8 @@ class Debugger(object):
         Return the file object of the vim script.
 
         """
+        # MOD1
+        #return open(os.path.expanduser("~/pyclewn_script.vim"), "rb")
         # create the vim script in a temporary file
         prefix = options.prefix.capitalize()
         f = None
@@ -802,7 +807,9 @@ class Debugger(object):
             elif os.environ.get('VIM_SERVERNAME') and options.cargs:
                 f = open(options.cargs[0], 'w')
             else:
-                f = misc.TmpFile('vimscript')
+                # MOD3
+                #f = misc.TmpFile('vimscript')
+                f = open(os.path.expanduser("~/pyclewn_script.vim"), "wb")
 
             # set 'cpo' option to its vim default value
             f.write('let s:cpo_save=&cpo\n')

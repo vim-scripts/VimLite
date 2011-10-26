@@ -132,7 +132,11 @@ function! omnicpp#utils#GetCodeFromLine(szSingleLine) "{{{2
     let szResult = substitute(szResult, '\/\/.*', '', 'g')
 
     " Now we have the entire code in one line and we can remove C comments
-    return s:RemoveCComments(szResult)
+    if !g:VLOmniCpp_UsePython
+        let szResult = s:RemoveCComments(szResult)
+    endif
+
+    return szResult
 endfunc
 "}}}
 " Remove C comments on a line
@@ -202,7 +206,31 @@ function! omnicpp#utils#GetCode(posStart, posEnd) "{{{2
     endif
 
     " Now we have the entire code in one line and we can remove C comments
-    return s:RemoveCComments(result)
+    if !g:VLOmniCpp_UsePython
+        let result = s:RemoveCComments(result)
+    endif
+
+    return result
+endfunc
+"}}}
+"{{{2
+function! omnicpp#utils#GetCodeLines(lStartPos, lEndPos)
+    let lStartPos = a:lStartPos
+    let lEndPos = a:lEndPos
+    let lLines = getline(lStartPos[0], lEndPos[0])
+
+    if empty(lLines)
+        return []
+    endif
+
+    if lStartPos[0] == lEndPos[0]
+        let lLines[0] = lLines[0][lStartPos[1] : lEndPos[1]-1]
+    else
+        let lLines[0] = lLines[0][lStartPos[1] :]
+        let lLines[-1] = lLines[-1][: lEndPos[1]-1]
+    endif
+
+    return lLines
 endfunc
 "}}}
 " Check if the cursor is in comment or string
@@ -245,7 +273,8 @@ function! omnicpp#utils#TokenizeStatementBeforeCursor(...) "{{{2
     else
         let szCode = omnicpp#utils#GetCode(startPos, curPos)[1:] . szAppendText
     endif
-    if bSimplify
+    " 若使用 python 实现的 omnicpp#tokenizer#Tokenize(), 无须预处理
+    if bSimplify && !g:VLOmniCpp_UsePython
         let szCode = omnicpp#utils#SimplifyCodeForOmni(szCode)
     endif
     return omnicpp#tokenizer#Tokenize(szCode)
@@ -261,7 +290,8 @@ function! omnicpp#utils#GetCurStatementBeforeCursor(...) "{{{
     let startPos = omnicpp#utils#GetCurStatementStartPos()
     " 不包括光标下的字符
     let szCode = omnicpp#utils#GetCode(startPos, curPos)[:-2]
-    if bSimplify
+    " 若使用 python 实现的 omnicpp#tokenizer#Tokenize(), 无须预处理
+    if bSimplify && !g:VLOmniCpp_UsePython
         let szCode = omnicpp#utils#SimplifyCodeForOmni(szCode)
     endif
 
@@ -299,10 +329,13 @@ function! s:StripFuncArgs(szOmniCode) "{{{2
     let s = a:szOmniCode
 
     " 1. 清理引号内的 \" , 因为正则貌似是不能直接匹配 ("\"")
-    let s = substitute(s, '\\"', '', 'g')
+    "let s = substitute(s, '\\"', '', 'g')
     " 2. 清理双引号的内容, 否则双引号内的括号会干扰括号替换
-    let s = substitute(s, '".\{-}"', '', 'g')
+    "let s = substitute(s, '".\{-}"', '', 'g')
+    " 1.2. 清理双引号内的内容, 替换成仅双引号
+    let s = substitute(s, '"\([^"]\|\\\@<="\)*"', '""', 'g')
     " 3. 清理 '(' 和 ')', 避免干扰
+    " 也可直接替换成标准的单个 char, 如 'x'
     let s = substitute(s, "'('\\|')'", '', 'g')
 
     let szResult = ''
@@ -560,7 +593,7 @@ function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
                         let nTmpCount += 1
                     elseif dTmpToken.value ==# '>'
                         let nTmpCount -= 1
-                    " Tokenize 函数有 bug, '"",' 和 "''," 作为单个 token
+                    " NOTE: Tokenize 函数有 bug, '"",' 和 "''," 作为单个 token
                     elseif dTmpToken.value ==# ','
                                 \|| dTmpToken.value ==# '"",' 
                                 \|| dTmpToken.value ==# "'',"

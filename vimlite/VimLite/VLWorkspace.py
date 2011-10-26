@@ -346,7 +346,10 @@ class VLWorkspace:
         for i in range(parentIndex + 1, len(self.vimLineData)):
             curDeep = len(self.vimLineData[i]['deepFlag'])
             if curDeep > parentDeep:
-                # 新节点必插在后面，所以当前节点必有兄弟节点
+                # 先标记当前节点是否拥有下一个兄弟节点
+                bHasNextSibling = bool(
+                    self.vimLineData[i]['deepFlag'][newDeep - 1])
+                # 先假定新节点必插在后面, 最后再根据 bHasNextSibling 还原
                 self.vimLineData[i]['deepFlag'][newDeep - 1] = 1
 
                 # 当前节点为兄弟节点的子节点，跳过
@@ -355,15 +358,16 @@ class VLWorkspace:
 
                 s2 = os.path.basename(
                     self.vimLineData[i]['node'].getAttribute('Name'))
-                if Cmp(s1.lower(), s2.lower()) > 0:
+                if cmp(s1.lower(), s2.lower()) > 0:
                     # 如果 datum 为 VirtualDirectory 当前位置为 File，插入之
                     if newType == TYPE_VIRTUALDIRECTORY \
                              and self.DoGetTypeByIndex(i) == TYPE_FILE:
                         # 如果插入的位置是倒数第二个位置, 需要处理
                         # 因为此循环一开始就把节点的 deepFlag 最后位置为 1 了,
                         # 这是不对的, 修正过来
-                        if i + 1 >= len(self.vimLineData) \
-                             or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                        #if i + 1 >= len(self.vimLineData) \
+                             #or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                        if not bHasNextSibling:
                             self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
 
                         datum['deepFlag'] = parent['deepFlag'][:]
@@ -372,7 +376,7 @@ class VLWorkspace:
                         return self.DoGetLineNumByIndex(i)
                     
                     continue
-                elif Cmp(s1.lower(), s2.lower()) < 0:
+                elif cmp(s1.lower(), s2.lower()) < 0:
                     # 如果 datum 为 File，当前位置为 VirtualDirectory，跳过之
                     if newType == TYPE_FILE \
                           and self.DoGetTypeByIndex(i) == TYPE_VIRTUALDIRECTORY:
@@ -381,8 +385,10 @@ class VLWorkspace:
                     # 如果插入的位置是倒数第二个位置, 需要处理
                     # 因为此循环一开始就把节点的 deepFlag 最后位置为 1 了,
                     # 这是不对的, 修正过来
-                    if i + 1 >= len(self.vimLineData) \
-                         or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    # 即判断 vimLineData[i] 是否存在下一个兄弟节点
+                    #if i + 1 >= len(self.vimLineData) \
+                         #or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    if not bHasNextSibling:
                         self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
 
                     # 插在中间
@@ -393,19 +399,21 @@ class VLWorkspace:
                 else:
                     # 已有相同的名字，如果相同的名字的刚好是最后的节点，
                     # 需要修正过来
-                    if i + 1 >= len(self.vimLineData) \
-                         or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    #if i + 1 >= len(self.vimLineData) \
+                         #or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    if not bHasNextSibling:
                         self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
                     return 0
             else:
-                # 到达了深度不比父节点大的节点，要么是兄弟，要么是祖先的兄弟。
+                # 到达了深度小于或等于父节点的节点，要么是兄弟，要么是祖先的兄弟
                 # 插在父节点最后
                 datum['deepFlag'] = parent['deepFlag'][:]
                 datum['deepFlag'].append(0)
                 self.vimLineData.insert(i, datum)
                 return self.DoGetLineNumByIndex(i)
         # 父节点是显示的最后的节点或者
-        # 父节点是显示的最后的节点且新数据本应插在最后。插在最后
+        # 父节点是显示的最后的节点且新数据本应插在最后。
+        # 插在最后
         datum['deepFlag'] = parent['deepFlag'][:]
         datum['deepFlag'].append(0)
         self.vimLineData.insert(self.GetLastLineNum() + 1, datum)
@@ -435,7 +443,10 @@ class VLWorkspace:
         for i in range(parentIndex + 1, len(self.vimLineData)):
             curDeep = len(self.vimLineData[i]['deepFlag'])
             if curDeep > parentDeep:
-                # 新节点比插在后面，所以当前节点必有兄弟节点
+                # 先标记当前节点是否拥有下一个兄弟节点
+                bHasNextSibling = bool(
+                    self.vimLineData[i]['deepFlag'][newDeep - 1])
+                # 先假定新节点必插在后面, 最后再根据 bHasNextSibling 还原
                 self.vimLineData[i]['deepFlag'][newDeep - 1] = 1
 
                 # 当前节点为兄弟节点的子节点，跳过
@@ -444,9 +455,9 @@ class VLWorkspace:
 
                 s2 = os.path.basename(
                     self.vimLineData[i]['node'].getAttribute('Name'))
-                if Cmp(s1.lower(), s2.lower()) > 0:
+                if cmp(s1.lower(), s2.lower()) > 0:
                     continue
-                elif Cmp(s1.lower(), s2.lower()) < 0:
+                elif cmp(s1.lower(), s2.lower()) < 0:
                     # 插在中间
                     datum['deepFlag'] = parent['deepFlag'][:]
                     datum['deepFlag'].append(1)
@@ -455,8 +466,9 @@ class VLWorkspace:
                 else:
                     # 已有相同的名字，如果相同的名字的刚好是最后的节点，
                     # 需要修正过来
-                    if i + 1 >= len(self.vimLineData) \
-                         or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    #if i + 1 >= len(self.vimLineData) \
+                         #or len(self.vimLineData[i+1]['deepFlag']) < newDeep:
+                    if not bHasNextSibling:
                         self.vimLineData[i]['deepFlag'][newDeep - 1] = 0
                     return 0
             else:
@@ -722,6 +734,15 @@ class VLWorkspace:
             if next == i:
                 break
             i = next
+
+    def ClearAllVimLineDataChildrenCache(self):
+        '''清除所有折叠后保存在父节点的字节点信息(缓存)
+        主要用于避免, 在添加了新节点后, 缓存的 deepFlag 信息不同步问题'''
+        for dLine in self.vimLineData:
+            try:
+                del dLine['children']
+            except:
+                pass
 
     def GetRootLineNum(self, lineNum = 0):#
         '''获取根节点的行号, 参数仅仅用于保持形式, 除此以外别无他用'''

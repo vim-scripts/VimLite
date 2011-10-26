@@ -44,6 +44,9 @@ function! omnicpp#settings#Init() "{{{1
     "   2 = select first item (without inserting it to the text)
     "   default = 2
     call s:InitVariable('g:VLOmniCpp_ItemSelectionMode', 2)
+
+    " 尽量使用 python
+    call s:InitVariable('g:VLOmniCpp_UsePython', 1)
 endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
