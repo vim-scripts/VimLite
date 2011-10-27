@@ -15635,7 +15635,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-730
+733
 " Description:  Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -15751,19 +15751,20 @@ endfunc
 " szSingleLine must not have carriage return
 " 获取行字符串中的有效 C/C++ 代码, 双引号中的字符串会被清空
 " 要求字符串中不能有换行符, 亦即只能处理单行的字符串
-" TODO: 清理 # 预处理
 function! omnicpp#utils#GetCodeFromLine(szSingleLine) "{{{2
-
-    " 清理预处理
+    " 排除预处理行
     if match(a:szSingleLine, '^\s*#') >= 0
         return ''
     endif
 
+    let szResult = a:szSingleLine
+
     " We set all strings to empty strings, it's safer for 
     " the next of the process
-    " TODO: '"\"", foo, "foo"'
-    " 方法是替换不匹配 \" 的 " 的最小长度的匹配
-    let szResult = substitute(a:szSingleLine, '".*"', '""', 'g')
+    " 使用 python 的 Tokenize() 的时候无需预处理字符串
+    if !g:VLOmniCpp_UsePython
+        let szResult = substitute(szResult, '"\([^"]\|\\\@<="\)*"', '""', 'g')
+    endif
 
     " Removing C++ comments, we can use the pattern ".*" because
     " we are modifying a line
@@ -15798,9 +15799,11 @@ function! s:RemoveCComments(szLine) "{{{2
 endfunc
 "}}}
 " Get a c++ code from current buffer from [lineStart, colStart] to 
-" [lineEnd, colEnd] without c++ and c comments, without end of line
-" and with empty strings if any
+" [lineEnd, colEnd] without c++ and c comments, withou preprocess
+" without end of line and with empty strings if any
 " @return a string
+" 获取制定两个位置之间的有效的 C++ 代码, 并且
+" 清除了注释, 把换行符替换为空格, 把字符串替换为空字符串("")
 function! omnicpp#utils#GetCode(posStart, posEnd) "{{{2
     "TODO: 处理反斜杠续行
     let posStart = a:posStart
@@ -15862,9 +15865,9 @@ function! omnicpp#utils#GetCodeLines(lStartPos, lEndPos)
     endif
 
     if lStartPos[0] == lEndPos[0]
-        let lLines[0] = lLines[0][lStartPos[1] : lEndPos[1]-1]
+        let lLines[0] = lLines[0][lStartPos[1]-1 : lEndPos[1]-1]
     else
-        let lLines[0] = lLines[0][lStartPos[1] :]
+        let lLines[0] = lLines[0][lStartPos[1]-1 :]
         let lLines[-1] = lLines[-1][: lEndPos[1]-1]
     endif
 

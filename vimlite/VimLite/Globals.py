@@ -11,7 +11,7 @@ import getpass
 import EnvVarSettings
 
 # 版本号 850 -> 0.8.5.0
-VIMLITE_VER = 850
+VIMLITE_VER = 862
 
 CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
 CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc'])

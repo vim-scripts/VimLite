@@ -67,6 +67,9 @@ reCppDigit = re.compile(r'\d+')
 # 匹配单词
 reWord = re.compile(r'\w+$')
 
+# 匹配预处理行
+rePreProc = re.compile(r'\s*#')
+
 # 分组匹配顺序
 # 关键单词 -> 非关键单词 -> 注释('//'注释暂时无视) -> 字符串 -> 单字符 -> 数字
 #          -> 操作符
@@ -160,12 +163,14 @@ def Tokenize(sCode):
             lResult.append(dToken)
     return lResult
 
+
 def TokenizeLines(lLines):
     '''处理多行'''
     lResult = []
     for sLine in lLines:
         # vim.eval() 返回的列表中的项可能是 None
-        if sLine:
+        # 排除预处理行
+        if sLine and not rePreProc.match(sLine):
             lResult.extend(Tokenize(sLine))
     return lResult
 
