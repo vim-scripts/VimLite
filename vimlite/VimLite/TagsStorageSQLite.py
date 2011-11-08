@@ -452,8 +452,8 @@ class TagsStorageSQLite(ITagsStorage):
             try:
                 matchPath = partialName and partialName.endswith(os.sep)
                 tmpName = partialName.replace('_', '^_')
-                sql = "select * from files where file like '%%" + tmpName \
-                        + "%%' ESCAPE '^' "
+                sql = "select * from files where file like '%" + tmpName \
+                        + "%' ESCAPE '^' "
                 res = self.db.execute(sql)
                 for row in res:
                     fe = FileEntry()
@@ -515,7 +515,7 @@ class TagsStorageSQLite(ITagsStorage):
         try:
             self.OpenDatabase(dbFile)
             sql = "delete from tags where file like '" \
-                    + filePrefix.replace('_', '^_') + "%%' ESCAPE '^' "
+                    + filePrefix.replace('_', '^_') + "%' ESCAPE '^' "
             self.db.execute(sql)
         except:
             pass
@@ -540,7 +540,7 @@ class TagsStorageSQLite(ITagsStorage):
         try:
             self.OpenDatabase(dbFile)
             sql = "delete from FILES where file like '" \
-                    + filePrefix.replace('_', '^_') + "%%' ESCAPE '^' "
+                    + filePrefix.replace('_', '^_') + "%' ESCAPE '^' "
             self.db.execute(sql)
         except:
             pass
@@ -638,7 +638,7 @@ class TagsStorageSQLite(ITagsStorage):
 
             # add the name condition
             if partialNameAllowed:
-                sql += " name like '" + tmpName + "%%' ESCAPE '^' "
+                sql += " name like '" + tmpName + "%' ESCAPE '^' "
             else:
                 sql += " name ='" + name + "' "
 
@@ -660,7 +660,7 @@ class TagsStorageSQLite(ITagsStorage):
 
             # add the name condition
             if partialNameAllowed:
-                sql += " name like '" + tmpName + "%%' ESCAPE '^' "
+                sql += " name like '" + tmpName + "%' ESCAPE '^' "
             else:
                 sql += " name ='" + name + "' "
 
@@ -683,7 +683,7 @@ class TagsStorageSQLite(ITagsStorage):
 
         # add the name condition
         if partialMatch:
-            sql += " name like '" + tmpName + "%%' ESCAPE '^' "
+            sql += " name like '" + tmpName + "%' ESCAPE '^' "
         else:
             sql += " name ='" + name + "' "
 
@@ -1153,7 +1153,7 @@ class TagsStorageSQLite(ITagsStorage):
 
         if partName:
             tmpName = partName.replace('_', '^_')
-            sql += " AND name like '%%" + tmpName + "%%' ESCAPE '^' "
+            sql += " AND name like '%" + tmpName + "%' ESCAPE '^' "
 
         if limit > 0:
             sql += " LIMIT " + str(limit)
@@ -1264,6 +1264,23 @@ CTAGS_OPTS = '--excmd=pattern --sort=no --fields=aKmSsnit '\
 # 强制视全部文件为 C++
 CTAGS_OPTS += ' --language-force=c++'
 
+CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
+CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc', ''])
+
+def IsCppSourceFile(fileName):
+    ext = os.path.splitext(fileName)[1][1:]
+    if ext in CPP_SOURCE_EXT:
+        return True
+    else:
+        return False
+
+def IsCppHeaderFile(fileName):
+    ext = os.path.splitext(fileName)[1][1:]
+    if ext in CPP_HEADER_EXT:
+        return True
+    else:
+        return False
+
 def ParseFiles(files, replacements = []):
     '返回标签文本'
     if not files:
@@ -1301,8 +1318,9 @@ def ParseFilesAndStore(files, storage, replacements = [], filterNonNeed = True,
                       indicator = None):
     import time
 
-    # 全部转为绝对路径
-    tmpFiles = [os.path.abspath(f) for f in files]
+    # 全部转为绝对路径, 仅 parse C++ 头文件和源文件
+    tmpFiles = [os.path.abspath(f) for f in files
+                if IsCppSourceFile(f) or IsCppHeaderFile(f)]
 
     # 确保打开了一个数据库
     if not storage.OpenDatabase():

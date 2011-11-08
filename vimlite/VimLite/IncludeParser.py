@@ -17,21 +17,20 @@ import re
     #'/usr/include/i486-linux-gnu', 
     #'/usr/include', 
 #]
-paths = []
 
 def GetIncludeFiles(fileName, searchPaths = []):
     '''外部用接口'''
     guard = set()
-    global paths
-    if searchPaths:
-        bak_paths = paths
-        paths = searchPaths
+    #global paths
+    #if searchPaths:
+        #bak_paths = paths
+        #paths = searchPaths
 
     absFile = os.path.abspath(fileName)
-    ret = DoGetIncludeFiles(absFile, guard)
+    ret = DoGetIncludeFiles(absFile, guard, searchPaths)
 
-    if searchPaths:
-        paths = bak_paths
+    #if searchPaths:
+        #paths = bak_paths
 
     return ret
 
@@ -40,16 +39,21 @@ def GetIncludeFiles(fileName, searchPaths = []):
 enableCache = True
 
 # 缓存, 只缓存包含列表, 不缓存展开后的绝对路径文件
-# 因为分析包含列表复杂度最高, 且展开后的绝对路径文件易变因为 paths 易变
-# {<filePath>: {'inclist': <include list>, 'mtime': <mtime>}
+# 因为分析包含列表复杂度最高, 且展开后的绝对路径文件易变(因为 paths 易变)
+# {<filePath>: {'inclist': <include list>, 'mtime': <mtime>}}
 CACHE_INCLUDELIST = {}
 CACHE_RAWINCLUDELIST = {}
+
+# 匹配 #include 行
+reInclude = re.compile(r'^\s*#\s*include\s*(<[^>]+>|"[^"]+")')
 
 def ClearCache():
     CACHE_INCLUDELIST.clear()
     CACHE_RAWINCLUDELIST.clear()
 
-def ExpandIncludeFile(paths, include, userHeader = True, fileDir = '.'):
+def ExpandIncludeFile(searchPaths, include, userHeader = True, fileDir = '.'):
+    '''在 searchPaths 中展开 include 字符串
+    userHeader 表示用双引号的 include 字符串'''
     ret = ''
 
     if userHeader:
@@ -59,7 +63,7 @@ def ExpandIncludeFile(paths, include, userHeader = True, fileDir = '.'):
             ret = f
             return ret
 
-    for path in paths:
+    for path in searchPaths:
         f = os.path.join(path, include)
         if os.path.isfile(f):
             ret = f
@@ -74,6 +78,7 @@ def GetIncludeList(file):
     #include "stdio.h" -> stdio.h
     '''
     ret = []
+    global reInclude
 
     if enableCache:
         # NOTE: 时间戳比较应该用 ==
@@ -84,9 +89,9 @@ def GetIncludeList(file):
 
     try:
         f = open(file)
-        p = re.compile(r'^\s*#\s*include\s+(<[^>]+>|"[^"]+")')
+        #p = re.compile(r'^\s*#\s*include\s*(<[^>]+>|"[^"]+")')
         for l in f:
-            m = p.match(l)
+            m = reInclude.match(l)
             if m:
                 ret.append(m.group(1)[1:-1])
         f.close()
@@ -108,6 +113,7 @@ def GetRawIncludeList(file):
     #include "stdio.h" -> "stdio.h"
     '''
     ret = []
+    global reInclude
 
     if enableCache:
         # NOTE: 时间戳比较应该用 ==
@@ -119,9 +125,8 @@ def GetRawIncludeList(file):
     try:
         f = open(file)
         #p = re.compile(r'^\s*#\s*include\s*(<[^>]+>|"[^"]+")')
-        p = re.compile(r'^\s*#\s*include\s+(<[^>]+>|"[^"]+")')
         for l in f:
-            m = p.match(l)
+            m = reInclude.match(l)
             if m:
                 ret.append(m.group(1))
         f.close()
@@ -171,7 +176,7 @@ def GetRawIncludeList2(file):
 
     return ret
 
-def DoGetIncludeFiles(file, guard):
+def DoGetIncludeFiles(file, guard, searchPaths):
     '''file 必须为绝对路径'''
     ret = []
 
@@ -187,15 +192,15 @@ def DoGetIncludeFiles(file, guard):
         fileDir = os.path.dirname(file)
         include = i[1:-1]
 
-        header = ExpandIncludeFile(paths, include, userHeader, fileDir)
+        header = ExpandIncludeFile(searchPaths, include, userHeader, fileDir)
         if header and header not in guard:
             ret.append(header)
-            ret.extend(DoGetIncludeFiles(header, guard))
+            ret.extend(DoGetIncludeFiles(header, guard, searchPaths))
 
     return ret
 
 if __name__ == '__main__':
-    enableCache = 1
+    enableCache = False
     import sys
     if len(sys.argv) > 1:
         #li1 = GetIncludeFiles(sys.argv[1])
@@ -208,17 +213,22 @@ if __name__ == '__main__':
         #li = GetIncludeList(sys.argv[1])
         #for i in li:
             #print ExpandIncludeFile(paths, i)
+        print GetRawIncludeList(sys.argv[1])
+        print '=' * 40
+        print GetRawIncludeList2(sys.argv[1])
 
     import time
     t1 = time.time()
     for i in range(1):
         li = GetIncludeFiles(sys.argv[1])
     t2 = time.time()
+    print li
     print t2 - t1
 
     t1 = time.time()
     for i in range(1):
         li = GetIncludeFiles(sys.argv[1])
     t2 = time.time()
+    print li
     print t2 - t1
 

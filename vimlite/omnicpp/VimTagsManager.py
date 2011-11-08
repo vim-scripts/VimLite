@@ -16,6 +16,7 @@ def TagEntry2Tag(tagEntry):
     tag['filename'] = tagEntry.GetFile()
     # FIXME: 若模式中有单引号暂无办法安全传到 vim
     # 即使替换成 vim 的双单引号转义, 最终显示的是 "\'\'", 无解!
+    # 暂时只能替换为空格(可以约定一个特殊字符然后替换?)
     tag['cmd'] = tagEntry.GetPattern().replace("'", " ")
     # 全称改为简称, 用命令参数控制
     tag['kind'] = tagEntry.GetAbbrKind()
@@ -26,6 +27,7 @@ def TagEntry2Tag(tagEntry):
     tag['scope'] = tagEntry.GetScope()
     tag['path'] = tagEntry.GetPath()
     tag['qualifiers'] = tagEntry.GetQualifiers()
+    tag['line'] = tagEntry.GetLine() # 行号, 用于定位
 
     # 附加字段
     if tagEntry.GetAccess():
@@ -74,13 +76,14 @@ class VimTagsManager:
         tagEntries = self.storage.GetTagsByScopeAndName(scope, name, True)
         return TagEntries2Tags(tagEntries)
 
-    def GetTagsByScopesAndName(self, scopes, name):
-        tagEntries = self.storage.GetTagsByScopeAndName(scopes, name, True)
+    def GetTagsByScopesAndName(self, scopes, name, partialMatch = True):
+        tagEntries = self.storage.GetTagsByScopeAndName(
+            scopes, name, partialMatch)
         return TagEntries2Tags(tagEntries)
 
-    def GetOrderedTagsByScopesAndName(self, scopes, name):
+    def GetOrderedTagsByScopesAndName(self, scopes, name, partialMatch = True):
         tagEntries = self.storage.GetOrderedTagsByScopesAndName(
-            scopes, name, True)
+            scopes, name, partialMatch)
         return TagEntries2Tags(tagEntries)
 
     def GetTagsByScopeAndKind(self, scope, kind):

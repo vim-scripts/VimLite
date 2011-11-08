@@ -11,10 +11,10 @@ import getpass
 import EnvVarSettings
 
 # 版本号 850 -> 0.8.5.0
-VIMLITE_VER = 862
+VIMLITE_VER = 870
 
 CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
-CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc'])
+CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc', ''])
 
 def Cmp(s1, s2):
     '''忽略大小写比较两个字符串'''
@@ -217,14 +217,14 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
 
     return ExpandVariables(expression, dVariables)
 
-def IsSourceFile(fileName):
+def IsCppSourceFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
     if ext in CPP_SOURCE_EXT:
         return True
     else:
         return False
 
-def IsHeaderFile(fileName):
+def IsCppHeaderFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
     if ext in CPP_HEADER_EXT:
         return True
@@ -247,11 +247,14 @@ if __name__ == '__main__':
 
     li.append(20)
 
-    print IsSourceFile('/a.c')
-    print IsSourceFile('./a.cxx')
-    print IsSourceFile('./a.cx')
-    print IsHeaderFile('b.h')
-    print IsHeaderFile('/homt/a.hxx')
+    print IsCppSourceFile('/a.c')
+    print IsCppSourceFile('./a.cxx')
+    print IsCppSourceFile('./a.cx')
+
+    print IsCppHeaderFile('b.h')
+    print IsCppHeaderFile('/homt/a.hxx')
+    print IsCppHeaderFile('iostream')
+    print IsCppHeaderFile('iostream.a')
 
     print StripVariablesForShell(' sne $(CodeLitePath) , $( ooxx  )')
     print StripVariablesForShell('')

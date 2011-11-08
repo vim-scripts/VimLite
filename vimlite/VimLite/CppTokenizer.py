@@ -70,6 +70,9 @@ reWord = re.compile(r'\w+$')
 # 匹配预处理行
 rePreProc = re.compile(r'\s*#')
 
+# 匹配 C++ 行注释
+reCppComment = re.compile(r'(?P<cppComment>//.*$)')
+
 # 分组匹配顺序
 # 关键单词 -> 非关键单词 -> 注释('//'注释暂时无视) -> 字符串 -> 单字符 -> 数字
 #          -> 操作符
@@ -167,11 +170,19 @@ def Tokenize(sCode):
 def TokenizeLines(lLines):
     '''处理多行'''
     lResult = []
+    li = []
+    #sLines = ''
     for sLine in lLines:
         # vim.eval() 返回的列表中的项可能是 None
         # 排除预处理行
         if sLine and not rePreProc.match(sLine):
-            lResult.extend(Tokenize(sLine))
+            #lResult.extend(Tokenize(sLine))
+            li.append(reCppComment.sub('', sLine))
+            #sLines += ' ' + sLine
+
+    sLines = ' '.join(li)
+
+    lResult = Tokenize(sLines)
     return lResult
 
 
@@ -202,6 +213,7 @@ def Test():
     print '-' * 60
     li = [r'cout << CEnumDB::GetEnumVarName("em", 1) /* comment */ << endl /*xy*/;',
          r'printf("%d\n", n); // abc']
+    li = [r'class C;// CppComment', r'/*', r'CComments.', r'*/', r'class Cls;']
     lTokens = TokenizeLines(li)
     for dToken in lTokens:
         print dToken

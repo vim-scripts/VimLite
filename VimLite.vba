@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-5358
+5403
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -258,6 +258,8 @@ command! -nargs=0 -bar VLWSwapSourceHeader  call <SID>SwapSourceHeader()
 
 command! -nargs=? -bar VLWFindFiles         call <SID>FindFiles(<q-args>)
 command! -nargs=? -bar VLWFindFilesNoCase   call <SID>FindFiles(<q-args>, 1)
+
+command! -nargs=? -bar VLWOpenIncludeFile   call <SID>OpenIncludeFile()
 
 
 function! g:VLWGetAllFiles() "{{{2
@@ -1787,13 +1789,13 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
 
     py del l_ds
 endfunction
-
 "}}}
 "========== Swap Source / Header =========
 function! s:SwapSourceHeader() "{{{2
     let sFile = expand("%:p")
     py ws.SwapSourceHeader(vim.eval("sFile"))
 endfunction
+"}}}
 "========== Find Files =========
 function! s:FindFiles(sMatchName, ...) "{{{2
     let sMatchName = a:sMatchName
@@ -1805,6 +1807,43 @@ function! s:FindFiles(sMatchName, ...) "{{{2
     endif
     py ws.FindFiles(vim.eval('sMatchName'), int(vim.eval('bNoCase')))
 endfunction
+"}}}
+"========== Open Include File =========
+function! s:OpenIncludeFile() "{{{2
+    let sLine = getline('.')
+    let sRawInclude = matchstr(
+                \sLine, '^\s*#\s*include\s*\zs\(<[^>]\+>\|"[^"]\+"\)')
+    if sRawInclude ==# ''
+        return ''
+    endif
+
+    let sInclude = sRawInclude[1:-2]
+    let bUserInclude = 0
+    if sRawInclude[0] ==# '"'
+        let bUserInclude = 1
+    endif
+
+    let sCurFile = expand('%:p')
+    let sFile = ''
+
+    py l_project = ws.VLWIns.GetProjectByFileName(vim.eval('sCurFile'))
+    py l_searchPaths = ws.GetCommonIncludePaths()
+    py if l_project: l_searchPaths = ws.GetProjectIncludePaths(
+                \l_project.GetName())
+    " 如果没有所属的项目, 就用当前活动的项目的头文件搜索路径
+    py if not l_project: l_searchPaths = ws.GetActiveProjectIncludePaths()
+    py vim.command("let sFile = '%s'" % IncludeParser.ExpandIncludeFile(
+                \l_searchPaths,
+                \vim.eval('sInclude'),
+                \int(vim.eval('bUserInclude'))))
+    py del l_searchPaths
+    py del l_project
+
+    exec 'e ' . sFile
+
+    return sFile
+endfunction
+"}}}
 "}}}1
 "===============================================================================
 "===============================================================================
@@ -4368,12 +4407,12 @@ class VimLiteWorkspace():
         name = os.path.splitext(os.path.basename(fileName))[0]
         result = []
 
-        if Globals.IsSourceFile(fileName):
+        if Globals.IsCppSourceFile(fileName):
             for ext in Globals.CPP_HEADER_EXT:
                 swapFileName = name + os.path.extsep + ext
                 if self.VLWIns.fname2file.has_key(swapFileName):
                     result.extend(self.VLWIns.fname2file[swapFileName])
-        elif Globals.IsHeaderFile(fileName):
+        elif Globals.IsCppHeaderFile(fileName):
             for ext in Globals.CPP_SOURCE_EXT:
                 swapFileName = name + os.path.extsep + ext
                 if self.VLWIns.fname2file.has_key(swapFileName):
@@ -5059,6 +5098,12 @@ class VimLiteWorkspace():
             vim.command("redraw | echo 'Done.'")
         else:
             self.tagsManager.ParseFiles(files, replacements, None)
+
+    def GetCommonIncludePaths(self):
+        '''获取公共的头文件搜索路径'''
+        result = \
+            TagsSettingsST.Get().includePaths + self.VLWSettings.includePaths
+        return result
 
     def GetProjectIncludePaths(self, projName, wspConfName = ''):
         '''获取指定项目指定构建设置的头文件搜索路径
@@ -10143,7 +10188,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:ts=4
 plugin/VimTagsManager.vim	[[[1
-147
+152
 " Vim script utilities for VimLite
 " Last Change: 2011 May 10
 " Maintainer: fanhe <fanhed@163.com>
@@ -10197,20 +10242,25 @@ function! g:GetTagsByScopeAndName(scope, name) "{{{2
                 \vim.eval('a:scope'), vim.eval('a:name')))
     return tags
 endfunction
-
-
-function! g:GetTagsByScopesAndName(scopes, name) "{{{2
+"}}}
+" 可选参数控制是否允许部分匹配(且不区分大小写), 默认允许
+function! g:GetTagsByScopesAndName(scopes, name, ...) "{{{2
+    let bPartialMatch = a:0 > 0 ? a:1 : 1
     py vim.command("let tags = %s" % vtm.GetTagsByScopeAndName(
-                \vim.eval('a:scopes'), vim.eval('a:name')))
+                \vim.eval('a:scopes'), vim.eval('a:name'),
+                \int(vim.eval('bPartialMatch'))))
     return tags
 endfunction
-
-function! g:GetOrderedTagsByScopesAndName(scopes, name) "{{{2
+"}}}
+" 可选参数控制是否允许部分匹配(且不区分大小写), 默认允许
+function! g:GetOrderedTagsByScopesAndName(scopes, name, ...) "{{{2
+    let bPartialMatch = a:0 > 0 ? a:1 : 1
     py vim.command("let tags = %s" % vtm.GetOrderedTagsByScopesAndName(
-                \vim.eval('a:scopes'), vim.eval('a:name')))
+                \vim.eval('a:scopes'), vim.eval('a:name'),
+                \int(vim.eval('bPartialMatch'))))
     return tags
 endfunction
-
+"}}}
 function! g:GetTagsByPath(path) "{{{2
     py vim.command("let tags = %s" % vtm.GetTagsByPath(vim.eval('a:path')))
     return tags
@@ -10292,7 +10342,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-608
+622
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -10538,6 +10588,9 @@ The key to popup gui menu, this default value probably does not work. >
 
     VLWFindFilesNoCase [name]           Find workspace files with no case
                                         sensitive
+
+    VLWOpenIncludeFile                  Open included file when locates the
+                                        cursor in '#include' line.
 
 ------------------------------------------------------------------------------
 4.3. Cscope                             *VimLite-ProjectManager-Cscope*
@@ -10859,6 +10912,17 @@ function item in the code completion popup menu. >
 
 Use python code which can improve the completing speed. >
     let g:VLOmniCpp_UsePython = 1
+
+Goto declaration of symbols key.
+It does not need cscope and is more accurate.
+NOTE: You should keep the ctags database up to date. >
+    let g:VLOmniCpp_GotoDeclarationKey = '<C-p>'
+
+Goto implementation of symbols key. It also jump to included file when locates
+the cursor in '#include' line.
+It does not need cscope and is more accurate.
+NOTE: You should keep the ctags database up to date. >
+    let g:VLOmniCpp_GotoImplementationKey = '<C-]>'
 
 ------------------------------------------------------------------------------
 7.4. Clang Options                      *VimLite-Options-Clang*
@@ -12443,7 +12507,7 @@ hi def link qfError     Error
 hi def link qfWarning   WarningMsg
 
 autoload/vlutils.vim	[[[1
-304
+324
 " Description:  Common function utilities
 " Maintainer:   fanhe <fanhed@163.com>
 " License:      GPLv2
@@ -12725,6 +12789,26 @@ function! vlutils#OpenFileVSplit(sFile, ...) "{{{2
     endif
 endfunction
 "}}}
+" 生成带编号菜单选择列表
+" NOTE: 第一项(即li[0])不会添加编号
+function! vlutils#GenerateMenuList(li) "{{{2
+    let li = a:li
+    let nLen = len(li)
+    let lResult = []
+
+    if nLen > 0
+        call add(lResult, li[0])
+        let l = len(string(nLen -1))
+        let n = 1
+        for str in li[1:]
+            call add(lResult, printf('%*d. %s', l, n, str))
+            let n += 1
+        endfor
+    endif
+
+    return lResult
+endfunction
+"}}}
 " 简单的计时器静态类
 " NOTE: 这个类第一次调用时不能直接调用方法, 无奈
 let vlutils#Timer = {'t1': 0, 't2': 0} "{{{1
@@ -12749,7 +12833,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-2171
+2183
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -14651,10 +14735,12 @@ endfunc
 " Return: TypeInfo
 " 搜索局部变量的声明类型. 
 " TODO: 这个函数很慢! 需要优化. 需要变量分析的场合的速度比不需要的场合的慢 3 倍!
-function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
+" 可选参数控制是否移动光标至分析成功时的位置, 默认不移动
+function! omnicpp#resolvers#SearchLocalDecl(sVariable, ...) "{{{2
     let dTypeInfo = s:NewTypeInfo()
     let lOrigCursor = getpos('.')
     let lOrigPos = lOrigCursor[1:2]
+    let bMoveCursor = a:0 > 0 ? a:1 : 0
 
     let bak_ic = &ignorecase
     set noignorecase
@@ -14742,7 +14828,17 @@ function! omnicpp#resolvers#SearchLocalDecl(sVariable) "{{{2
         endif
     endwhile
 
-    call setpos('.', lOrigCursor)
+    if bMoveCursor && dTypeInfo.name !=# ''
+    " 只有分析成功的时候才不恢复光标
+        " 设置回跳标记
+        let lTmpCursor = getpos('.')
+        call setpos('.', lOrigCursor)
+        normal! m'
+        call setpos('.', lTmpCursor)
+    else
+        call setpos('.', lOrigCursor)
+    endif
+
     let &ignorecase = bak_ic
 
     return dTypeInfo
@@ -14922,7 +15018,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-711
+968
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -14982,6 +15078,26 @@ function! s:CheckIfSetOpts()
     endif
 
     return ''
+endfunction
+"}}}
+" 生成带编号菜单选择列表
+" NOTE: 第一项(即li[0])不会添加编号
+function! s:GenerateMenuList(li) "{{{2
+    let li = a:li
+    let nLen = len(li)
+    let lResult = []
+
+    if nLen > 0
+        call add(lResult, li[0])
+        let l = len(string(nLen -1))
+        let n = 1
+        for str in li[1:]
+            call add(lResult, printf('%*d. %s', l, n, str))
+            let n += 1
+        endfor
+    endif
+
+    return lResult
 endfunction
 "}}}
 function! s:CanComplete() "{{{2
@@ -15109,6 +15225,13 @@ function! omnicpp#complete#Init() "{{{2
                     "\<C-r>=<SID>LaunchOmniCppCompletion()<CR>
                     "\<C-r>=<SID>RestoreOpts()<CR>
     endif
+
+    exec 'nnoremap <silent> <buffer> ' . g:VLOmniCpp_GotoDeclarationKey 
+                \. ' :call omnicpp#complete#GotoDeclaration()<CR>'
+
+    exec 'nnoremap <silent> <buffer> ' . g:VLOmniCpp_GotoImplementationKey 
+                \. ' :call omnicpp#complete#SmartJump()<CR>'
+
 endfunction
 "}}}
 function! s:RequestCalltips(...) " 可选参数标识是否刚在补全后发出请求 {{{2
@@ -15349,6 +15472,226 @@ function! s:GetCalltips(lTags, sFuncName) "{{{2
     return lCalltips
 endfunction
 "}}}
+" 跳转到 lTags 中的 tag 所在位置
+function! s:GotoTagPosition(lTags) "{{{2
+    let lResult = a:lTags
+    if empty(lResult)
+        return
+    endif
+
+    let dTag = lResult[0]
+
+    if len(lResult) > 1
+        " 弹出选择菜单
+        let li = []
+        for d in lResult
+            "if d.kind[0] ==# 'p' || d.kind[0] == 'f'
+                " 显示完整的声明
+            "endif
+            "call add(li, printf("%s, %s, %s:%s",
+                        "\d.path . get(d, 'signature', ''),
+                        "\substitute(d.cmd[2:-3], '^\s\+\|\s\+$', '', ''),
+                        "\d.filename,
+                        "\d.line))
+            call add(li, printf("%s, %s:%s",
+                        \d.path . get(d, 'signature', ''),
+                        \d.filename,
+                        \d.line))
+        endfor
+        let nIdx = inputlist(s:GenerateMenuList(['Please select:'] + li)) - 1
+        if nIdx >= 0 && nIdx < len(lResult)
+            let dTag = lResult[nIdx]
+        else
+            return lResult
+        endif
+    endif
+
+    let sSymbol = dTag.name
+    let sFileName = dTag.filename
+    let sLineNr = dTag.line
+
+    " 开始跳转
+    if bufnr(sFileName) == bufnr('%')
+        " 跳转的是同一个缓冲区, 仅跳至制定的行号
+        normal! m'
+        exec sLineNr
+    else
+        let sCmd = printf('e +%s %s', sLineNr, sFileName)
+        exec sCmd
+    endif
+
+    let sSearchFlag = 'cW'
+    if dTag.parent ==# dTag.name
+                \&& match(dTag.cmd[2:-3],
+                \       printf('\<%s\s*::\s*%s\>', dTag.name, dTag.name)) != -1
+        " 构造函数, 添加附加搜索字符, 因为 |A::A
+        let sSymbol = '::\s\*\zs' . sSymbol
+    endif
+    call search('\V'.sSymbol, sSearchFlag, line('.'))
+endfunction
+"}}}
+function! s:GetGotoTags() "{{{2
+    let sWord = expand('<cword>')
+    let lOrigPos = getpos('.')
+    let sLine = getline('.')
+    if col('.') == 1 || (col('.') > 1 && sLine[col('.')-2] =~# '\s\|\~')
+        if sLine[col('.')-1] ==# '~'
+        " 为了支持光标放到 '~' 位置的析构函数. eg. class A { |~A(); }
+            " 右移一格
+            call cursor(line('.'), col('.') + 1)
+        endif
+
+        " 光标在第一列或者光标前面是空格或者 '~'
+        " 右移一格
+        call cursor(line('.'), col('.') + 1)
+    endif
+    let nStartCol = omnicpp#complete#Complete(1, '')
+    let lTags = omnicpp#complete#Complete(0, sWord, 0)
+
+    if empty(lTags)
+        call setpos('.', lOrigPos)
+        return []
+    endif
+
+    let nSpecialType = 0
+    " 检查是否可能正在跳转构造函数或析构函数(这个变量理论上不可能为空)
+    if s:lOCppScopeStack[-1].kind == 'container'
+                \&& s:lOCppScopeStack[-1].name ==# sWord
+        " TODO: 只能处理在 class 大括号内的情况,
+        "       不能处理作用域限定的情况(A::~A)
+        "       因为符号补全不支持析构函数符号补全
+        " 三种可能
+        " 1. 构造函数
+        " 2. 析构函数
+        " 3. 类类型 (eg. class A { A *pNext; })
+        " 移动到单词的起始位置
+        call search('\<', 'b', line('.'))
+        " 先检查是否函数, 方法是检查后面跟不跟括号 '('
+        let nRet = search(sWord . '\s*(', 'cn', line('.'))
+        if nRet != 0
+        " 搜索成功, 表示肯定是函数
+            " 再检查是否析构函数, 方法是检查前面跟不跟 '~'
+            let nRet = search('\~\s*'. sWord, 'bn', line('.'))
+            if nRet == 0
+            " 构造函数
+                let nSpecialType = 1
+            else
+            " 析构函数
+                let nSpecialType = 2
+                let sWord = '~' . sWord
+                " 重新搜索
+                let lTags = g:GetOrderedTagsByScopesAndName(
+                            \s:lSearchScopes, sWord, 0)
+            endif
+        else
+        " 如果不是上面两种情况, 那基本可能确定是第三种情况, 类类型
+            let nSpecialType = 3
+        endif
+    endif
+
+    if nSpecialType == 1 || nSpecialType == 2
+        " 过滤掉类型不是原型和函数的 tag
+        call filter(lTags,
+                    \'v:val["kind"][0] ==# "p" || v:val["kind"][0] ==# "f"')
+    elseif nSpecialType == 3
+        " 过滤掉类型是原型或者函数的 tag
+        call filter(lTags,
+                    \'!(v:val["kind"][0] ==# "p" || v:val["kind"][0] ==# "f")')
+    endif
+
+    call setpos('.', lOrigPos)
+
+    return lTags
+endfunction
+"}}}
+" 跳至符号声明处
+function! omnicpp#complete#GotoDeclaration() "{{{2
+    let lTags = s:GetGotoTags()
+
+    if empty(lTags)
+        " 可能是局部变量, 尝试跳转到局部变量的声明处
+        let sWord = expand('<cword>')
+        let dTypeInfo = omnicpp#resolvers#SearchLocalDecl(sWord, 1)
+        if dTypeInfo.name !=# ''
+            return [dTypeInfo]
+        else
+            return []
+        endif
+    endif
+
+    let lResult = lTags
+
+    if lTags[0].kind[0] ==# 'p' || lTags[0].kind[0] ==# 'f'
+    " 请求跳转到函数的声明处
+        " 不能简单地剔除 lTags 里面类型为 'f' 的项目,
+        " 因为可能声明的时候就定义
+        " {path: tag} -> 记录字典, tag.path 对应的 tag
+        let d = {}
+        for dTag in lResult
+            " TODO: signature 的直接字符串比较并不可取
+            let sSignature = get(dTag, 'signature', '()')
+            let sKey = dTag.path . sSignature
+            if !has_key(d, sKey)
+                " 添加
+                let d[sKey] = dTag
+            else
+                if d[sKey]['kind'][0] ==# 'f'
+                    " 函数的声明和定义分开, 把定义剔除
+                    let d[sKey] = dTag
+                endif
+            endif
+        endfor
+
+        let lResult = values(d)
+    endif
+
+    call s:GotoTagPosition(lResult)
+
+    return lResult
+endfunction
+"}}}
+" 跳至符号实现处
+function! omnicpp#complete#GotoImplementation() "{{{2
+    let lTags = s:GetGotoTags()
+
+    if empty(lTags)
+        let sWord = expand('<cword>')
+        " 可能是局部变量, 尝试跳转到局部变量的声明处
+        let dTypeInfo = omnicpp#resolvers#SearchLocalDecl(sWord, 1)
+        if dTypeInfo.name !=# ''
+            return [dTypeInfo]
+        else
+            return []
+        endif
+    endif
+
+    let lResult = lTags
+
+    if lTags[0].kind[0] ==# 'p' || lTags[0].kind[0] ==# 'f'
+    " 请求跳转到函数的实现处
+        " 剔除 lTags 里面类型为 'p' 的项目
+        call filter(lResult, 'v:val["kind"][0] !=# "p"')
+    endif
+
+    call s:GotoTagPosition(lResult)
+
+    return lResult
+endfunction
+"}}}
+" 智能跳转, 可跳转到包含的文件, 符号的实现处
+function! omnicpp#complete#SmartJump() "{{{2
+    let sLine = getline('.')
+    if matchstr(sLine, '^\s*#\s*include') !=# ''
+        " 跳转到包含的文件
+        if exists(':VLWOpenIncludeFile') == 2
+            VLWOpenIncludeFile
+        endif
+    else
+        " 跳转到符号的实现处
+        call omnicpp#complete#GotoImplementation()
+    endif
+endfunction
+"}}}
 " 作用域内符号补全, 即无任何限定作用域
 " eg. prin|
 let s:CompletionType_NormalCompl = 0
@@ -15363,9 +15706,10 @@ let s:bDoNotComplete = 0
 " 仅在 '作用域内变量成员补全' 时有用
 let s:bIsScopeOperation = 0
 " 当前语句的 token 列表
-let s:lCurentStatement = []
+let s:lCurentStatementTokens = []
 " omnifunc
-function! omnicpp#complete#Complete(findstart, base) "{{{2
+" 可选参数控制是否允许 base 部分匹配(此时忽略大小写), 默认允许
+function! omnicpp#complete#Complete(findstart, base, ...) "{{{2
     if a:findstart
         let s:nCompletionType = s:CompletionType_NormalCompl
         let s:bDoNotComplete = 0
@@ -15447,10 +15791,14 @@ function! omnicpp#complete#Complete(findstart, base) "{{{2
     let sBase = a:base
     let b:base = a:base
     let b:findstart = col('.')
+    let bPartialMatch = a:0 > 0 ? a:1 : 1
 
     let lScopeStack = omnicpp#scopes#GetScopeStack()
     " 设置全局变量, 用于 GetStopPosForLocalDeclSearch() 里面使用...
     let g:lOCppScopeStack = lScopeStack 
+    " 本脚本使用的变量, 一直保存最近一次调用时保存的信息
+    " 主要是为了那一点效率, 如果不需要那一点效率的话, 直接调用上述函数即可
+    let s:lOCppScopeStack = lScopeStack
     "let lSimpleSS = omnicpp#complete#SimplifyScopeStack(lScopeStack)
     let lSearchScopes = []
     let lTags = []
@@ -15476,10 +15824,15 @@ function! omnicpp#complete#Complete(findstart, base) "{{{2
         "let b:dOmniInfo = dOmniInfo
     endif
 
+    " 本脚本共用
+    let s:lSearchScopes = lSearchScopes
+
     if !empty(lSearchScopes)
         " NOTE: lTags 列表的上限一般情况下是 1000, 所以会发现有时候符号不全
-        "let lTags = g:GetTagsByScopesAndName(lSearchScopes, sBase)
-        let lTags = g:GetOrderedTagsByScopesAndName(lSearchScopes, sBase)
+        "let lTags = g:GetTagsByScopesAndName(
+                    "\lSearchScopes, sBase, bPartialMatch)
+        let lTags = g:GetOrderedTagsByScopesAndName(
+                    \lSearchScopes, sBase, bPartialMatch)
         if !s:bIsScopeOperation 
                     \&& s:nCompletionType == s:CompletionType_MemberCompl
             " 过滤类型定义, 结构, 类
@@ -16370,7 +16723,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
-408
+432
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 13
@@ -16505,9 +16858,11 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                 let g:lLines = lLines
                 let lTokens = omnicpp#tokenizer#TokenizeLines(lLines)
             else
-                let sCode= substitute(
-                            \omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
-                            \'^[;{}]', '', 'g')
+                "let sCode= substitute(
+                            "\omnicpp#utils#GetCode(lStartPos, lEndPos)[:-2], 
+                            "\'^[;{}]', '', 'g')
+                " NOTE: 不需要事先替换掉 ';{}' 了, 理论上不影响分析
+                let sCode = omnicpp#utils#GetCode(lStartPos, lEndPos)
                 let lTokens = omnicpp#tokenizer#Tokenize(sCode)
             endif
             let dCurScope = s:NewScope()
@@ -16526,15 +16881,26 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                             \&& index(['namespace', 'class', 'struct', 'union'],
                             \   dToken.value) >= 0
                     " 容器类别
+                    " 取最后的 cppWord, 因为经常在名字前有修饰宏
+                    " eg. class WXDLLIMPEXP_SDK BuilderGnuMake;
+                    let idx += 1
+                    let dTmpToken = lTokens[idx]
+                    while idx < nLen
+                        if lTokens[idx].kind != 'cppWord'
+                            let dTmpToken = lTokens[idx-1]
+                            break
+                        endif
+                        let idx += 1
+                    endwhile
                     let nScopeType = 1
                     let dCurScope.kind = 'container'
-                    let dCurScope.name = lTokens[idx+1].value
+                    let dCurScope.name = dTmpToken.value
                     " 暂不支持在容器类型里使用名空间
                     "let dCurScope.namespaces = 
                     let lScopeStack = [dCurScope] + lScopeStack
 
                     break
-                elseif  dToken.kind == 'cppKeyword' && dToken.value ==# 'else'
+                elseif dToken.kind == 'cppKeyword' && dToken.value ==# 'else'
                     " else 条件语句
                     " eg1. else {
                     " eg2. else if {
@@ -16545,7 +16911,7 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                                 \lSearchStartPos[0])
                     let lScopeStack = [dCurScope] + lScopeStack
                     break
-                elseif  dToken.kind == 'cppKeyword' 
+                elseif dToken.kind == 'cppKeyword' 
                             \&& dToken.value =~# 'case\|default'
                     " case 条件语句
                     " eg1. case 1: {
@@ -16556,6 +16922,10 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                     let dCurScope.nsinfo = s:GetNamespaceInfo(
                                 \lSearchStartPos[0])
                     let lScopeStack = [dCurScope] + lScopeStack
+                    break
+                elseif dToken.kind == 'cppKeyword'
+                            \&& dToken.value ==# 'extern'
+                    " 忽略 'extern "C" {'
                     break
                 elseif dToken.kind == 'cppOperatorPunctuator' 
                             \&& dToken.value == '::'
@@ -16631,8 +17001,15 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
 
                     break
                 else
-                    " TODO
-                    " 可能是一个无名块, 默认应该视为 other 类型
+                    if idx == len(lTokens) - 1
+                    " 到达最后但是还不能确定为上面的其中一种
+                    " 应该是一个无名块, 视为 other 类型
+                        let dCurScope.kind = 'other'
+                        let dCurScope.name = dToken.value " 这个值没用, 用于调试
+                        let dCurScope.nsinfo = s:GetNamespaceInfo(
+                                    \lSearchStartPos[0])
+                        let lScopeStack = [dCurScope] + lScopeStack
+                    endif
                 endif
 
                 let idx += 1
@@ -16780,7 +17157,7 @@ endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/settings.vim	[[[1
-52
+58
 " Description:  Omnicpp completion init settings
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -16830,6 +17207,12 @@ function! omnicpp#settings#Init() "{{{1
 
     " 尽量使用 python
     call s:InitVariable('g:VLOmniCpp_UsePython', 1)
+
+    " 跳转至符号声明处的快捷键
+    call s:InitVariable('g:VLOmniCpp_GotoDeclarationKey', '<C-p>')
+
+    " 跳转至符号实现处的快捷键
+    call s:InitVariable('g:VLOmniCpp_GotoImplementationKey', '<C-]>')
 endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
