@@ -900,7 +900,7 @@ class BuilderGnuMake(Builder):
         text += "SourceSwitch           :=" + cmp.GetSwitch("Source") + "\n"
         text += "CompilerName           :=" + cmp.GetTool("CompilerName") + "\n"
         text += "C_CompilerName         :=" + cmp.GetTool("C_CompilerName") + "\n"
-        text += "OutputFile             :=" + bldConf.GetOutputFileName() + "\n"
+        text += "OutputFile             :=" + (bldConf.GetOutputFileName() or 'null') + "\n"
         text += "Preprocessors          :=" + self.ParsePreprocessor(bldConf.GetPreprocessor()) + "\n"
         text += "ObjectSwitch           :=" + cmp.GetSwitch("Object") + "\n"
         text += "ArchiveOutputSwitch    :=" + cmp.GetSwitch("ArchiveOutput") + "\n"

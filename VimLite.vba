@@ -128,7 +128,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-5403
+5443
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -193,7 +193,7 @@ call s:InitVariable("g:VLWDbgSaveBreakpointsInfo", 1)
 
 "键绑定
 call s:InitVariable('g:VLWShowMenuKey', '.')
-call s:InitVariable('g:VLWPopupMenuKey', '<RightRelease>')
+call s:InitVariable('g:VLWPopupMenuKey', ',')
 call s:InitVariable('g:VLWOpenNodeKey', 'o')
 call s:InitVariable('g:VLWOpenNode2Key', 'go')
 call s:InitVariable('g:VLWOpenNodeInNewTabKey', 't')
@@ -250,6 +250,7 @@ command! -nargs=0 -bar VLWDbgStepOut        call <SID>DbgStepOut()
 command! -nargs=0 -bar VLWDbgRunToCursor    call <SID>DbgRunToCursor()
 command! -nargs=0 -bar VLWDbgContinue       call <SID>DbgContinue()
 command! -nargs=0 -bar VLWDbgToggleBp       call <SID>DbgToggleBreakpoint()
+command! -nargs=0 -bar VLWDbgBacktrace      call <SID>DbgBacktrace()
 
 command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
 command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
@@ -1240,8 +1241,45 @@ function! s:DbgRunToCursor() "{{{2
     exec "Ctbreak " . sCurFile . ":" . nCurLine
     Ccontinue
 endfunction
+"}}}
+function! s:DbgBacktrace() "{{{2
+    " FIXME: 这个命令不会阻塞, 很可能得不到结果
+    "silent! Cbt
+    let nBufNr = bufnr('(clewn)_console')
+    let nWinNr = bufwinnr(nBufNr)
+    if nWinNr == -1
+        return
+    endif
 
+    " 获取文本
+    exec 'noautocmd ' . nWinNr . 'wincmd w'
+    let lOrigCursor = getpos('.')
+    call cursor(line('$'), 1)
+    let sLine = getline('.')
+    if sLine !~# '^(gdb)'
+        call setpos('.', lOrigCursor)
+        noautocmd wincmd p
+        return
+    endif
 
+    let nEndLineNr = line('$')
+    let nStartLineNr = search('^(gdb) bt$', 'bn')
+    if nStartLineNr == 0
+        call setpos('.', lOrigCursor)
+        noautocmd wincmd p
+        return
+    endif
+
+    call setpos('.', lOrigCursor)
+    noautocmd wincmd p
+
+    " 使用错误列表
+    let bak_efm = &errorformat
+    set errorformat=%m\ at\ %f:%l
+    exec printf("%d,%d cgetbuffer %d", nStartLineNr + 1, nEndLineNr - 1, nBufNr)
+    let &errorformat = bak_efm
+endfunction
+"}}}2
 "}}}1
 "=================== 创建操作 ===================
 "{{{1
@@ -1839,7 +1877,9 @@ function! s:OpenIncludeFile() "{{{2
     py del l_searchPaths
     py del l_project
 
-    exec 'e ' . sFile
+    if sFile !=# ''
+        exec 'e ' . sFile
+    endif
 
     return sFile
 endfunction
@@ -10342,7 +10382,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-622
+623
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -10499,7 +10539,7 @@ Press <F1> in workspace buffer for quick help information.
     <C-n>           Go to next sibling node         |g:VLWGotoPrevSibling|
     <C-p>           Go to prev sibling node         |g:VLWGotoNextSibling|
     .               Show text menu                  |g:VLWShowMenuKey|
-    <RightRelease>  Popup gui menu                  |g:VLWPopupMenuKey|
+    ,               Popup gui menu                  |g:VLWPopupMenuKey|
     R               Refresh buffer                  |g:VLWRefreshBufferKey|
     <F1>            Toggle quick help info          |g:VLWToggleHelpInfo|
 ------------------------------------------------------------------------------
@@ -10560,8 +10600,9 @@ The key to popup general menu. >
     let g:VLWShowMenuKey = '.'
 <
                                         *g:VLWPopupMenuKey*
-The key to popup gui menu, this default value probably does not work. >
-    let g:VLWPopupMenuKey = '<RightRelease>'
+The key to popup gui menu, often it is set '<RightRelease>' if you like to use
+mouse. >
+    let g:VLWPopupMenuKey = ','
 <
                                         *g:VLWToggleHelpInfo*
 >
@@ -12507,7 +12548,7 @@ hi def link qfError     Error
 hi def link qfWarning   WarningMsg
 
 autoload/vlutils.vim	[[[1
-324
+323
 " Description:  Common function utilities
 " Maintainer:   fanhe <fanhed@163.com>
 " License:      GPLv2
@@ -12587,7 +12628,7 @@ endfunction
 " 获取第一个"可用"(常规, 非特殊)的窗口
 " 特殊: 特殊的缓冲区类型、预览缓冲区、已修改的缓冲并且不能隐藏
 " Return: 窗口编号 - -1 表示没有可用的窗口
-function vlutils#GetFirstUsableWinNr() "{{{2
+function! vlutils#GetFirstUsableWinNr() "{{{2
     let i = 1
     while i <= winnr("$")
 		if vlutils#IsWindowUsable(i)
@@ -12810,30 +12851,29 @@ function! vlutils#GenerateMenuList(li) "{{{2
 endfunction
 "}}}
 " 简单的计时器静态类
-" NOTE: 这个类第一次调用时不能直接调用方法, 无奈
-let vlutils#Timer = {'t1': 0, 't2': 0} "{{{1
-function! vlutils#Timer.Start() "{{{2
-	let self.t1 = reltime()
+let s:TimerData = {'t1': 0, 't2': 0} "{{{1
+function! vlutils#TimerStart() "{{{2
+	let s:TimerData.t1 = reltime()
 endfunction
 
-function! vlutils#Timer.End() "{{{2
-	let self.t2 = reltime()
+function! vlutils#TimerEnd() "{{{2
+	let s:TimerData.t2 = reltime()
 endfunction
 
-function! vlutils#Timer.EchoMes() "{{{2
-	echom string((str2float(reltimestr(self.t2)) 
-				\- str2float(reltimestr(self.t1))))
+function! vlutils#TimerEchoMes() "{{{2
+	echom string((str2float(reltimestr(s:TimerData.t2)) 
+				\- str2float(reltimestr(s:TimerData.t1))))
 endfunction
 
-function! vlutils#Timer.EndEcho() "{{{2
-	call self.End()
-	call self.EchoMes()
+function! vlutils#TimerEndEcho() "{{{2
+	call vlutils#TimerEnd()
+	call vlutils#TimerEchoMes()
 endfunction
 "}}}1
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-2183
+2217
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -13512,9 +13552,9 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dMember.name)
 
                 if !empty(dTmpTag)
-                    let szDecl = dTmpTag.cmd
-                    let dTypeInfo = s:GetVariableTypeInfo(szDecl[2:-3], 
-                                \dTmpTag.name)
+                    " 从 cmd 域解析变量
+                    let sDecl = dTmpTag.cmd[2:-3]
+                    let dTypeInfo = s:GetVariableTypeInfo(sDecl, dTmpTag.name)
                     let dMember.typeinfo = dTypeInfo
                     let dMember.tag = dTmpTag
 
@@ -13563,7 +13603,8 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                     " map<string, int> foo;
                     call extend(
                                 \lSearchScopes, 
-                                \s:ExpandSearchScopeStatckFromScope(dTmpTag.scope), 
+                                \s:ExpandSearchScopeStatckFromScope(
+                                \   dTmpTag.scope), 
                                 \0)
                 endif
             endif
@@ -13670,8 +13711,41 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
         call omnicpp#utils#FilterListSameElement(lSearchScopes)
         let dCurTag = s:GetFirstMatchTag(lSearchScopes, sCurName)
         if empty(dCurTag)
-            let lSearchScopes = []
-            break
+            " 处理匿名容器, 因为匿名容器是不存在对应的 tag 的
+            " 所以如果有需要的时候, 手动构造匿名容器的 tag, 然后继续
+            if dMember.kind == 'variable' && idx != 0
+                        \&& has_key(dTmpTag, 'typeref')
+                " 匿名容器时, 不能从 cmd 域解析变量
+                " 直接从 typeref 域获取
+                " eg. 
+                " struct {
+                "     struct {
+                "         int n;
+                "     } s;
+                " } st;
+                " st.s.|
+                let lTyperef = split(dTmpTag.typeref, '\w\zs:\ze\w')
+                let sKind = lTyperef[0]
+                let sPath = lTyperef[1]
+                let dTypeInfo = omnicpp#utils#GetVariableType(sPath)
+                " 在此构造无名容器的 tag 作为获取成功的 tag
+                call remove(dTmpTag, 'typeref')
+                let dTmpTag.name = matchstr(sPath, '__anon\d\+_\w*$')
+                let dTmpTag.kind = sKind[0] " 类型是单字母的
+                let dTmpTag.path = sPath
+                if sPath =~# '::'
+                    let dTmpTag.scope = join(
+                                \split(sPath, '::')[: -2], '::')
+                else
+                    let dTmpTag.scope = '<global>'
+                endif
+
+                let dMember.typeinfo = dTypeInfo
+                let dCurTag = dTmpTag
+            else
+                let lSearchScopes = []
+                break
+            endif
         endif
 
         let dMember.tag = dCurTag
@@ -14244,7 +14318,7 @@ function! omnicpp#resolvers#ResolveTag(dTag, ...) "{{{2
 
     let lInherits = []
 
-    " NOTE: 限于 ctags 的能力, 很多 C++ 的类型定义都没有 'typeref' 域
+    " NOTE: 限于 ctags 的能力, 很多 C++ 的类型定义(typedef)都没有 'typeref' 域
     " 这两个属性不会同时存在?! 'typeref' 比 'inherits' 优先?!
     while has_key(dTag, 'typeref') || dTag.kind ==# 't'
         if has_key(dTag, 'typeref')
@@ -14909,7 +14983,7 @@ function! s:ResolveTypedef(dTag, dScopeInfo) "{{{2
         if has_key(dTag, 'typeref')
             " FIXME: ctags 的 bug, 会错误地把变量声明视为有 typeref 声明
             " 尝试的解决方案, 搜索 '}', 若没有, 则为错误的 tag
-            " eg. struct st { int a; } st1;
+            " eg. struct st { int a; } st1; -> typeref:struct:st
             if dTag.cmd[2:-3] !~# '}'
                 call remove(dTag, 'typeref')
                 " 继续
@@ -14937,12 +15011,12 @@ function! s:ResolveTypedef(dTag, dScopeInfo) "{{{2
             " st.a.|
             "
             " st -> ST -> __anon1 (没有 __anon1 的 tag) -> a -> Cls ->
-            if sPath =~# '__anon\d\+$'
+            if sPath =~# '__anon\d\+_\w*$'
                 " 如果是无名容器, s:GetFirstMatchTag() 必返回空字典
                 " 所以在此构造无名容器的 tag
                 let dTmpTag = copy(dTag)
                 call remove(dTmpTag, 'typeref')
-                let dTmpTag.name = matchstr(sPath, '__anon\d\+$')
+                let dTmpTag.name = matchstr(sPath, '__anon\d\+_\w*$')
                 let dTmpTag.kind = sKind[0] " 类型是单字母, 这里一般为 's'
                 let dTmpTag.path = sPath
                 if sPath =~# '::'
@@ -15534,7 +15608,7 @@ function! s:GetGotoTags() "{{{2
     let sWord = expand('<cword>')
     let lOrigPos = getpos('.')
     let sLine = getline('.')
-    if col('.') == 1 || (col('.') > 1 && sLine[col('.')-2] =~# '\s\|\~')
+    if col('.') == 1 || (col('.') > 1 && sLine[col('.')-2] =~# '\W')
         if sLine[col('.')-1] ==# '~'
         " 为了支持光标放到 '~' 位置的析构函数. eg. class A { |~A(); }
             " 右移一格
@@ -15714,7 +15788,7 @@ function! omnicpp#complete#Complete(findstart, base, ...) "{{{2
         let s:nCompletionType = s:CompletionType_NormalCompl
         let s:bDoNotComplete = 0
         let s:bIsScopeOperation = 0
-        "call g:Timer.Start() "计时用
+        "call vlutils#TimerStart() "计时用
 
         let nStartIdx = col('.') - 1
         let sLine = getline('.')[: nStartIdx-1]
@@ -15879,7 +15953,7 @@ function! omnicpp#complete#Complete(findstart, base, ...) "{{{2
     "let b:lTags = lTags
 
     unlet g:lOCppScopeStack
-    "call g:Timer.EndEchoMes() " 计时用
+    "call vlutils#TimerEndEcho() " 计时用
 
     return lResult
 endfunc
@@ -15988,7 +16062,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-733
+749
 " Description:  Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -16007,14 +16081,15 @@ autoload/omnicpp/utils.vim	[[[1
 "let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
 let omnicpp#utils#sCommentSkipExpr = 'omnicpp#utils#CommentSkipChecker()'
 
+" 返回 1 表示忽略
 function! omnicpp#utils#CommentSkipChecker() "{{{2
     let sLine = getline('.')
     let nCol = col('.')
 
     " 简单地检查是否注释
-    "if sLine =~# '\V^\s*//'
-        "return 0
-    "endif
+    if sLine =~# '^\s*//\|^\s*/\*'
+        return 1
+    endif
 
     if nCol == 1
         return 0
@@ -16398,6 +16473,7 @@ endfunc
 " eg6. A<B>::C::D<E, F>::G g;
 " eg7. hello(MyClass1 a, MyClass2* b
 " eg8. Label: A a;
+" TODO: eg9. A (*a)[10];
 function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
     if type(a:sDecl) == type('')
         let lTokens = omnicpp#tokenizer#Tokenize(a:sDecl)
@@ -16573,8 +16649,22 @@ function! omnicpp#utils#GetVariableType(sDecl, ...) "{{{2
 
                 let idx = nTmpIdx
             elseif dCurToken.value ==# '('
+                " 可能是函数形参中的变量声明, 即之前分析的是函数, 需重新再来
+                " 也可能是 A (*a)[];, 也需要重新再来
+                " 先检查后者
+                if idx + 1 < len(lTokens) && lTokens[idx+1].value ==# "*"
+                    " 此情况视作类型 A
+                    " 构造成 A * 然后重头分析
+                    let lBakTokens = lTokens
+                    let lTokens = lTokens[: idx+1]
+                    call remove(lTokens, idx)
+
+                    " 重头再来
+                    let idx = 0
+                    continue
+                endif
+
                 " 处理函数形参中的变量声明
-                " 之前分析的是函数, 重新再来
                 let dTypeInfo = {'name': '', 'til': [], 'types': []}
                 let nState = 0
 
@@ -17217,7 +17307,7 @@ endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/tokenizer.vim	[[[1
-148
+154
 " Description:  Omnicpp completion tokenizer
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -17269,10 +17359,16 @@ catch
 endtry
 
 if exists('g:VLOmniCpp_UsePython') && g:VLOmniCpp_UsePython
-"py import sys
-"py sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
-"py import vim
-py import CppTokenizer
+python << PYTHON_EOF
+try:
+    import CppTokenizer
+except ImportError:
+    import sys
+    import os
+    sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
+    import vim
+    import CppTokenizer
+PYTHON_EOF
 "===============================================================================
 " 用 python 的正则表达式速度快很多
 function! omnicpp#tokenizer#Tokenize(sCode)

@@ -526,7 +526,7 @@ class VLWorkspace:
         ret = self.DoInsertChild(lineNum, newDatum)
         # 插入失败（同名冲突），返回
         if not ret:
-            print 'Name Conflict!'
+            print 'Name Conflict: %s' % name
             return 0
 
         parentNode.appendChild(newNode)
@@ -885,7 +885,7 @@ class VLWorkspace:
         if oldName == newName:
             return
         if self.DoCheckNameConflict(xmlNode.parentNode, newName):
-            print 'Name Conflict!'
+            print 'Name Conflict: %s' % name
             return
         if type == TYPE_FILE:
             absOldFile = self.GetFileByLineNum(lineNum, True)
@@ -1024,7 +1024,7 @@ class VLWorkspace:
             if not ret:
                 return 0
             #if self.DoCheckNameConflict(rootNode, os.path.basename(directory)):
-                #print 'Name Conflict!'
+                #print 'Name Conflict: %s' % os.path.basename(directory)
                 #return 0
             #rootNode.appendChild(xmlNode)
             #project.Save()
