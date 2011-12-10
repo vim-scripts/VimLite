@@ -8,6 +8,22 @@ from xml.dom import minidom
 import Globals
 import XmlUtils
 from ProjectSettings import ProjectSettings
+from Globals import WSP_PATH_SEP
+
+
+def JoinWspPath(a, *p):
+    """Join two or more pathname components, inserting WSP_PATH_SEP as needed.
+    If any component is an absolute path, all previous path components
+    will be discarded."""
+    path = a
+    for b in p:
+        if b.startswith(WSP_PATH_SEP):
+            path = b
+        elif path == '' or path.endswith(WSP_PATH_SEP):
+            path +=  b
+        else:
+            path += WSP_PATH_SEP + b
+    return path
 
 
 class ProjectData:
@@ -32,10 +48,12 @@ class Project:
         self.fileName = ''  # 绝对路径
         self.dirName = ''   # 绝对路径
         self.baseName = ''  # 项目文件名
-        self.isModified = False # 用于判断是否重新生成 makefile
+        # 用于判断是否重新生成 makefile，此标志为真时，必重新生成 makefile
+        # FIXME: 如果此标志为真，但是此时关闭工作区，下次启动时不会重建 makefile
+        self.isModified = False
         self.tranActive = False
         self.modifyTime = 0
-        self.vdCache = {}   # 字符串到 xml 节点的映射，用于绑定编辑器的文件
+        self.settings = None
         if fileName:
             try:
                 self.doc = minidom.parse(fileName)
@@ -47,6 +65,8 @@ class Project:
             self.fileName = os.path.abspath(fileName) #绝对路径
             self.dirName, self.baseName = os.path.split(self.fileName) #绝对路径
             self.modifyTime = Globals.GetFileModificationTime(fileName)
+            self.settings = ProjectSettings(XmlUtils.FindFirstByTagName(
+                self.rootNode, 'Settings'))
     
     def GetName(self):
         '''Get project name'''
@@ -90,24 +110,13 @@ class Project:
         return ''
     
     def Load(self, fileName):
-        try:
-            self.doc = minidom.parse(fileName)
-        except IOError:
-            print 'IOError:', fileName
-            raise IOError
-        
-        # TODO: load pluginsData
-        
-        self.rootNode = XmlUtils.GetRoot(self.doc)
-        self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')
-        self.fileName = os.path.abspath(fileName)
-        self.dirName, self.baseName = os.path.split(self.fileName)
+        self.__init__(fileName)
         self.SetModified(True)
-        self.SetProjectLastModifiedTime(self.GetProjFileLastModifiedTime())
     
     def Create(self, name, description, path, projectType):
         self.name = name
-        self.fileName = os.path.join(path, name + '.project')
+        self.fileName = os.path.join(
+            path, name + os.extsep + Globals.PROJECT_FILE_SUFFIX)
         self.fileName = os.path.abspath(self.fileName)
         self.dirName, self.baseName = os.path.split(self.fileName)
         
@@ -134,26 +143,34 @@ class Project:
         
         self.DoSaveXmlFile()
         
-        # create build settings
-        # why 2 times?
-        #self.SetSettings(ProjectSettings())
-        #settings = self.GetSettings();
+        # create a minimalist build settings
         settings = ProjectSettings()
         settings.SetProjectType(projectType)
         self.SetSettings(settings)
         self.SetModified(True)
-            
-    def GetAllFiles(self, absPath = False):
+
+    def GetAllFiles(self, absPath = False, projConfName = ''):
+        '''如果 projConfName 非空，获取 projConfName 的 ignoredFiles'''
+        ignoredFiles = set()
+        if projConfName:
+            settings = self.GetSettings()
+            bldConf = settings.GetBuildConfiguration(projConfName)
+            if bldConf:
+                ignoredFiles = bldConf.ignoredFiles.copy()
         if absPath:
-            dirBak = os.getcwd()
+            ds = Globals.DirSaver()
             os.chdir(self.dirName)
-            files = self.GetFilesOfNode(XmlUtils.GetRoot(self.doc), True)
-            os.chdir(dirBak)
-            return files
+            files = self.GetFilesOfNode(XmlUtils.GetRoot(self.doc), True,
+                                        '', ignoredFiles)
+                                        #WSP_PATH_SEP + self.name)
         else:
-            return self.GetFilesOfNode(XmlUtils.GetRoot(self.doc), False)
+            files = self.GetFilesOfNode(XmlUtils.GetRoot(self.doc), False,
+                                        '', ignoredFiles)
+                                        #WSP_PATH_SEP + self.name)
+        return files
     
-    def GetFilesOfNode(self, node, absPath = False):
+    def GetFilesOfNode(self, node, absPath = False,
+                       curWspPath = '', ignoredFiles = set()):
         if not node:
             return []
         
@@ -163,40 +180,47 @@ class Project:
                 fileName = i.getAttribute('Name')
                 if absPath:
                     fileName = os.path.abspath(fileName)
-                files.append(fileName)
-            # 递归遍历所有文件
+
+                wspFilePath = JoinWspPath(curWspPath, os.path.basename(fileName))
+                if wspFilePath in ignoredFiles:
+                    #ignoredFiles.remove(wspFilePath)
+                    pass
+                else:
+                    files.append(fileName)
+            elif i.nodeName == 'VirtualDirectory':
+                pathName = i.getAttribute('Name')
+                curWspPath = JoinWspPath(curWspPath, pathName)
+            # 递归遍历所有文件 TODO: 可优化，尽判断当前节点为虚拟目录时才递归
             if i.hasChildNodes():
-                files.extend(self.GetFilesOfNode(i, absPath))
+                files.extend(
+                    self.GetFilesOfNode(i, absPath, curWspPath, ignoredFiles))
         return files
         
     def GetSettings(self):
         '''获取项目的设置实例'''
-        node = XmlUtils.FindFirstByTagName(XmlUtils.GetRoot(self.doc), 
-                                           'Settings')
-        return ProjectSettings(node)
+        return self.settings
     
-    def SetSettings(self, settings):
+    def SetSettings(self, settings, autoSave = True):
         '''设置项目设置，并保存xml文件'''
         oldSettings = XmlUtils.FindFirstByTagName(XmlUtils.GetRoot(self.doc), 
                                                   'Settings')
         if oldSettings:
             oldSettings.parentNode.removeChild(oldSettings)
         XmlUtils.GetRoot(self.doc).appendChild(settings.ToXmlNode())
-        #NOTE: 会搞乱文本节点
-        #XmlUtils.GetRoot(self.doc).appendChild(
-            #XmlUtils.PrettifyNode(settings.ToXmlNode()))
-        self.DoSaveXmlFile()
+        if autoSave:
+            self.DoSaveXmlFile()
+        self.settings = settings
     
     def SetGlobalSettings(self, globalSettings):
-        settings = XmlUtils.FindFirstByTagName(XmlUtils.GetRoot(self.doc), 
-                                               'Settings')
-        oldSettings = XmlUtils.FindFirstByTagName(settings, 'GlobalSettings')
+        settingsNode = XmlUtils.FindFirstByTagName(XmlUtils.GetRoot(self.doc),
+                                                   'Settings')
+        oldSettings = XmlUtils.FindFirstByTagName(settingsNode,
+                                                  'GlobalSettings')
         if oldSettings:
             oldSettings.parentNode.removeChild(oldSettings)
-        settings.appendChild(globalSettings.ToXmlNode())
-        #NOTE: 会搞乱文本节点
-        #settings.appendChild(XmlUtils.PrettifyNode(globalSettings.ToXmlNode()))
+        settingsNode.appendChild(globalSettings.ToXmlNode())
         self.DoSaveXmlFile()
+        self.settings = ProjectSettings(settingsNode)
     
     def GetDependencies(self, configuration):
         '''返回依赖的项目的名称列表（构建顺序）'''
@@ -262,10 +286,13 @@ class Project:
         
         files = self.GetAllFiles()
         for i in files:
-            # FIXME: unix 下区分大小写
-#            if os.path.abspath(i).lower() == os.path.abspath(relFileName).lower():
-            if os.path.abspath(i) == os.path.abspath(relFileName):
-                return True
+            if Globals.IsWindowsOS():
+                if os.path.abspath(i).lower() \
+                   == os.path.abspath(relFileName).lower():
+                    return True
+            else:
+                if os.path.abspath(i) == os.path.abspath(relFileName):
+                    return True
         return False
     
     def IsModified(self):
@@ -301,6 +328,7 @@ class Project:
     def Save(self, fileName = ''):
         self.tranActive = False
         if XmlUtils.GetRoot(self.doc):
+            self.SetSettings(self.settings, False)
             self.DoSaveXmlFile(fileName)
     
     # internal methods

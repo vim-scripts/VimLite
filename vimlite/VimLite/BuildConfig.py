@@ -293,42 +293,62 @@ class BuildConfig:
         self.useSeparateDebugArgs = False
         self.debugArgs = ''
 
+        # added on 2011-12-08
+        self.ignoredFiles = set() # 忽略的文件集合，元素为文件的工作区路径字符串
+                                  # 保存的是工作区路径的相对路径
+
         if xmlNode:
             self.name = XmlUtils.ReadString(xmlNode, 'Name')
             self.compilerType = XmlUtils.ReadString(xmlNode, 'CompilerType')
             self.debuggerType = XmlUtils.ReadString(xmlNode, 'DebuggerType')
             self.projectType = XmlUtils.ReadString(xmlNode, 'Type')
-            self.buildCmpWithGlobalSettings = XmlUtils.ReadString(xmlNode, 'BuildCmpWithGlobalSettings', BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
-            self.buildLnkWithGlobalSettings = XmlUtils.ReadString(xmlNode, 'BuildLnkWithGlobalSettings', BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
-            self.buildResWithGlobalSettings = XmlUtils.ReadString(xmlNode, 'BuildResWithGlobalSettings', BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
+            self.buildCmpWithGlobalSettings = XmlUtils.ReadString(
+                xmlNode, 'BuildCmpWithGlobalSettings',
+                BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
+            self.buildLnkWithGlobalSettings = XmlUtils.ReadString(
+                xmlNode, 'BuildLnkWithGlobalSettings',
+                BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
+            self.buildResWithGlobalSettings = XmlUtils.ReadString(
+                xmlNode, 'BuildResWithGlobalSettings',
+                BuildConfig.APPEND_TO_GLOBAL_SETTINGS)
             
             compileNode = XmlUtils.FindFirstByTagName(xmlNode, 'Compiler')
             if compileNode:
-                self.compilerRequired = XmlUtils.ReadBool(compileNode, 'Required', True)
-                self.precompiledHeader = XmlUtils.ReadString(compileNode, 'PreCompiledHeader')
+                self.compilerRequired = XmlUtils.ReadBool(
+                    compileNode, 'Required', True)
+                self.precompiledHeader = XmlUtils.ReadString(
+                    compileNode, 'PreCompiledHeader')
             
             linkerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Linker')
             if linkerNode:
-                self.linkerRequired = XmlUtils.ReadBool(linkerNode, 'Required', True)
+                self.linkerRequired = XmlUtils.ReadBool(linkerNode, 'Required',
+                                                        True)
             
-            resCmpNode = XmlUtils.FindFirstByTagName(xmlNode, 'ResourceCompiler')
+            resCmpNode = XmlUtils.FindFirstByTagName(xmlNode,
+                                                     'ResourceCompiler')
             if resCmpNode:
-                self.isResCmpNeeded = XmlUtils.ReadBool(resCmpNode, 'Required', True)
+                self.isResCmpNeeded = XmlUtils.ReadBool(resCmpNode, 'Required',
+                                                        True)
             
             debuggerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Debugger')
             self.isDbgRemoteTarget = False
             
             if debuggerNode:
-                self.isDbgRemoteTarget = XmlUtils.ReadBool(debuggerNode, 'IsRemote')
-                self.dbgHostName = XmlUtils.ReadString(debuggerNode, 'RemoteHostName')
-                self.dbgHostPort = XmlUtils.ReadString(debuggerNode, 'RemoteHostPort')
-                self.debuggerPath = XmlUtils.ReadString(debuggerNode, 'DebuggerPath')
+                self.isDbgRemoteTarget = XmlUtils.ReadBool(debuggerNode,
+                                                           'IsRemote')
+                self.dbgHostName = XmlUtils.ReadString(debuggerNode,
+                                                       'RemoteHostName')
+                self.dbgHostPort = XmlUtils.ReadString(debuggerNode,
+                                                       'RemoteHostPort')
+                self.debuggerPath = XmlUtils.ReadString(debuggerNode,
+                                                        'DebuggerPath')
                 
                 for i in debuggerNode.childNodes:
                     if i.nodeName == 'StartupCommands':
                         self.debuggerStartupCmds = XmlUtils.GetNodeContent(i)
                     elif i.nodeName == 'PostConnectCommands':
-                        self.debuggerPostRemoteConnectCmds = XmlUtils.GetNodeContent(i)
+                        self.debuggerPostRemoteConnectCmds = \
+                                XmlUtils.GetNodeContent(i)
             
             # read the prebuild commands
             preBuildNode = XmlUtils.FindFirstByTagName(xmlNode, 'PreBuild')
@@ -359,7 +379,8 @@ class BuildConfig:
             
             customBuildNode = XmlUtils.FindFirstByTagName(xmlNode, 'CustomBuild')
             if customBuildNode:
-                self.enableCustomBuild = XmlUtils.ReadBool(customBuildNode, 'Enabled', False)
+                self.enableCustomBuild = XmlUtils.ReadBool(customBuildNode,
+                                                           'Enabled', False)
                 for i in customBuildNode.childNodes:
                     if i.nodeName == 'BuildCommand':
                         self.customBuildCmd = XmlUtils.GetNodeContent(i)
@@ -386,7 +407,8 @@ class BuildConfig:
                 self.enableCustomBuild = False
             
             # read pre and post build rules
-            customPreBuildNode = XmlUtils.FindFirstByTagName(xmlNode, 'AdditionalRules')
+            customPreBuildNode = XmlUtils.FindFirstByTagName(xmlNode,
+                                                             'AdditionalRules')
             if customPreBuildNode:
                 for i in customPreBuildNode.childNodes:
                     if i.nodeName == 'CustomPreBuild':
@@ -399,13 +421,27 @@ class BuildConfig:
             generalNode = XmlUtils.FindFirstByTagName(xmlNode, 'General')
             if generalNode:
                 self.outputFile = XmlUtils.ReadString(generalNode, 'OutputFile')
-                self.intermediateDirectory = XmlUtils.ReadString(generalNode, 'IntermediateDirectory', '.')
+                self.intermediateDirectory = XmlUtils.ReadString(
+                    generalNode, 'IntermediateDirectory', '.')
                 self.command = XmlUtils.ReadString(generalNode, 'Command')
-                self.commandArguments = XmlUtils.ReadString(generalNode, 'CommandArguments')
-                self.workingDirectory = XmlUtils.ReadString(generalNode, 'WorkingDirectory')
-                self.pauseWhenExecEnds = XmlUtils.ReadBool(generalNode, 'PauseExecWhenProcTerminates', True)
-                self.useSeparateDebugArgs = XmlUtils.ReadBool(generalNode, 'UseSeparateDebugArgs', False)
-                self.debugArgs = XmlUtils.ReadString(generalNode, 'DebugArguments')
+                self.commandArguments = XmlUtils.ReadString(
+                    generalNode, 'CommandArguments')
+                self.workingDirectory = XmlUtils.ReadString(
+                    generalNode, 'WorkingDirectory')
+                self.pauseWhenExecEnds = XmlUtils.ReadBool(
+                    generalNode, 'PauseExecWhenProcTerminates', True)
+                self.useSeparateDebugArgs = XmlUtils.ReadBool(
+                    generalNode, 'UseSeparateDebugArgs', False)
+                self.debugArgs = XmlUtils.ReadString(
+                    generalNode, 'DebugArguments')
+
+            # <IgnoredFiles><IgnoredFile Name = "xxx/yyy.c"/></IgnoredFiles>
+            ignoredFilesNode = XmlUtils.FindFirstByTagName(
+                xmlNode, 'IgnoredFiles')
+            if ignoredFilesNode:
+                for i in ignoredFilesNode.childNodes:
+                    if i.nodeName == 'IgnoredFile':
+                        self.ignoredFiles.add(i.getAttribute('Name'))
             
         else:
             # create default project settings
@@ -590,6 +626,14 @@ class BuildConfig:
         postCmd = dom.createElement('CustomPostBuild')
         XmlUtils.SetNodeContent(postCmd, self.customPostBuildRule)
         addtionalCmdsNode.appendChild(postCmd)
+
+        # add "IgnoredFiles" node
+        ignoredFilesNode = dom.createElement('IgnoredFiles')
+        for i in self.ignoredFiles:
+            ignoredFileNode = dom.createElement('IgnoredFile')
+            ignoredFileNode.setAttribute('Name', i)
+            ignoredFilesNode.appendChild(ignoredFileNode)
+        node.appendChild(ignoredFilesNode)
         
         return node
 

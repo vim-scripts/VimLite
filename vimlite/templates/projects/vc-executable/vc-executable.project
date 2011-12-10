@@ -4,8 +4,9 @@
 		A project that produces an executable file.
 Note that this project is set to work with the Microsoft(R) toolchain (CL, LINK)
 	</Description>
-  <VirtualDirectory Name="src"/>
-  <VirtualDirectory Name="include"/>
+  <VirtualDirectory Name="src">
+    <File Name="main.c"/>
+  </VirtualDirectory>
   <Dependencies/>
   <Settings Type="Executable">
     <Configuration Name="Debug" CompilerType="VC++" DebuggerType="GNU gdb debugger">

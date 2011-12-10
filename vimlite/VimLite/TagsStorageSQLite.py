@@ -7,8 +7,19 @@ from TagEntry import TagEntry
 from FileEntry import FileEntry
 
 import os, os.path
+import subprocess
 import platform
 import sqlite3
+
+def Escape(string, chars):
+    result = ''
+    for char in string:
+        if char in chars:
+            # 转义之
+            result += '\\' + char
+        else:
+            result += char
+    return result
 
 class TagsStorageSQLiteCache:
     '''tags 缓存'''
@@ -240,7 +251,10 @@ class TagsStorageSQLite(ITagsStorage):
 
             try:
                 if self.fileName != ':memory:':
-                    os.remove(fileName)
+                    try:
+                        os.remove(fileName)
+                    except WindowsError:
+                        pass
                 else:
                     raise sqlite3.OperationalError
             except:
@@ -1252,13 +1266,20 @@ class TagsStorageSQLite(ITagsStorage):
 
 
 
+VIMLITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #CTAGS = 'ctags'
 #CTAGS = os.path.expanduser('~/bin/vlctags')
 if platform.architecture()[0] == '64bit':
-    CTAGS = os.path.expanduser('~/.vimlite/bin/vlctags64')
+    if platform.system() == 'Windows':
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags64.exe')
+    else:
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags64')
 else:
-    CTAGS = os.path.expanduser('~/.vimlite/bin/vlctags')
+    if platform.system() == 'Windows':
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags.exe')
+    else:
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags')
 CTAGS_OPTS = '--excmd=pattern --sort=no --fields=aKmSsnit '\
         '--c-kinds=+p --c++-kinds=+p'
 # 强制视全部文件为 C++
@@ -1286,7 +1307,7 @@ def ParseFiles(files, replacements = []):
     if not files:
         return ''
 
-    env = ''
+    envDict = os.environ.copy()
     if replacements:
         import tempfile
         tmpf = tempfile.mkstemp()[1]
@@ -1294,20 +1315,34 @@ def ParseFiles(files, replacements = []):
             f = open(tmpf, "wb")
             f.write('\n'.join(replacements))
             f.close()
-            env = "CTAGS_REPLACEMENTS='%s'" % tmpf
+            envDict['CTAGS_REPLACEMENTS'] = tmpf
         except:
             pass
 
     tags = ''
     #for f in files:
         # TODO: 路径要不要转为绝对路径?
-        #cmd = "%s %s -f - '%s'" % (CTAGS, CTAGS_OPTS, f)
+        #cmd = '"%s" %s -f - "%s"' % (CTAGS, CTAGS_OPTS, f)
         #tags += os.popen(cmd).read()
-    cmd = "%s %s %s -f - '%s'" % (env, CTAGS, CTAGS_OPTS, "' '".join(files))
-    tags = os.popen(cmd).read() # 出错信息会在终端打印出来而不是赋值给 tags
+    if platform.system() == 'Windows':
+        cmd = '"%s" %s -f - "%s"' % (Escape(CTAGS, '\\'),
+                                     CTAGS_OPTS,
+                                     Escape('" "'.join(files), '\\'))
+    else:
+        cmd = '"%s" %s -f - "%s"' % (CTAGS, CTAGS_OPTS, '" "'.join(files))
+
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, env=envDict)
+    tags = p.stdout.read()
+    p.wait()
+
+    if p.returncode != 0:
+        print '%d: ctags occured some errors' % p.returncode
 
     if replacements:
-        os.remove(tmpf)
+        try:
+            os.remove(tmpf)
+        except WindowsError:
+            pass
 
     return tags
 
@@ -1347,16 +1382,35 @@ def ParseFilesAndStore(files, storage, replacements = [], filterNonNeed = True,
                     continue
             idx += 1
 
-    tags = ParseFiles(tmpFiles, replacements)
+    # 分批 parse
+    totalCount = len(tmpFiles)
+    batchCount = totalCount / 10
+    if batchCount > 10: batchCount = 10
+    if batchCount <= 0: batchCount = 1
 
-    storage.Begin()
-    if not storage.DeleteTagsByFiles(tmpFiles, autoCommit = False):
-        storage.Rollback()
+    i = 0
+    batchFiles = tmpFiles[i : i + batchCount]
+    if indicator:
+        indicator(0, 100)
+    while batchFiles:
+        tags = ParseFiles(batchFiles, replacements)
         storage.Begin()
-    if not storage.Store(tags, autoCommit = False, indicator = indicator):
-        storage.Rollback()
-        storage.Begin()
-    storage.Commit()
+        if not storage.DeleteTagsByFiles(batchFiles, autoCommit = False):
+            storage.Rollback()
+            storage.Begin()
+        #if not storage.Store(tags, autoCommit = False, indicator = indicator):
+        if not storage.Store(tags, autoCommit = False, indicator = None):
+            storage.Rollback()
+            storage.Begin()
+        storage.Commit()
+
+        if indicator:
+            indicator(i, totalCount - 1)
+        i += batchCount
+        batchFiles = tmpFiles[i : i + batchCount]
+
+    if indicator:
+        indicator(100, 100)
 
     for f in tmpFiles:
         if os.path.isfile(f):

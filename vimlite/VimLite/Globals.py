@@ -8,10 +8,16 @@ import time
 import re
 import getpass
 
-import EnvVarSettings
-
 # 版本号 850 -> 0.8.5.0
 VIMLITE_VER = 870
+
+# VimLite 起始目录
+VIMLITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+WORKSPACE_FILE_SUFFIX = 'vlworkspace'
+PROJECT_FILE_SUFFIX = 'vlproject'
+
+WSP_PATH_SEP = '/'
 
 CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
 CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc', ''])
@@ -30,6 +36,16 @@ def IsWindowsOS():
     import platform
     return platform.system() == 'Windows'
 
+def Escape(string, chars):
+    '''两个参数都是字符串'''
+    result = ''
+    for char in string:
+        if char in chars:
+            # 转义之
+            result += '\\' + char
+        else:
+            result += char
+    return result
 
 def GetFileModificationTime(fileName):
     '''获取文件最后修改时间
@@ -42,7 +58,17 @@ def GetFileModificationTime(fileName):
     finally:
         return ret
 
+def Touch(lFiles):
+    if isinstance(lFiles, str): lFiles = [lFiles]
+    for sFile in lFiles:
+        #print "touching %s" % sFile
+        try:
+            os.utime(sFile, None)
+        except OSError:
+            open(sFile, "ab").close()
+
 def NormalizePath(string):
+    '''把路径分割符全部转换为 posix 标准的分割符'''
     return string.replace('\\', '/')
 
 class DirSaver:
@@ -166,12 +192,14 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
     $(CurrentFilePath)
     $(CurrentFileFullPath)
     '''
+    from EnvVarSettings import EnvVarSettingsST
+
     if not '$' in expression:
         return expression
 
     # 先展开环境变量, 因为内部变量不可能包含环境变量, 反之则可能包含
     expression = \
-            EnvVarSettings.EnvVarSettingsST.Get().ExpandVariables(expression)
+            EnvVarSettingsST.Get().ExpandVariables(expression)
 
     dVariables = {}
 
@@ -194,7 +222,7 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
                 # 先展开中间目录的变量
                 # 中间目录不能包含自身和自身的别名 $(OutDir)
                 # 可包含的变量为此之前添加的变量
-                imd = EnvVarSettings.EnvVarSettingsST.Get().ExpandVariables(imd)
+                imd = EnvVarSettingsST.Get().ExpandVariables(imd)
                 imd = ExpandVariables(imd, dVariables)
                 dVariables['IntermediateDirectory'] = imd
                 dVariables['OutDir'] = imd
@@ -218,6 +246,7 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
     return ExpandVariables(expression, dVariables)
 
 def IsCppSourceFile(fileName):
+    '''非正式的判断，不能用于构建时判断，构建时以 Builder 的设置为准'''
     ext = os.path.splitext(fileName)[1][1:]
     if ext in CPP_SOURCE_EXT:
         return True
@@ -225,6 +254,7 @@ def IsCppSourceFile(fileName):
         return False
 
 def IsCppHeaderFile(fileName):
+    '''非正式的判断，不能用于构建时判断，构建时以 Builder 的设置为准'''
     ext = os.path.splitext(fileName)[1][1:]
     if ext in CPP_HEADER_EXT:
         return True

@@ -28,7 +28,8 @@ def GetChildElemAttrValuesNR(node, tagName, attrName):
 #'''用于兼容 codelite 项目文件的 xml 工具集'''
     
 def FindNodeByName(parent, tagName, name):
-    '''Find a child node by name by iterating the parent children. NULL if no childs exist
+    '''Find a child node by name by iterating the parent children. 
+    NULL if no childs exist
     
     parent: the parent node whom to be searched
     tagName: the element tag name
@@ -163,14 +164,14 @@ def GetNodeContent(node):
             return i.data
     return ''
 
-def GetFirstElementChild(node):
+def GetFirstChildElement(node):
     for i in node.childNodes:
         if i.nodeType == i.ELEMENT_NODE:
             return i
     return None
 
 def GetRoot(dom):
-    return GetFirstElementChild(dom)
+    return GetFirstChildElement(dom)
 
 def PrettifyDoc(doc):
     doc = minidom.parseString(ToPrettyXmlString(doc))

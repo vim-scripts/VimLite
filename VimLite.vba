@@ -29,7 +29,7 @@ high def link dbgIgnore	    Ignore
 let b:current_syntax = "dbgvar"
 
 syntax/vlworkspace.vim	[[[1
-78
+82
 " Description:  Vim syntax file for VimLite workspace buffer
 " Maintainer:   fanhe <fanhed@163.com>
 " License:      This file is placed in the public domain
@@ -51,6 +51,9 @@ syn match VLWOpenable '\V\[|`]+'hs=s+1 contains=VLWTreeLead
 
 " 文件前缀标志
 syn match VLWFilePre '[|`]-'hs=s+1 contains=VLWTreeLead
+
+" 忽略的文件
+syn match VLWIgnoredFile '[|`]#.\+'hs=s+1 contains=VLWTreeLead
 
 
 " 工作空间名字只能由 [a-zA-Z_ +-] 组成
@@ -100,6 +103,7 @@ hi def link VLWVirtualDirectory Statement
 
 hi def link VLWTreeLead Special
 hi def link VLWFilePre Linenr
+hi def link VLWIgnoredFile Ignore
 hi def link VLWClosable VLWFilePre
 hi def link VLWOpenable Title
 
@@ -128,7 +132,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-5443
+6062
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -161,6 +165,12 @@ function! s:InitVariable(var, value) "初始化变量仅在变量没有定义时
     return 0
 endfunction
 "}}}2
+
+if has('win32') || has('win64')
+    call s:InitVariable("g:VimLiteDir", fnamemodify($VIM . '\vimlite', ":p"))
+else
+    call s:InitVariable("g:VimLiteDir", fnamemodify("~/.vimlite", ":p"))
+endif
 
 call s:InitVariable("g:VLWorkspaceWinSize", 30)
 call s:InitVariable("g:VLWorkspaceWinPos", "left")
@@ -212,10 +222,17 @@ call s:InitVariable('g:VLWToggleHelpInfo', '<F1>')
 "=======================================
 "标记是否已经运行
 call s:InitVariable("g:VLWorkspaceHasStarted", 0)
-"模板所在路径
-call s:InitVariable("g:VLWorkspaceTemplatesPath", 
-            \expand('$HOME') . '/.vimlite/templates/projects')
+
 call s:InitVariable("g:VLWorkspaceDbgConfName", "VLWDbg.conf")
+
+"模板所在路径
+if has('win32') || has('win64')
+    call s:InitVariable("g:VLWorkspaceTemplatesPath", 
+                \$VIM . '\vimlite\templates\projects')
+else
+    call s:InitVariable("g:VLWorkspaceTemplatesPath", 
+                \$HOME . '/.vimlite/templates/projects')
+endif
 
 "工作空间文件后缀名
 call s:InitVariable("g:VLWorkspaceWspFileSuffix", "vlworkspace")
@@ -254,6 +271,8 @@ command! -nargs=0 -bar VLWDbgBacktrace      call <SID>DbgBacktrace()
 
 command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
 command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
+command! -nargs=0 -bar VLWCompilersSettings call <SID>CompilersSettings()
+command! -nargs=0 -bar VLWBuildersSettings  call <SID>BuildersSettings()
 
 command! -nargs=0 -bar VLWSwapSourceHeader  call <SID>SwapSourceHeader()
 
@@ -266,6 +285,7 @@ command! -nargs=? -bar VLWOpenIncludeFile   call <SID>OpenIncludeFile()
 function! g:VLWGetAllFiles() "{{{2
     let files = []
     if g:VLWorkspaceHasStarted
+        " FIXME: Windows 下，所有反斜扛(\)加倍，因为 python 输出 '\\'
         py vim.command('let files = %s' 
                     \% [i.encode('utf-8') for i in ws.VLWIns.GetAllFiles(True)])
     endif
@@ -376,6 +396,15 @@ function! s:OpenFileVSplit(sFile, ...) "{{{2
     endif
 
     let &splitright = bak_splitright
+endfunction
+
+
+function! s:StripMultiPathSep(sPath) "{{{2
+    if has('win32') || has('win64')
+        return substitute(a:sPath, '\\\+', '\\', 'g')
+    else
+        return substitute(a:sPath, '/\+', '/', 'g')
+    endif
 endfunction
 "}}}1
 "===============================================================================
@@ -671,6 +700,7 @@ function! s:LocateFile(fileName) "{{{2
     endif
 
     call setpos('.', [0, 1, 1, 0])
+    " NOTE: 这是 wsp path，是用 / 分割的
     let l:paths = split(l:path, '/')
     let l:depth = 1
     let l:spacePerDepth = 2
@@ -708,13 +738,17 @@ endfunction
 
 
 function! s:InstallMenuBarMenu() "{{{2
-    anoremenu <silent> 200.10 &VimLite.Environment\ Variables\ Settings\.\.\. 
+    anoremenu <silent> 200 &VimLite.Build\ Settings.Compilers\ Settings\.\.\. 
+                \:call <SID>CompilersSettings()<CR>
+    anoremenu <silent> 200 &VimLite.Build\ Settings.Builders\ Settings\.\.\. 
+                \:call <SID>BuildersSettings()<CR>
+    "anoremenu <silent> 200 &VimLite.Debugger\ Settings\.\.\. <Nop>
+
+    anoremenu <silent> 200 &VimLite.Environment\ Variables\ Settings\.\.\. 
                 \:call <SID>EnvVarSettings()<CR>
-    "anoremenu <silent> 200.20 &VimLite.Build\ Settings\.\.\. <Nop>
-    "anoremenu <silent> 200.20 &VimLite.Debugger\ Settings\.\.\. <Nop>
 
     if !g:VLWorkspaceUseClangCC
-        anoremenu <silent> 200.20 &VimLite.Tags\ Settings\.\.\. 
+        anoremenu <silent> 200 &VimLite.Tags\ Settings\.\.\. 
                     \:call <SID>TagsSettings()<CR>
     endif
 endfunction
@@ -722,47 +756,52 @@ endfunction
 
 function! s:InstallToolBarMenu() "{{{2
     "anoremenu 1.500 ToolBar.-Sep15- <Nop>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/build.png   1.510 
+
+    let rtp_bak = &runtimepath
+    let &runtimepath = vlutils#NormalizePath(g:VimLiteDir) . ',' . &runtimepath
+
+    anoremenu <silent> icon=build   1.510 
                 \ToolBar.BuildActiveProject 
                 \:call <SID>BuildActiveProject()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/clean.png   1.520 
+    anoremenu <silent> icon=clean   1.520 
                 \ToolBar.CleanActiveProject 
                 \:call <SID>CleanActiveProject()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/execute.png 1.530 
+    anoremenu <silent> icon=execute 1.530 
                 \ToolBar.RunActiveProject 
                 \:call <SID>RunActiveProject()<CR>
-    tmenu ToolBar.BuildActiveProject    Build Active Project
-    tmenu ToolBar.CleanActiveProject    Clean Active Project
-    tmenu ToolBar.RunActiveProject      Run Active Project
 
     "调试工具栏
     anoremenu 1.600 ToolBar.-Sep16- <Nop>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/breakpoint.png 1.605 
+    anoremenu <silent> icon=breakpoint 1.605 
                 \ToolBar.DbgToggleBreakpoint 
                 \:silent call <SID>DbgToggleBreakpoint()<CR>
 
     anoremenu 1.609 ToolBar.-Sep17- <Nop>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/start.gif 1.610 
+    anoremenu <silent> icon=start 1.610 
                 \ToolBar.DbgStart 
                 \:silent call <SID>DbgStart()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/stepin.gif 1.630 
+    anoremenu <silent> icon=stepin 1.630 
                 \ToolBar.DbgStepIn 
                 \:silent call <SID>DbgStepIn()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/next.gif 1.640 
+    anoremenu <silent> icon=next 1.640 
                 \ToolBar.DbgNext 
                 \:silent call <SID>DbgNext()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/stepout.gif 1.650 
+    anoremenu <silent> icon=stepout 1.650 
                 \ToolBar.DbgStepOut 
                 \:silent call <SID>DbgStepOut()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/continue.gif 1.660 
+    anoremenu <silent> icon=continue 1.660 
                 \ToolBar.DbgContinue 
                 \:silent call <SID>DbgContinue()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/runtocursor.gif 1.665 
+    anoremenu <silent> icon=runtocursor 1.665 
                 \ToolBar.DbgRunToCursor 
                 \:silent call <SID>DbgRunToCursor()<CR>
-    anoremenu <silent> icon=~/.vimlite/bitmaps/stop.gif 1.670 
+    anoremenu <silent> icon=stop 1.670 
                 \ToolBar.DbgStop 
                 \:silent call <SID>DbgStop()<CR>
+
+    tmenu ToolBar.BuildActiveProject    Build Active Project
+    tmenu ToolBar.CleanActiveProject    Clean Active Project
+    tmenu ToolBar.RunActiveProject      Run Active Project
 
     tmenu ToolBar.DbgStart              Start / Run Debugger
     tmenu ToolBar.DbgStop               Stop Debugger
@@ -773,6 +812,8 @@ function! s:InstallToolBarMenu() "{{{2
     tmenu ToolBar.DbgContinue           Continue
 
     tmenu ToolBar.DbgToggleBreakpoint   Toggle Breakpoint
+
+    let &runtimepath = rtp_bak
 endfunction
 
 
@@ -915,6 +956,18 @@ endfunction
 
 
 function! s:RefreshBuffer() "{{{2
+    " 跳至工作区缓冲区窗口
+    let nOrigWinNr = winnr()
+    py vim.command("let nWspBufNum = %d" % ws.bufNum)
+    let nWspWinNr = bufwinnr(nWspBufNum)
+    if nWspWinNr == -1
+        " 没有打开工作区窗口
+        return
+    endif
+    if nWspWinNr != nOrigWinNr
+        exec 'noautocmd ' . nWspWinNr . ' wincmd w'
+    endif
+
     let lOrigCursor = getpos('.')
 
     let bNeedDispHelp = 0
@@ -930,6 +983,11 @@ function! s:RefreshBuffer() "{{{2
     endif
 
     call setpos('.', lOrigCursor)
+
+    " 跳回原来的窗口
+    if nWspWinNr != nOrigWinNr
+        exec 'noautocmd ' . nOrigWinNr . ' wincmd w'
+    endif
 endfunction
 
 
@@ -1108,7 +1166,7 @@ endfunction
 "{{{1
 function! s:DbgToggleBreakpoint() "{{{2
     let nCurLine = line('.')
-    let sCurFile = expand('%:p')
+    let sCurFile = vlutils#NormalizePath(expand('%:p'))
 
     let nSigintFlag = 0
     let nIsDelBp = 0
@@ -1230,7 +1288,7 @@ endfunction
 
 function! s:DbgRunToCursor() "{{{2
     let nCurLine = line('.')
-    let sCurFile = expand('%:p')
+    let sCurFile = vlutils#NormalizePath(expand('%:p'))
 
     let sLastDbgOutput = getbufline(bufnr('(clewn)_console'), '$')[0]
     if sLastDbgOutput !=# '(gdb) '
@@ -1314,11 +1372,12 @@ function! s:CreateWorkspace(...) "{{{2
             endif
         endfor
         if sWspName != ''
+            let sep = g:vlutils#os.sep
             if l:isSepPath != 0
-                let l:file = l:wspPath .'/'. fnamemodify(sWspName, ":r") . '/'
+                let l:file = l:wspPath .sep. fnamemodify(sWspName, ":r") . sep
                             \. sWspName . '.' . g:VLWorkspaceWspFileSuffix
             else
-                let l:file = l:wspPath .'/'. sWspName . '.' 
+                let l:file = l:wspPath .sep. sWspName . '.' 
                             \. g:VLWorkspaceWspFileSuffix
             endif
         endif
@@ -1434,7 +1493,12 @@ endfunction
 function! s:TemplatesTableCbk(ctl, data) "{{{2
     let ctl = a:ctl
     let comboCtl = a:data
-    let name = ctl.GetLine(ctl.selection)[0]
+    try
+        let name = ctl.GetSelectedLine()[0]
+    catch
+        " TODO: 空表，没有获取到任何项目模版
+        return
+    endtry
     let categories = ''
     for i in ctl.owner.controls
         if i.id == 5
@@ -1449,7 +1513,7 @@ def TemplatesTableCbk():
     key = vim.eval('categories')
     for line in templates[key]:
         if line['name'] == name:
-            vim.command('call comboCtl.SetValue("%s")' % line['cmpType'])
+            vim.command("call comboCtl.SetValue('%s')" % line['cmpType'])
             break
 TemplatesTableCbk()
 PYTHON_EOF
@@ -1468,8 +1532,8 @@ function! s:CreateProject(...) "{{{2
         let l:projName = ''
         let l:projPath = ''
         let l:isSepPath = 0
-        let l:projType = 'gnu gcc'
-        let l:cmpType = 'Executable'
+        let l:projType = 'Executable'
+        let l:cmpType = 'gnu gcc'
         let l:categories = ''
         let l:templateFile = ''
         for i in dialog.controls
@@ -1486,13 +1550,19 @@ function! s:CreateProject(...) "{{{2
             elseif i.id == 5
                 let l:categories = i.value
             elseif i.id == 6
-                let l:templateName = i.GetSelectedLine()[0]
+                try
+                    let l:templateName = i.GetSelectedLine()[0]
+                catch
+                    " 没有项目模板
+                    let l:templateName = ''
+                    continue
+                endtry
 python << PYTHON_EOF
 templates = GetTemplateDict(vim.eval('g:VLWorkspaceTemplatesPath'))
 key = vim.eval('l:categories')
 name = vim.eval('l:templateName')
 template = {}
-for template  in templates[key]:
+for template in templates[key]:
     if template['name'] == name:
         vim.command("let l:templateFile = '%s'" % template['file'])
 templates.clear()
@@ -1503,11 +1573,12 @@ PYTHON_EOF
             endif
         endfor
         if l:projName != ''
+            let sep = g:vlutils#os.sep
             if l:isSepPath != 0
-                let l:file = l:projPath .'/'. fnamemodify(l:projName, ":r") .'/'
+                let l:file = l:projPath .sep. fnamemodify(l:projName, ":r") .sep
                             \. l:projName . '.' . g:VLWorkspacePrjFileSuffix
             else
-                let l:file = l:projPath .'/'. l:projName . '.' 
+                let l:file = l:projPath .sep. l:projName . '.' 
                             \. g:VLWorkspacePrjFileSuffix
             endif
         endif
@@ -1530,16 +1601,20 @@ PYTHON_EOF
             "echo l:cmpType
             "echo l:categories
             "echo l:templateFile
-            py ret = ws.VLWIns.CreateProjectFromTemplate(
-                        \vim.eval('l:projName'), 
-                        \os.path.dirname(vim.eval('l:file')), 
-                        \vim.eval('l:templateFile'), 
-                        \vim.eval('l:cmpType'))
-            "py ret = ws.VLWIns.CreateProject(
-                        "\vim.eval('l:projName'), 
-                        "\os.path.dirname(vim.eval('l:file')), 
-                        "\vim.eval('l:projType'), 
-                        "\vim.eval('l:cmpType'))
+            if l:templateFile !=# ''
+                py ret = ws.VLWIns.CreateProjectFromTemplate(
+                            \vim.eval('l:projName'), 
+                            \os.path.dirname(vim.eval('l:file')), 
+                            \vim.eval('l:templateFile'), 
+                            \vim.eval('l:cmpType'))
+            else
+                " 没有项目模板，默认创建 'Executable' 的空项目
+                py ret = ws.VLWIns.CreateProject(
+                            \vim.eval('l:projName'), 
+                            \os.path.dirname(vim.eval('l:file')), 
+                            \vim.eval('l:projType'), 
+                            \vim.eval('l:cmpType'))
+            endif
 
             " 创建失败
             py if isinstance(ret, bool) and not ret: vim.command('return 1')
@@ -1563,7 +1638,7 @@ PYTHON_EOF
     call ctl.SetValue(getcwd())
 
     if g:VLWorkspaceHasStarted
-        py vim.command('call ctl.SetValue("%s")' % ws.VLWIns.dirName)
+        py vim.command("call ctl.SetValue('%s')" % ws.VLWIns.dirName)
     endif
 
     call ctl.SetId(1)
@@ -1603,6 +1678,7 @@ PYTHON_EOF
     let ctl = g:VCComboBox.New('Compiler Type:')
     call ctl.SetId(4)
     call ctl.SetIndent(4)
+    " TODO: 应该从配置文件读出
     call ctl.AddItem('cobra')
     call ctl.AddItem('gnu g++')
     call ctl.AddItem('gnu gcc')
@@ -1624,7 +1700,6 @@ PYTHON_EOF
     call tblCtl.SetColTitle(1, 'Type')
     call tblCtl.SetDispHeader(0)
     call tblCtl.SetCellEditable(0)
-    call tblCtl.SetSelection(1)
     call tblCtl.SetDispButtons(0)
     call g:newProjDialog.AddControl(tblCtl)
     call ctl.ConnectActionPostCallback(
@@ -1634,10 +1709,12 @@ PYTHON_EOF
 python << PYTHON_EOF
 def CreateTemplateCtls():
     templates = GetTemplateDict(vim.eval('g:VLWorkspaceTemplatesPath'))
+    if not templates: return
     for key in templates.keys():
-        vim.command('call ctl.AddItem("%s")' % key)
+        vim.command("call ctl.AddItem('%s')" % key)
     for line in templates[templates.keys()[0]]:
         vim.command("call tblCtl.AddLineByValues('%s')" % line['name'])
+    vim.command("call tblCtl.SetSelection(1)")
 CreateTemplateCtls()
 PYTHON_EOF
 
@@ -1732,6 +1809,14 @@ PYTHON_EOF
 
     "echom string(lFiles)
     if !empty(lFiles)
+        if has('win32') || has('win64')
+            "Windows 的 cscope 不能处理 \ 分割的路径
+            let i = 0
+            while i < len(lFiles)
+                let lFiles[i] = substitute(lFiles[i], '\\\\', '/', 'g')
+                let i += 1
+            endwhile
+        endif
         call writefile(lFiles, sCsFilesFile)
     endif
 
@@ -1749,7 +1834,7 @@ PYTHON_EOF
             else
                 let sFirstOpts = '-bkU'
             endif
-            let sCmd = printf('cscope %s %s -i %s -f %s', sFirstOpts, 
+            let sCmd = printf('"%s" %s %s -i %s -f %s', &cscopeprg, sFirstOpts, 
                         \sIncludeOpts, sCsFilesFile, sCsOutFile)
             call system(sCmd)
         endif
@@ -1759,7 +1844,7 @@ PYTHON_EOF
         else
             let sFirstOpts = '-bk'
         endif
-        let sCmd = printf('cscope %s %s -i %s -f %s', sFirstOpts, 
+        let sCmd = printf('"%s" %s %s -i %s -f %s', &cscopeprg, sFirstOpts, 
                     \sIncludeOpts, sCsFilesFile, sCsOutFile)
         call system(sCmd)
     endif
@@ -1801,6 +1886,14 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
         "如果传入参数且非零，强制刷新文件列表
         py vim.command('let lFiles = %s' 
                     \% [i.encode('utf-8') for i in ws.VLWIns.GetAllFiles(True)])
+        if has('win32') || has('win64')
+            "Windows 的 cscope 不能处理 \ 分割的路径
+            let i = 0
+            while i < len(lFiles)
+                let lFiles[i] = substitute(lFiles[i], '\\\\', '/', 'g')
+                let i += 1
+            endwhile
+        endif
         call writefile(lFiles, sCsFilesFile)
     endif
 
@@ -1818,8 +1911,8 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
     if g:VLWorkspaceCreateCscopeInvertedIndex
         let sFirstOpts .= 'q'
     endif
-    let sCmd = printf('cscope %s %s -i %s -f %s', sFirstOpts, sIncludeOpts, 
-                \sCsFilesFile, sCsOutFile)
+    let sCmd = printf('"%s" %s %s -i %s -f %s', &cscopeprg, sFirstOpts, 
+                \sIncludeOpts, sCsFilesFile, sCsOutFile)
     call system(sCmd)
 
     exec 'silent! cs kill '. sCsOutFile
@@ -2222,7 +2315,11 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call ctl.SetDispHeader(0)
     py vim.command("let includePaths = %s" % ins.includePaths)
     for includePath in includePaths
-        call ctl.AddLineByValues(includePath)
+        if has('win32') || has('win64')
+            call ctl.AddLineByValues(s:StripMultiPathSep(includePath))
+        else
+            call ctl.AddLineByValues(includePath)
+        endif
     endfor
     call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
@@ -2254,6 +2351,388 @@ function! s:CreateTagsSettingsDialog() "{{{2
     py del ins
     return dlg
 endfunction
+"}}}1
+"=================== Compilers 设置 ===================
+"{{{1
+"标识用控件 ID {{{2
+let s:ID_CSCtl_Compiler = 1
+
+let s:ID_CSCtl_Tools_CCompiler = 10
+let s:ID_CSCtl_Tools_CppCompiler = 11
+let s:ID_CSCtl_Tools_Linker = 12
+let s:ID_CSCtl_Tools_SOLinker = 13
+let s:ID_CSCtl_Tools_ArchiveTool = 14
+let s:ID_CSCtl_Tools_ResourceCompiler = 15
+let s:ID_CSCtl_Tools_PathEnvVariable = 16
+
+let s:ID_CSCtl_Switches_ArchiveOutput = 20
+let s:ID_CSCtl_Switches_Debug = 21
+let s:ID_CSCtl_Switches_Include = 22
+let s:ID_CSCtl_Switches_Library = 23
+let s:ID_CSCtl_Switches_LibraryPath = 24
+let s:ID_CSCtl_Switches_Object = 25
+let s:ID_CSCtl_Switches_Output = 26
+let s:ID_CSCtl_Switches_PreprocessOnly = 27
+let s:ID_CSCtl_Switches_Preprocessor = 28
+let s:ID_CSCtl_Switches_Source = 29
+
+let s:ID_CSCtl_FileTypes_Source = 30
+let s:ID_CSCtl_FileTypes_Resource = 31
+
+let s:ID_CSCtl_Advanced_GlobalIncludePaths = 40
+let s:ID_CSCtl_Advanced_GlobalLibraryPaths = 41
+let s:ID_CSCtl_Advanced_ObjectsExt = 42
+let s:ID_CSCtl_Advanced_DependsExt = 43
+let s:ID_CSCtl_Advanced_PreprocessedExt = 44
+"}}}
+function! s:CompilersSettings() "{{{2
+    let dDlg = s:CreateCompilersSettingsDialog()
+    call s:CompilerSettings_OperateContents(dDlg, 0, 0)
+    call dDlg.Display()
+endfunction
+"}}}
+function! s:CompilerSettings_OperateContents(dDlg, bIsSave, bPreValue) "{{{2
+    let dDlg = a:dDlg
+    let bIsSave = a:bIsSave " 非零表示从控件内容保存，零表示更新控件内容
+    let bPreValue = a:bPreValue " 非零表示使用 combo 控件上次的值获取 py 实例
+    let dCtl = dDlg.GetControlByID(s:ID_CSCtl_Compiler)
+    if bPreValue
+        py cmp = BuildSettingsST.Get().GetCompiler(
+                    \vim.eval("dCtl.GetPrevValue()"))
+    else
+        py cmp = BuildSettingsST.Get().GetCompiler(vim.eval("dCtl.GetValue()"))
+    endif
+    py if not cmp: vim.command("return")
+    for dCtl in dDlg.controls
+        if 0
+        " ====== Start =====
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_CCompiler
+            if bIsSave
+                py cmp.tools['C_CompilerName'] = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['C_CompilerName'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_CppCompiler
+            if bIsSave
+                py cmp.tools['CompilerName'] = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['CompilerName'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_Linker
+            if bIsSave
+                py cmp.tools['LinkerName'] = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['LinkerName'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_SOLinker
+            if bIsSave
+                py cmp.tools['SharedObjectLinkerName'] 
+                            \= vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['SharedObjectLinkerName'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_ArchiveTool
+            if bIsSave
+                py cmp.tools['ArchiveTool'] = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['ArchiveTool'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_ResourceCompiler
+            if bIsSave
+                py cmp.tools['ResourceCompiler'] = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.tools['ResourceCompiler'])
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Tools_PathEnvVariable
+            if bIsSave
+                py cmp.pathVariable = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.pathVariable)
+            endif
+        " ======
+        elseif dCtl.GetId() == s:ID_CSCtl_Advanced_GlobalIncludePaths
+            if bIsSave
+                py cmp.globalIncludePath = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.globalIncludePath)
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Advanced_GlobalLibraryPaths
+            if bIsSave
+                py cmp.globalLibPath = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.globalLibPath)
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Advanced_ObjectsExt
+            if bIsSave
+                py cmp.objectSuffix = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.objectSuffix)
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Advanced_DependsExt
+            if bIsSave
+                py cmp.dependSuffix = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.dependSuffix)
+            endif
+        elseif dCtl.GetId() == s:ID_CSCtl_Advanced_PreprocessedExt
+            if bIsSave
+                py cmp.preprocessSuffix = vim.eval("dCtl.GetValue()")
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% cmp.preprocessSuffix)
+            endif
+        " ====== End =====
+        else
+        endif
+    endfor
+
+    if bIsSave
+        " 保存
+        py BuildSettingsST.Get().SetCompiler(cmp)
+    endif
+    py del cmp
+endfunction
+"}}}
+function! s:CompilerSettingsSaveCbk(dDlg, data) "{{{2
+    call s:CompilerSettings_OperateContents(a:dDlg, 1, 0)
+endfunction
+"}}}
+function! s:CompilerSettingsChangeCompilerCbk(dCtl, data) "{{{2
+    let dDlg = a:dCtl.owner
+
+    if dDlg.IsModified()
+        " 如果本页可能已经修改，给出警告
+        echohl WarningMsg
+        let sAnswer = input("Settings seems to have been modified, "
+                    \."would you like to save them? (y/n): ", "y")
+        echohl None
+        if sAnswer == 'y'
+            call s:CompilerSettings_OperateContents(dDlg, 1, 1)
+        endif
+    endif
+
+    call s:CompilerSettings_OperateContents(dDlg, 0, 0)
+    call dDlg.Refresh()
+    call dDlg.SetModified(0)
+endfunction
+"}}}
+function! s:CreateCompilersSettingsDialog() "{{{2
+    let dDlg = g:VimDialog.New('==Compilers Settings==')
+
+    let nIndent1 = 0
+    let nIndent2 = 4
+
+    let dCtl = g:VCComboBox.New('Available Compilers:')
+    call dCtl.SetId(s:ID_CSCtl_Compiler)
+    let dCtl.ignoreModify = 1 " 不统计本控件的修改
+    call dCtl.ConnectActionPostCallback(
+                \s:GetSFuncRef('s:CompilerSettingsChangeCompilerCbk'), '')
+    call dDlg.AddControl(dCtl)
+
+python << PYTHON_EOF
+def __():
+    bs = BuildSettingsST.Get()
+    cmp = bs.GetFirstCompiler()
+    while cmp:
+        vim.command("call dCtl.AddItem('%s')" % cmp.name)
+        cmp = bs.GetNextCompiler()
+__()
+PYTHON_EOF
+
+    call dDlg.AddBlankLine()
+    call dDlg.AddSeparator()
+" Tools
+    let dCtl = g:VCStaticText.New('Tools')
+    call dCtl.SetIndent(nIndent1)
+    call dCtl.SetHighlight('Special')
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('C Compiler:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_CCompiler)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('C++ Compiler:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_CppCompiler)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Linker:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_Linker)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Shared Object Linker:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_SOLinker)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Archive Tool:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_ArchiveTool)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Resources Compiler:')
+    call dCtl.SetId(s:ID_CSCtl_Tools_ResourceCompiler)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    " TODO: 暂时没办法优雅地使用这个选项，先禁用
+    "let dCtl = g:VCSingleText.New('Path Environment Variable:')
+    "call dCtl.SetId(s:ID_CSCtl_Tools_PathEnvVariable)
+    "call dCtl.SetIndent(nIndent2)
+    "call dDlg.AddControl(dCtl)
+    "call dDlg.AddBlankLine()
+
+    call dDlg.AddBlankLine()
+    call dDlg.AddSeparator()
+" Advanced
+    let dCtl = g:VCStaticText.New('Advanced')
+    call dCtl.SetIndent(nIndent1)
+    call dCtl.SetHighlight('Special')
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Global Include Paths:')
+    call dCtl.SetId(s:ID_CSCtl_Advanced_GlobalIncludePaths)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Global Library Paths:')
+    call dCtl.SetId(s:ID_CSCtl_Advanced_GlobalLibraryPaths)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Objects Extension:')
+    call dCtl.SetId(s:ID_CSCtl_Advanced_ObjectsExt)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Depends Extension:')
+    call dCtl.SetId(s:ID_CSCtl_Advanced_DependsExt)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    let dCtl = g:VCSingleText.New('Preprocessed Extension:')
+    call dCtl.SetId(s:ID_CSCtl_Advanced_PreprocessedExt)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    call dDlg.ConnectSaveCallback(
+                \s:GetSFuncRef('s:CompilerSettingsSaveCbk'), '')
+
+    call dDlg.AddFooterButtons()
+    return dDlg
+endfunction
+"}}}
+"}}}1
+"=================== Builders 设置 ===================
+"{{{1
+"标识用控件 ID {{{2
+let s:ID_BSSCtl_Builders = 1
+
+let s:ID_BSSCtl_BuilderCommand = 10
+"}}}
+function! s:BuildersSettings() "{{{2
+    let dDlg = s:CreateBuildersSettingsDialog()
+    call s:BuildersSettings_OperateContents(dDlg, 0, 0)
+    call dDlg.Display()
+endfunction
+"}}}
+function! s:BuildersSettings_OperateContents(dDlg, bIsSave, bPreValue) "{{{2
+    let dDlg = a:dDlg
+    let bIsSave = a:bIsSave " 非零表示从控件内容保存，零表示更新控件内容
+    let bPreValue = a:bPreValue " 非零表示使用 combo 控件上次的值获取 py 实例
+    let dCtl = dDlg.GetControlByID(s:ID_BSSCtl_Builders)
+    if bPreValue
+        py bs = BuildSettingsST.Get().GetBuilderSettingsByName(
+                    \vim.eval("dCtl.GetPrevValue()"))
+    else
+        py bs = BuildSettingsST.Get().GetBuilderSettingsByName(
+                    \vim.eval("dCtl.GetValue()"))
+    endif
+    py if not bs: vim.command("return")
+    for dCtl in dDlg.controls
+        if 0
+        " ======
+        elseif dCtl.GetId() == s:ID_BSSCtl_BuilderCommand
+            if bIsSave
+                py bs.SetBuilderCommand(vim.eval("dCtl.GetValue()"))
+            else
+                py vim.command("call dCtl.SetValue('%s')" 
+                            \% bs.GetBuilderCommand())
+            endif
+        " ======
+        else
+        endif
+    endfor
+
+    if bIsSave
+        " 保存
+        py BuildSettingsST.Get().SetBuilderSettings(bs)
+        " 重新读取 ws.builder
+        py ws.builder = BuilderManagerST.Get().GetActiveBuilder()
+    endif
+    py del bs
+endfunction
+"}}}
+function! s:BuildersSettingsSaveCbk(dDlg, data) "{{{2
+    call s:BuildersSettings_OperateContents(a:dDlg, 1, 0)
+endfunction
+"}}}
+function! s:CreateBuildersSettingsDialog() "{{{2
+    let dDlg = g:VimDialog.New('==Builder Settings==')
+
+    let nIndent1 = 0
+    let nIndent2 = 4
+
+    let dCtl = g:VCComboBox.New('Available Builders:')
+    call dCtl.SetId(s:ID_BSSCtl_Builders)
+    let dCtl.ignoreModify = 1 " 不统计本控件的修改
+    call dDlg.AddControl(dCtl)
+
+    py vim.command("call dCtl.AddItem('%s')" % ws.builder.GetName())
+
+    call dDlg.AddBlankLine()
+    call dDlg.AddSeparator()
+
+" ==============================================================================
+    let dCtl = g:VCSingleText.New('Builder Command:')
+    call dCtl.SetId(s:ID_BSSCtl_BuilderCommand)
+    call dCtl.SetIndent(nIndent2)
+    call dDlg.AddControl(dCtl)
+    call dDlg.AddBlankLine()
+
+    call dDlg.ConnectSaveCallback(
+                \s:GetSFuncRef('s:BuildersSettingsSaveCbk'), '')
+
+    call dDlg.AddFooterButtons()
+    return dDlg
+endfunction
+"}}}
 "}}}1
 "=================== PCH 设置 ===================
 "{{{1
@@ -3064,6 +3543,13 @@ PYTHON_EOF
     call wspBCMDlg.SetData(0)
     call wspBCMDlg.ConnectSaveCallback(s:GetSFuncRef('s:WspBCMSaveCbk'), '')
     call wspBCMDlg.AddFooterButtons()
+
+    " 最后基本都要刷新一下缓冲区
+    func! s:RefreshBufferX(...)
+        call s:RefreshBuffer()
+    endf
+    call wspBCMDlg.ConnectPostCallback(s:GetSFuncRef('s:RefreshBufferX'), '')
+
     return wspBCMDlg
 endfunction
 "}}}1
@@ -3348,6 +3834,14 @@ BindPostBuildTblCbk(vim.eval('projName'))
 PYTHON_EOF
 endfunction
 
+function! s:BindIgnoredFilesCbk(ctl, data) "{{{2
+    let ctl = a:ctl
+    let projName = a:data
+    py vim.command("let sIgnoredFiles = '%s'" 
+                \% '\n'.join(g_bldConfs[vim.eval("projName")].ignoredFiles))
+    call ctl.SetValue(sIgnoredFiles)
+endfunction
+
 function! s:UpdatePostBuildTblCbk(ctl, data) "{{{2
     let ctl = a:ctl
     let projName = a:data
@@ -3620,10 +4114,11 @@ def ProjectSettings():
     projName = vim.eval('projName')
     vim.command('let ctl = g:VCComboBox.New("Project Configuration")')
     for i in g_settings[projName].configs:
-        vim.command('call ctl.AddItem("%s")' % i.encode('utf-8'))
-    vim.command('call ctl.SetValue("%s")' % g_bldConfs[projName].GetName())
+        vim.command("call ctl.AddItem('%s')" % i.encode('utf-8'))
+    vim.command("call ctl.SetValue('%s')" % g_bldConfs[projName].GetName())
     vim.command(
-            'call ctl.ConnectActionPostCallback(s:GetSFuncRef("s:SelProjConfCbk"), "%s")' 
+            "call ctl.ConnectActionPostCallback("
+                "s:GetSFuncRef('s:SelProjConfCbk'), '%s')" 
             % projName)
     vim.command('call l:dialog.AddControl(ctl)')
     vim.command('call l:dialog.AddBlankLine()')
@@ -3659,9 +4154,15 @@ PYTHON_EOF
     "1.1.2.编译器
     let ctl = g:VCComboBox.New('Compiler:')
     call ctl.SetIndent(8)
-    call ctl.AddItem('cobra')
-    call ctl.AddItem('gnu g++')
-    call ctl.AddItem('gnu gcc')
+python << PYTHON_EOF
+tmpbs = BuildSettingsST.Get()
+tmpcmp = tmpbs.GetFirstCompiler()
+while tmpcmp:
+    vim.command("call ctl.AddItem('%s')" % tmpcmp.name)
+    tmpcmp = tmpbs.GetNextCompiler()
+del tmpbs
+del tmpcmp
+PYTHON_EOF
     call ctl.BindVariable('g_bldConfs["'.projName.'"].compilerType', 1)
     call l:dialog.AddControl(ctl)
     call l:dialog.AddBlankLine()
@@ -3720,6 +4221,18 @@ PYTHON_EOF
     "call ctl.BindVariable('g_bldConfs["'.projName.'"].pauseWhenExecEnds', 1)
     "call l:dialog.AddControl(ctl)
     "call l:dialog.AddBlankLine()
+
+    "1.1.5.忽略的文件，暂不支持修改，只能看
+    let ctl = g:VCMultiText.New("Ignored Files (Please add/remove them by Workspace popup menus):")
+    call ctl.SetIndent(8)
+    py vim.command("let sIgnoredFiles = '%s'" 
+                \% '\n'.join(g_bldConfs[vim.eval("projName")].ignoredFiles))
+    call ctl.SetBindVarCallback(
+                \s:GetSFuncRef('s:BindIgnoredFilesCbk'), projName)
+    call ctl.SetValue(sIgnoredFiles)
+    "call ctl.ConnectButtonCallback(s:GetSFuncRef(""), "")
+    call l:dialog.AddControl(ctl)
+    call l:dialog.AddBlankLine()
 
     "---------------------------------------------------------------------------
 
@@ -4151,15 +4664,17 @@ endfunction
 function! s:InitPythonInterfaces() "{{{2
 python << PYTHON_EOF
 # -*- encoding:utf-8 -*-
-import sys, os, os.path
+import sys, os, os.path, subprocess
 import vim
 
-sys.path.append(os.path.expanduser('~/.vimlite/VimLite'))
+sys.path.append(os.path.join(vim.eval('g:VimLiteDir'), 'VimLite'))
 import Globals
 import VLWorkspace
 from VLWorkspace import VLWorkspaceST
 from TagsSettings import TagsSettings
 from TagsSettings import TagsSettingsST
+from BuildSettings import BuildSettingsST
+from BuilderManager import BuilderManagerST
 from EnvVarSettings import EnvVar
 from EnvVarSettings import EnvVarSettings
 from EnvVarSettings import EnvVarSettingsST
@@ -4167,41 +4682,7 @@ from VLWorkspaceSettings import VLWorkspaceSettings
 import BuilderGnuMake
 import IncludeParser
 
-
-def GetTemplateDict(dir):
-    from xml.dom import minidom
-    from VLProject import VLProject
-    ds = Globals.DirSaver()
-    try:
-        os.chdir(dir)
-    except OSError:
-        return {}
-    templates = {}
-    for dir in os.listdir(dir):
-        #projFile = os.path.join(dir, os.path.basename(dir) + '.'
-            #+ vim.eval('g:VLWorkspacePrjFileSuffix'))
-        # 模版项目的后缀是 .project
-        projFile = os.path.join(dir, os.path.basename(dir) + '.' + 'project')
-        if os.path.isdir(dir) and os.path.isfile(projFile):
-            tmpProj = VLProject(projFile)
-            internalType = tmpProj.GetProjectInternalType()
-
-            template = {}
-            template['name'] = tmpProj.GetName()
-            template['file'] = tmpProj.GetFileName()
-            template['desc'] = tmpProj.GetDescription()
-            bldConf = tmpProj.GetSettings().GetBuildConfiguration()
-            template['cmpType'] = bldConf.GetCompilerType()
-
-            if internalType:
-                if not templates.has_key(internalType):
-                    templates[internalType] = []
-                templates[internalType].append(template)
-            else:
-                if not templates.has_key('Others'):
-                    templates['Others'] = []
-                templates['Others'].append(template)
-    return templates
+from GetTemplateDict import GetTemplateDict
 
 
 def GenerateMenuList(li):
@@ -4239,7 +4720,7 @@ class VimLiteWorkspace():
     所有操作假定已经在工作空间缓冲区'''
     def __init__(self, fileName = ''):
         self.VLWIns = VLWorkspaceST.Get() # python VLWorkspace 对象实例
-        self.builder = BuilderGnuMake.BuilderGnuMake() # 构建器实例
+        self.builder = BuilderManagerST.Get().GetActiveBuilder() # 构建器实例
         self.VLWSettings = VLWorkspaceSettings() # 工作空间设置实例
 
         vim.command("call VimTagsManagerInit()")
@@ -4302,17 +4783,29 @@ class VimLiteWorkspace():
         self.popupMenuV = ['Please select an operation:', 
             'Add a New File...', 
             'Add Existing Files...', 
+            '-Sep1-',
             'New Virtual Folder...', 
             'Import Files From Directory...', 
 #            'Sort Items (Unrealized)', 
+            '-Sep2-',
+            'Enable Files (Non-Recursive)',
+            'Disable Files (Non-Recursive)',
+            'Swap Enabling (Non-Recursive)',
+            '-Sep3-',
             'Rename...', 
             'Remove Virtual Folder' ]
 
         # 文件右键菜单列表
         self.popupMenuF = ['Please select an operation:', 
                 'Open', 
-#                'Compile (Unrealized)', 
-#                'Preprocess (Unrealized)', 
+                #'-Sep1-',
+                #'Compile (Unrealized)', 
+                #'Preprocess (Unrealized)', 
+                '-Sep2-',
+                'Enable This File',
+                'Disable This File',
+                'Swap Enabling',
+                '-Sep3-',
                 'Rename...', 
                 'Remove' ]
 
@@ -4411,6 +4904,39 @@ class VimLiteWorkspace():
                 vim.command("an <silent> ]VLWFilePopup.%s "\
                     ":call <SID>MenuOperation('F_%s')<CR>" 
                     % (value.replace(' ', '\\ ').replace('.', '\\.'), value))
+
+    def ReinstallPopupMenuW(self):
+        '''Windows 下面的 popup 菜单有 bug，无法正常删除菜单'''
+        vim.command("silent! aunmenu ]VLWorkspacePopup")
+        for idx, value in enumerate(self.popupMenuW):
+            if idx == 0:
+                continue
+            elif value[:4] == '-Sep':
+                # 菜单分隔符
+                vim.command("an <silent> 100.%d ]VLWorkspacePopup.%s <Nop>" 
+                    % (idx * 10, value))
+            else:
+                if Globals.IsWindowsOS() and value == 'Batch Builds':
+                    '''Windows 下删除菜单有问题'''
+                    continue
+                vim.command("an <silent> 100.%d ]VLWorkspacePopup.%s "\
+                    ":call <SID>MenuOperation('W_%s')<CR>" 
+                    % (idx * 10, value.replace(' ', '\\ ').replace('.', '\\.'), 
+                       value))
+
+    def ReinstallPopupMenuP(self):
+        '''Windows 下面的 popup 菜单有 bug，无法正常删除菜单'''
+        vim.command("silent! aunmenu ]VLWProjectPopup")
+        for idx in range(1, len(self.popupMenuP)):
+            value = self.popupMenuP[idx]
+            if value[:4] == '-Sep':
+                vim.command("an <silent> 100.%d ]VLWProjectPopup.%s <Nop>" 
+                    % (idx * 10, value))
+            else:
+                vim.command("an <silent> 100.%d ]VLWProjectPopup.%s "\
+                    ":call <SID>MenuOperation('P_%s')<CR>" 
+                    % (idx * 10, value.replace(' ', '\\ ').replace('.', '\\.'), 
+                       value))
 
     def RefreshBuffer(self):
         if not self.buffer or not self.window:
@@ -4551,6 +5077,7 @@ class VimLiteWorkspace():
             del self.buffer[lnum:lnum+ret]
 
     def ExpandNode(self):
+        #vim.command("call vlutils#TimerStart()")
         se = StartEdit()
         lnum = self.window.cursor[0]
         if not self.VLWIns.IsNodeExpand(lnum):
@@ -4561,10 +5088,11 @@ class VimLiteWorkspace():
             self.buffer[lnum-1] = self.VLWIns.GetLineText(lnum).encode('utf-8')
             if texts != []:
                 self.buffer.append(texts, lnum)
+        #vim.command("call vlutils#TimerEndEcho()")
 
     def OnMouseDoubleClick(self, key = ''):
         lnum = self.window.cursor[0]
-        nodeType = self.VLWIns.GetNodeType(lnum)
+        nodeType = self.VLWIns.GetNodeTypeByLineNum(lnum)
         if nodeType == VLWorkspace.TYPE_PROJECT \
              or nodeType == VLWorkspace.TYPE_VIRTUALDIRECTORY:
             if self.VLWIns.IsNodeExpand(lnum):
@@ -4574,21 +5102,21 @@ class VimLiteWorkspace():
         elif nodeType == VLWorkspace.TYPE_FILE:
             absFile = self.VLWIns.GetFileByLineNum(lnum, True)
             if not key or key == vim.eval("g:VLWOpenNodeKey"):
-                vim.command('call s:OpenFile("%s", 0)' % absFile)
+                vim.command('call s:OpenFile(\'%s\', 0)' % absFile)
             elif key == vim.eval("g:VLWOpenNode2Key"):
-                vim.command('call s:OpenFile("%s", 1)' % absFile)
+                vim.command('call s:OpenFile(\'%s\', 1)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeInNewTabKey"):
-                vim.command('call s:OpenFileInNewTab("%s", 0)' % absFile)
+                vim.command('call s:OpenFileInNewTab(\'%s\', 0)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeInNewTab2Key"):
-                vim.command('call s:OpenFileInNewTab("%s", 1)' % absFile)
+                vim.command('call s:OpenFileInNewTab(\'%s\', 1)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeSplitKey"):
-                vim.command('call s:OpenFileSplit("%s", 0)' % absFile)
+                vim.command('call s:OpenFileSplit(\'%s\', 0)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeSplit2Key"):
-                vim.command('call s:OpenFileSplit("%s", 1)' % absFile)
+                vim.command('call s:OpenFileSplit(\'%s\', 1)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeVSplitKey"):
-                vim.command('call s:OpenFileVSplit("%s", 0)' % absFile)
+                vim.command('call s:OpenFileVSplit(\'%s\', 0)' % absFile)
             elif key == vim.eval("g:VLWOpenNodeVSplit2Key"):
-                vim.command('call s:OpenFileVSplit("%s", 1)' % absFile)
+                vim.command('call s:OpenFileVSplit(\'%s\', 1)' % absFile)
             else:
                 pass
         elif nodeType == VLWorkspace.TYPE_WORKSPACE:
@@ -4598,12 +5126,14 @@ class VimLiteWorkspace():
 
     def OnRightMouseClick(self):
         row, col = self.window.cursor
-        nodeType = self.VLWIns.GetNodeType(row)
+        nodeType = self.VLWIns.GetNodeTypeByLineNum(row)
         if nodeType == VLWorkspace.TYPE_FILE: #文件右键菜单
             vim.command("popup ]VLWFilePopup")
         elif nodeType == VLWorkspace.TYPE_VIRTUALDIRECTORY: #虚拟目录右键菜单
             vim.command("popup ]VLWVirtualDirectoryPopup")
         elif nodeType == VLWorkspace.TYPE_PROJECT: #项目右键菜单
+            if Globals.IsWindowsOS():
+                self.ReinstallPopupMenuP()
             vim.command(
                 "silent! aunmenu ]VLWProjectPopup.Custom\\ Build\\ Targets")
             project = self.VLWIns.GetDatumByLineNum(row)['project']
@@ -4621,6 +5151,8 @@ class VimLiteWorkspace():
                     try:
                         # BUG: Clean 为 30, 这里要 25 才能在 Clean 之后
                         menuNumber = self.popupMenuP.index('Clean') * 10 - 5
+                        if Globals.IsWindowsOS():
+                            menuNumber += 10
                     except ValueError:
                         pass
                     vim.command("an <silent> 100.%d ]VLWProjectPopup."
@@ -4632,6 +5164,8 @@ class VimLiteWorkspace():
 
             vim.command("popup ]VLWProjectPopup")
         elif nodeType == VLWorkspace.TYPE_WORKSPACE: #工作空间右键菜单
+            if Globals.IsWindowsOS():
+                self.ReinstallPopupMenuW()
             # 先删除上次添加的菜单
             vim.command("silent! aunmenu ]VLWorkspacePopup.Batch\\ Builds")
             vim.command("silent! aunmenu ]VLWorkspacePopup.Batch\\ Cleans")
@@ -4644,6 +5178,8 @@ class VimLiteWorkspace():
                     try:
                         menuNumber = self.popupMenuW.index('Batch Builds')
                         menuNumber = (menuNumber - 1) * 10 - 5
+                        if Globals.IsWindowsOS():
+                            menuNumber += 10
                     except ValueError:
                         pass
                     name2 = name.replace(' ', '\\ ').replace('.', '\\.')
@@ -4692,6 +5228,8 @@ class VimLiteWorkspace():
             # 而不是工作空间或项目的 Save()
             self.VLWIns.SetBuildMatrix(matrix)
             self.RefreshStatusLine()
+            # 需要全部刷新，因为不同设置，忽略的文件不一样
+            vim.command("call s:RefreshBuffer()")
 
     def GotoParent(self):
         row, col = self.window.cursor
@@ -4917,8 +5455,13 @@ class VimLiteWorkspace():
             #vim.command("silent Pyclewn")
             if not hasProjFile:
                 # NOTE: 不能处理目录名称的第一个字符为空格的情况
-                vim.command("silent Ccd %s/" % os.getcwd())
-                vim.command("Cfile '%s'" % prog)
+                if Globals.IsWindowsOS():
+                    vim.command("silent Ccd %s/" %
+                                Globals.NormalizePath(os.getcwd()))
+                    vim.command("Cfile '%s'" % Globals.NormalizePath(prog))
+                else:
+                    vim.command("silent Ccd %s/" % os.getcwd())
+                    vim.command("Cfile '%s'" % prog)
             if args:
                 vim.command("Cset args %s" % args)
             #vim.command("silent cd -")
@@ -4948,9 +5491,16 @@ class VimLiteWorkspace():
                 vim.command("wa")
             tempFile = vim.eval('tempname()')
             if True:
-                # 强制设置成英语 locale 以便 quickfix 处理
-                cmd = "LANG=en_US " + cmd
-                vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
+                if Globals.IsWindowsOS():
+                    #vim.command('!"%s >%s 2>&1"' % (cmd, tempFile))
+                    # 用 subprocess 模块代替
+                    p = subprocess.Popen('"C:\\WINDOWS\\system32\\cmd.exe" /c '
+                        '"%s 2>&1 | tee %s && pause"' % (cmd, tempFile))
+                    p.wait()
+                else:
+                    # 强制设置成英语 locale 以便 quickfix 处理
+                    cmd = "LANG=en_US " + cmd
+                    vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
                 vim.command('cgetfile %s' % tempFile)
             else:
                 os.system("gnome-terminal -t 'make' -e "\
@@ -4975,10 +5525,16 @@ class VimLiteWorkspace():
         cmd = self.builder.GetCleanCommand(projName, '')
 
         if cmd:
-            # 强制设置成英语 locale 以便 quickfix 处理
-            cmd = "LANG=en_US " + cmd
             tempFile = vim.eval('tempname()')
-            vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
+            if Globals.IsWindowsOS():
+                #vim.command('!"%s >%s 2>&1"' % (cmd, tempFile))
+                p = subprocess.Popen('"C:\\WINDOWS\\system32\\cmd.exe" /c '
+                    '"%s 2>&1 | tee %s && pause"' % (cmd, tempFile))
+                p.wait()
+            else:
+                # 强制设置成英语 locale 以便 quickfix 处理
+                cmd = "LANG=en_US " + cmd
+                vim.command("!%s 2>&1 | tee %s" % (cmd, tempFile))
             vim.command('cgetfile %s' % tempFile)
 
     def RebuildProject(self, projName):
@@ -5026,14 +5582,25 @@ class VimLiteWorkspace():
         #print args
         if prog:
             envs = ''
+            envsDict = {}
             for envVar in EnvVarSettingsST.Get().GetActiveEnvVars():
                 envs += envVar.GetString() + ' '
+                envsDict[envVar.GetKey()] = envVar.GetValue()
             #print envs
-            os.system('~/.vimlite/vimlite_run "%s" '\
-                '~/.vimlite/vimlite_exec %s %s %s &' % (prog, envs, prog, args))
-            #os.system('~/.vimlite/vimlite_term "%s" \
-            #    "/bin/sh -f $HOME/.vimlite/vimlite_exec %s %s" &' \
-            #    % (prog, prog, args))
+            if Globals.IsWindowsOS():
+                if not prog.endswith('.exe'): prog += '.exe'
+                prog = os.path.realpath(prog)
+                d = os.environ.copy()
+                d.update(envsDict)
+                p = subprocess.Popen('C:\\WINDOWS\\system32\\cmd.exe /c '
+                    '"%s %s && pause"' % (prog, args), env=d)
+            else:
+                os.system('~/.vimlite/vimlite_run "%s" '\
+                    '~/.vimlite/vimlite_exec %s %s %s &' % (prog, envs, prog,
+                                                            args))
+                #os.system('~/.vimlite/vimlite_term "%s" \
+                #    "/bin/sh -f $HOME/.vimlite/vimlite_exec %s %s" &' \
+                #    % (prog, prog, args))
 
     def BuildActiveProject(self):
         actProjName = self.VLWIns.GetActiveProjectName()
@@ -5134,6 +5701,7 @@ class VimLiteWorkspace():
         replacements = \
             TagsSettingsST.Get().tagsTokens + self.VLWSettings.tagsTokens
         if indicate:
+            vim.command("redraw")
             self.tagsManager.ParseFiles(files, replacements, IndicateProgress)
             vim.command("redraw | echo 'Done.'")
         else:
@@ -5201,7 +5769,7 @@ class VimLiteWorkspace():
 
     def ShowMenu(self):
         row, col = self.window.cursor
-        nodeType = self.VLWIns.GetNodeType(row)
+        nodeType = self.VLWIns.GetNodeTypeByLineNum(row)
         if nodeType == VLWorkspace.TYPE_WORKSPACE: #工作空间右键菜单
             popupMenuW = [i for i in self.popupMenuW if i[:4] != '-Sep']
 
@@ -5292,7 +5860,7 @@ class VimLiteWorkspace():
 
     def MenuOperation(self, menu, useGui = True):
         row, col = self.window.cursor
-        nodeType = self.VLWIns.GetNodeType(row)
+        nodeType = self.VLWIns.GetNodeTypeByLineNum(row)
 
         choice = menu[2:]
         if not choice:
@@ -5540,6 +6108,12 @@ class VimLiteWorkspace():
                     % self.VLWIns.GetDispNameByLineNum(row))
                 if input == '1':
                     self.DeleteNode()
+            elif choice == 'Enable Files (Non-Recursive)':
+                self.SetEnablingOfVirDir(row, choice)
+            elif choice == 'Disable Files (Non-Recursive)':
+                self.SetEnablingOfVirDir(row, choice)
+            elif choice == 'Swap Enabling (Non-Recursive)':
+                self.SetEnablingOfVirDir(row, choice)
             else:
                 pass
         elif nodeType == VLWorkspace.TYPE_FILE: #文件右键菜单
@@ -5558,10 +6132,59 @@ class VimLiteWorkspace():
                         % self.VLWIns.GetDispNameByLineNum(row))
                 if input == '1':
                     self.DeleteNode()
+            elif choice == 'Enable This File':
+                ret = self.VLWIns.EnableFileByLineNum(row)
+                if ret:
+                    self.RefreshLines(row, row + 1)
+            elif choice == 'Disable This File':
+                ret = self.VLWIns.DisableFileByLineNum(row)
+                if ret:
+                    self.RefreshLines(row, row + 1)
+            elif choice == 'Swap Enabling':
+                ret = self.VLWIns.SwapEnableFileByLineNum(row)
+                if ret:
+                    self.RefreshLines(row, row + 1)
             else:
                 pass
         else:
             pass
+
+    #===========================================================================
+    # Helper Functions
+    #===========================================================================
+    def SetEnablingOfVirDir(self, lnum, choice):
+        ''''''
+        if choice == 'Enable Files (Non-Recursive)':
+            f = self.VLWIns.EnableFileByLineNum
+        elif choice == 'Disable Files (Non-Recursive)':
+            f = self.VLWIns.DisableFileByLineNum
+        elif choice == 'Swap Enabling (Non-Recursive)':
+            f = self.VLWIns.SwapEnableFileByLineNum
+        else:
+            return
+
+        # 强制展开
+        vim.command("call s:ExpandNode()")
+
+        rootVDNodeDepth = self.VLWIns.GetNodeDepthByLineNum(lnum)
+        startLnum = lnum + 1
+        endLnum = self.VLWIns.GetLastChildrenLineNum(lnum)
+        if endLnum == lnum:
+            # 本虚拟目录没有任何子节点
+            return
+        for i in range(startLnum, endLnum + 1):
+            if self.VLWIns.GetNodeDepthByLineNum(i) == rootVDNodeDepth + 1:
+            # 是虚拟目录的直接子节点
+                # 函数会自动忽略不合要求的节点
+                f(i, False)
+
+        # Swap 的时候，要调用两次...
+        f(startLnum, False)
+        f(startLnum, True) # 保存
+
+        # 简单处理，刷新遍历过的全部节点
+        print startLnum, endLnum + 1
+        self.RefreshLines(startLnum, endLnum + 1)
 
     #===========================================================================
     #基本操作 ===== 结束
@@ -6881,7 +7504,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:
 plugin/vimdialog.vim	[[[1
-3345
+3358
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -6962,6 +7585,9 @@ function! g:VCBlankLine.New()
 	let newVCBlankLine.activated = 1 "是否激活，区别高亮，若 editable 为 0，无效
 	let newVCBlankLine.hiGroup = "Constant" "用于高亮
 	let newVCBlankLine.owner = {}
+
+	"是否忽略修改统计，若非零，本控件执行 Action 函数后，父窗口标识为已经修改
+	let newVCBlankLine.ignoreModify = 0
 
 	"用于自动命令和键绑定等的使用
 	let l:i = 0
@@ -7474,8 +8100,9 @@ function! g:VCSingleText.BindVariable(...)
 		if self.bindVar != ''
 			if self.isPyVar && has('python')
 				python import vim
-				exec 'py vim.command("call self.SetValue(\"%s\")" % ' 
-							\. self.bindVar . ')'
+				" NOTE: 最完备的方案，("let s = '%s'" % s.replace("'", "''"))
+				exec 'py vim.command("call self.SetValue(''%s'')" % ' 
+							\. self.bindVar . '.replace("''", "''''"))'
 			elseif !self.isPyVar
 				call self.SetValue({self.bindVar})
 			endif
@@ -7511,9 +8138,9 @@ function! g:VCSingleText.UpdateBindVar()
 	elseif self.bindVar != ''
 		if self.isPyVar != 0 && has('python')
 			py import vim
-			exec 'python ' . self.bindVar . ' = "' . self.value . '"'
+			exec 'py ' . self.bindVar . ' = "' . escape(self.value, '"\') . '"'
 		else
-			exec "let " . self.bindVar . ' = "' . self.value . '"'
+			exec "let " . self.bindVar . ' = "' . escape(self.value, '"\') . '"'
 		endif
 	endif
 endfunction
@@ -7727,29 +8354,30 @@ endfunction
 
 "Function: g:VCComboBox.Action() 控件动作 {{{2
 function! g:VCComboBox.Action()
-	let l:ret = 0
-	let l:choices = []
-	call add(l:choices, "Please select a choice:")
+	let nRet = 0
+	let lChoices = []
+	call add(lChoices, "Please select a choice:")
 	let i = 1
-	let l:index = index(self.items, self.value)
+	let nIndex = index(self.items, self.value)
 
 	while i - 1 < len(self.items)
 		let pad = "  "
-		if l:index == i - 1
+		if nIndex == i - 1
 			let pad = "* "
 		endif
-		call add(l:choices, pad . i . ". " . self.items[i - 1])
+		call add(lChoices, pad . i . ". " . self.items[i - 1])
 		let i += 1
 	endwhile
-	let l:choice = inputlist(choices)
-	if exists("l:ret") && l:choice > 0 && l:choice - 1 < len(self.items)
-		call self.SetValue(self.items[l:choice - 1])
-		if l:choice -1 != l:index
-			let l:ret = 1
+	let nChoice = inputlist(lChoices)
+	" 会排除选择*已经激活条目*的情况，避免影响 prevValue
+	if nChoice > 0 && nChoice - 1 < len(self.items) && nChoice - 1 != nIndex
+		call self.SetValue(self.items[nChoice - 1])
+		if nChoice -1 != nIndex
+			let nRet = 1
 		endif
 	endif
 
-	return l:ret
+	return nRet
 endfunction
 
 function! g:VCComboBox.ClearValueAction() "{{{2
@@ -7888,7 +8516,7 @@ function! g:VCCheckItem.UpdateBindVar()
 			endif
 			exec 'python ' . self.bindVar . ' = ' . pyVal
 		elseif !self.isPyVar
-			exec "let " . self.bindVar . ' = "' . value . '"'
+			exec "let " . self.bindVar . ' = "' . escape(value, '"\') . '"'
 		endif
 	endif
 endfunction
@@ -9120,9 +9748,9 @@ endfunction
 
 function! g:VimDialog._RefreshStatusLine() "{{{2
 	let modFlag = ''
-	if self.isModified
-		let modFlag = '\ [+]'
-	endif
+	"if self.isModified
+		"let modFlag = '\ [+]'
+	"endif
 
     "设置状态栏
     exec "setlocal statusline=" . substitute(self.bufName, ' ', '\\ ', "g") 
@@ -9347,8 +9975,10 @@ function! g:VimDialog.Action(...) "响应动作 {{{2
 				"支持在控件的 Action 中删除窗口
 				if !empty(self)
 					call self.RefreshCtlByLnum(nLn)
-					"let self.isModified = 1
-					"call self._RefreshStatusLine()
+					if !ctl.ignoreModify
+						let self.isModified = 1
+					endif
+					call self._RefreshStatusLine()
 				endif
 			endif
 		endif
@@ -9619,15 +10249,21 @@ function! g:VimDialog.Save() "{{{2
 		call self.saveCallback(self, self.saveCallbackData)
 	endif
 
-	echohl PreProc
-	if exists("*strftime")
-		echo "All have been saved at "
-		echohl Special
-		echon strftime("%c")
-	else
-		echo "All have been saved."
+	"作为子窗口的时候，不显示已保存提示信息
+	if empty(self.parentDlg)
+		echohl PreProc
+		if exists("*strftime")
+			echo "All have been saved at "
+			echohl Special
+			echon strftime("%c")
+		else
+			echo "All have been saved."
+		endif
+		echohl None
 	endif
-	echohl None
+
+	" 重置修改标志
+	let self.isModified = 0
 endfunction
 
 function! g:VimDialog.Delete() "{{{2
@@ -10382,7 +11018,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-623
+659
 *VimLite.txt*              An IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -10415,6 +11051,9 @@ CONTENTS                                *VimLite-Contents*
     7.3. OmniCpp Options                |VimLite-Options-OmniCpp|
     7.4. Clang Options                  |VimLite-Options-Clang|
     7.5. Debugger Options               |VimLite-Options-Debugger|
+8. Tips                                 |VimLite-Tips|
+    8.1. Configuration Sample           |VimLite-ConfigSample|
+    8.2. Use cl.exe On Windows          |VimLite-Windows|
 
 ==============================================================================
 1. Introduction                         *VimLite-Introduction*
@@ -10456,11 +11095,11 @@ And VimLite in google code can be found from this url:
 
 VimLite depends following software: >
     python
-    python-lxml
-    gcc
+    python-lxml (optional)
     make
-    gdb
     cscope
+    gcc
+    gdb
 <
 On ubuntu 10.04, just run: >
     sudo apt-get install python python-lxml build-essential gdb cscope
@@ -10770,6 +11409,10 @@ in VLWorkspace buffer window, popup the menu, select "Parse Workspace (Quick)".
 
     VLWTagsSetttings                    Open 'Tags Setting' dialog.
 
+    VLWCompilersSettings                Open 'Compilers Settings' dialog.
+
+    VLWBuildersSettings                 Open 'Builders Settings' dialog.
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 5.1.2. Macros Handling                  *VimLite-CodeCompletion-OmniCpp-Macros*
 
@@ -11003,6 +11646,35 @@ The frame sign background color, can be #xxxxxx format. >
 Save breakpoints info in a file. Currently, this feature does not work well,
 so you may want to disable this feature. >
     let g:VLWDbgSaveBreakpointsInfo = 1
+
+==============================================================================
+8. Tips                                 *VimLite-Tips*
+------------------------------------------------------------------------------
+8.1. Configuration Sample               *VimLite-ConfigSample*
+
+Configuration sample of VimLite >
+    let g:VLWorkspaceSaveAllBeforeBuild = 1
+    let g:VLCCC_ItemSelectionMode = 10
+    let g:VLWorkspaceParseFileAfterSave = 1
+    let g:VLWorkspaceNotParseSourceAfterSave = 1
+    let g:VLCalltips_IndicateArgument = 0
+    let g:VLCalltips_EnableSyntaxTest = 0
+    let g:VLWDbgSaveBreakpointsInfo = 0
+
+------------------------------------------------------------------------------
+8.2. Use cl.exe On Windows              *VimLite-Windows*
+
+Run :VLWBuildersSettings to open settings dialog, change "Builder Command:"
+to following (I have installed VS 2010 in D:\Program Files folder): >
+    "D:\Program Files\Microsoft Visual Studio 10.0\Common7\Tools\vsvars32.bat" && make -j 2 -f
+
+This is all.
+NOTE: Currently, VimLite can not support code completion with headers of
+      Visual Studio.
+NOTE: Compiler the program with cl.exe, this imply that VimLite can not debug
+      the program with gdb.
+
+Using MinGW is highly recommended.
 
 ------------------------------------------------------------------------------
 vim:tw=78:ft=help:norl:et:ts=4:sw=4:sts=4
@@ -12548,7 +13220,7 @@ hi def link qfError     Error
 hi def link qfWarning   WarningMsg
 
 autoload/vlutils.vim	[[[1
-323
+346
 " Description:  Common function utilities
 " Maintainer:   fanhe <fanhed@163.com>
 " License:      GPLv2
@@ -12578,6 +13250,14 @@ endfunction
 "}}}
 function! vlutils#NormalizeCmdArg(sCmd) "{{{2
     return escape(a:sCmd, ' ')
+endfunction
+"}}}
+function! vlutils#NormalizePath(sPath) "{{{2
+    if has('win32') || has('win64')
+        return substitute(a:sPath, '\', '/', 'g')
+    else
+        return a:sPath
+    endif
 endfunction
 "}}}
 " 打开指定缓冲区的窗口数目
@@ -12870,6 +13550,21 @@ function! vlutils#TimerEndEcho() "{{{2
 	call vlutils#TimerEchoMes()
 endfunction
 "}}}1
+" 模拟 python 的 os 和 os.path 模块
+" os, os.path {{{2
+let os = {}
+let path = {}
+let os.path = path
+if has('win32') || has('win64')
+    let os.extsep = '.'
+    let os.sep = '\'
+else
+    let os.altsep = ''
+    let os.extsep = '.'
+    let os.sep = '/'
+endif
+let g:vlutils#os = os
+"}}}2
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
@@ -15092,7 +15787,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-968
+973
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -15584,6 +16279,11 @@ function! s:GotoTagPosition(lTags) "{{{2
     let sFileName = dTag.filename
     let sLineNr = dTag.line
 
+    if has('win32') || has('win64')
+        " Windows 下 filename 的字符串的 \ 变成 \\\\, 原因不明
+        let sFileName = substitute(sFileName, '\\\+', '\\', 'g')
+    endif
+
     " 开始跳转
     if bufnr(sFileName) == bufnr('%')
         " 跳转的是同一个缓冲区, 仅跳至制定的行号
@@ -16062,7 +16762,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/utils.vim	[[[1
-749
+751
 " Description:  Omni completion utils script
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 11
@@ -16081,7 +16781,7 @@ autoload/omnicpp/utils.vim	[[[1
 "let omnicpp#utils#sCommentSkipExpr = "getline('.') =~# '\\V//\\|/*\\|*/'"
 let omnicpp#utils#sCommentSkipExpr = 'omnicpp#utils#CommentSkipChecker()'
 
-" 返回 1 表示忽略
+" 返回 1 表示忽略. 这个函数需要高效率
 function! omnicpp#utils#CommentSkipChecker() "{{{2
     let sLine = getline('.')
     let nCol = col('.')
@@ -16095,7 +16795,9 @@ function! omnicpp#utils#CommentSkipChecker() "{{{2
         return 0
     else
         let sStr = sLine[nCol-2 : nCol]
-        if sStr ==# "'{'" || sStr ==# "'}'"
+        " 不完善的判断. eg. ".{;,="
+        if sStr ==# "'{'" || sStr ==# "'}'" || sStr ==# '"{"' || sStr ==# '"}"'
+                    \|| sStr[: -2] ==# '"{' || sStr[1 :] ==# '}"'
             return 1
         else
             return 0
@@ -16813,7 +17515,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/scopes.vim	[[[1
-432
+436
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 13
@@ -17016,7 +17718,11 @@ function! omnicpp#scopes#GetScopeStack() "{{{2
                 elseif dToken.kind == 'cppKeyword'
                             \&& dToken.value ==# 'extern'
                     " 忽略 'extern "C" {'
-                    break
+                    let sKind = get(lTokens, idx + 1, {'kind': ''}).kind
+                    " 原始 Tokenizer() 没有 cppString 类型
+                    if sKind == 'cppString' || sKind == 'cppOperatorPunctuator'
+                        break
+                    endif
                 elseif dToken.kind == 'cppOperatorPunctuator' 
                             \&& dToken.value == '::'
                     " 作用域类别
@@ -17707,7 +18413,7 @@ endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/pyclewn.vim	[[[1
-231
+247
 " pyclewn run time file
 " Maintainer:   <xdegaye at users dot sourceforge dot net>
 "
@@ -17725,22 +18431,26 @@ let s:start_err .= "run the 'pyclewn' program to get the cause of the problem."
 " the ':Pyclewn' vim command is run.
 " They may be changed to match your preferences.
 
-let s:pgm = fnamemodify("~/.vimlite/bin/pyclewn", ":p")
+if has('win32') || has('win64')
+    let s:pgm = fnamemodify($VIM . '\vimlite\bin\pyclewn', ":p")
+else
+    let s:pgm = fnamemodify("~/.vimlite/bin/pyclewn", ":p")
+endif
 
 if !exists('g:VLWDbgFrameSignBackground')
-	let g:VLWDbgFrameSignBackground = 'DarkMagenta'
+    let g:VLWDbgFrameSignBackground = 'DarkMagenta'
 endif
 
 if !exists('g:VLWDbgProjectFile')
-	let g:VLWDbgProjectFile = ''
+    let g:VLWDbgProjectFile = ''
 endif
 
 if exists("pyclewn_args")
   let s:args = pyclewn_args
 else
   let s:args = "--window=top --maxlines=10000 --foreground=Cyan,Green,none "
-			  \. "--background=none,none," . g:VLWDbgFrameSignBackground . " "
-			  \. "--frametext=''"
+              \. "--background=none,none," . g:VLWDbgFrameSignBackground . " "
+              \. "--frametext=''"
 endif
 
 if exists("pyclewn_connection")
@@ -17820,7 +18530,7 @@ function s:start(args)
     if has("netbeans_enabled")
         throw "Error: netbeans is already enabled and connected."
     endif
-    if !executable(s:pgm)
+    if has('unix') && !executable(s:pgm)
         throw "Error: '" . s:pgm . "' cannot be found or is not an executable."
     endif
     let l:tmpfile = tempname()
@@ -17833,38 +18543,50 @@ function s:start(args)
         bwipeout (clewn)_dbgvar
     endif
 
-	let sProjFileOpt = ''
-	if g:VLWDbgProjectFile !=# ''
-		let sProjFileOpt = ',' . shellescape(g:VLWDbgProjectFile)
-	endif
+    let sProjFileOpt = ''
+    if g:VLWDbgProjectFile !=# ''
+        let sProjFileOpt = ',' . shellescape(g:VLWDbgProjectFile)
+    endif
 
     " start pyclewn and netbeans
     call s:info("Starting pyclewn, please wait...\n")
-	let b:cmd = "silent !" . s:pgm . " " . a:args . " " . s:fixed . l:tmpfile . " &"
-	if 0
-		exe "silent !" . s:pgm . " " . a:args . " " . s:fixed . l:tmpfile . " &"
-	else
-		let sTerminal = 'xterm'
-		let sTitleSw = '-T'
-		if executable('gnome-terminal')
-			let sTerminal = 'gnome-terminal'
-			let sTitleSw = '-t'
-		endif
+    let b:cmd = "silent !" . s:pgm . " " . a:args . " " . s:fixed . l:tmpfile . " &"
+    if 0
+        exe "silent !" . s:pgm . " " . a:args . " " . s:fixed . l:tmpfile . " &"
+    else
+        let sTerminal = 'xterm'
+        let sTitleSw = '-T'
+        if executable('gnome-terminal')
+            let sTerminal = 'gnome-terminal'
+            let sTitleSw = '-t'
+        endif
 python << PYTHON_EOF
 import subprocess
+import platform
+import os
 import vim
-pyclewnPopen = subprocess.Popen(
-	[vim.eval("sTerminal"), 
-	 vim.eval("sTitleSw"), 
-	 'Pyclewn', 
-	 '-e', 
-	 "sh -c 'LC_ALL=en_US.UTF-8 VIM_SERVERNAME='%s'"\
-	 " %s %s --gdb=async%s --netbeans=%s --cargs=%s'" \
-	     % (vim.eval('v:servername'), vim.eval('s:pgm'), vim.eval('a:args'), 
-		    vim.eval('sProjFileOpt'), vim.eval('s:connection'), 
-			vim.eval('l:tmpfile'))])
+envDict = os.environ.copy()
+envDict['VIM_SERVERNAME'] = vim.eval("v:servername")
+if platform.system() == 'Windows':
+    pyclewnProcess = subprocess.Popen(
+        r'"C:\Windows\system32\cmd.exe" /c '
+        + '"python "%s" %s --gdb=async%s --netbeans=%s --cargs=%s"' \
+            % (vim.eval('s:pgm'), vim.eval('a:args'), vim.eval('sProjFileOpt'),
+               vim.eval('s:connection'), vim.eval('l:tmpfile')),
+        env=envDict)
+else:
+    envDict['LC_ALL'] = 'en_US.UTF-8'
+    pyclewnProcess = subprocess.Popen(
+        [vim.eval("sTerminal"), 
+         vim.eval("sTitleSw"), 
+         'Pyclewn', 
+         '-e', 
+         "sh -c '%s %s --gdb=async%s --netbeans=%s --cargs=%s'" \
+             % (vim.eval('s:pgm'), vim.eval('a:args'), vim.eval('sProjFileOpt'),
+                vim.eval('s:connection'), vim.eval('l:tmpfile'))],
+        env=envDict)
 PYTHON_EOF
-	endif
+    endif
     call s:info("'pyclewn' has been started.\n")
     call s:info("Running nbstart, <C-C> to interrupt.\n")
     call s:pyclewn_ready(l:tmpfile)

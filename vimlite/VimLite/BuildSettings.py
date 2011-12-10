@@ -8,9 +8,10 @@ import os.path
 from xml.dom import minidom
 import XmlUtils
 import Compiler
-import BuildSystem
+import Builder
+import Globals
 
-CONFIG_FILE = os.path.expanduser('~/.vimlite/config/BuildSettings.xml')
+CONFIG_FILE = os.path.join(Globals.VIMLITE_DIR, 'config', 'BuildSettings.xml')
 
 class BuildSettingsCookie:
     '''用以确保可重入的结构，暂不需要'''
@@ -26,9 +27,9 @@ class BuildSettings:
     def __init__(self):
         self.doc = minidom.Document()
         self.fileName = ''
-        
+
         self.curCmpNode = None      # 用于迭代的，没有线程安全
-    
+
     def Load(self, version, xmlFile = ''):        
         if not xmlFile:
             fileName = 'build_settings.xml'
@@ -39,9 +40,28 @@ class BuildSettings:
         xmlVersion = self.doc.firstChild.getAttribute('Version')
         if xmlVersion != version:
             # TODO: GetDefaultCopy
-            #print 'Not equal version'
+            print 'Not equal version'
             pass
         self.fileName = os.path.abspath(fileName)
+
+    def Save(self, fileName = ''):
+        '''保存到文件'''
+        if not fileName and not self.fileName:
+            return
+
+        try:
+            if not fileName:
+                fileName = self.fileName
+            dirName = os.path.dirname(fileName)
+            if not os.path.exists(dirName):
+                os.makedirs(dirName)
+            f = open(fileName, 'wb')
+        except IOError:
+            print 'IOError:', fileName
+            raise IOError
+        #f.write(self.doc.toxml('utf-8'))
+        f.write(XmlUtils.ToPrettyXmlString(self.doc))
+        f.close()
 
     def GetCompilerNode(self, name):
         cmpsNode = XmlUtils.FindFirstByTagName(self.doc.firstChild, 'Compilers')
@@ -64,19 +84,18 @@ class BuildSettings:
                     break
             
             if oldCmp:
-                node.removeChild(oldCmp)
-            node.appendChild(cmp.ToXmlNode())
+                # 为了保持原来的顺序
+                node.replaceChild(cmp.ToXmlNode(), oldCmp)
+            else:
+                # 添加到最后
+                node.appendChild(cmp.ToXmlNode())
         else:
+            # 配置文件中没有 'Compilers' 节点，则新建一个并添加本本编译器
             node = minidom.Document().createElement('Compilers')
             self.doc.firstChild.appendChild(node)
             node.appendChild(cmp.ToXmlNode())
-        try:
-            f = open(self.fileName, 'wb')
-        except IOError:
-            print self.fileName, 'write failed!'
-            raise IOError
-        f.write(self.doc.toprettyxml(encoding = 'utf-8'))
-        f.close()
+
+        self.Save()
     
     def GetCompiler(self, name):
         return Compiler.Compiler(self.GetCompilerNode(name))
@@ -107,62 +126,37 @@ class BuildSettings:
         node = self.GetCompilerNode(name)
         if node:
             node.parentNode.removeChild(node)
-            try:
-                f = open(self.fileName, 'wb')
-            except IOError:
-                print self.fileName, 'write failed!'
-                raise IOError
-            f.write(self.doc.toprettyxml(encoding = 'utf-8'))
-            f.close()
+            self.Save()
     
-    def SetBuildSystem(self, bs):
-        '''BuildSystem 貌似是 BuilderConfig 的别名'''
-        node = XmlUtils.FindNodeByName(self.firstChild, 'BuildSystem', bs.name)
+    def SetBuilderSettings(self, bd):
+        '''会自动覆盖同名的 BuilderSettings'''
+        node = XmlUtils.FindNodeByName(self.doc.firstChild, 'BuildSystem',
+                                       bd.name)
         if node:
-            node.parentNode.removeChild(node)
-            
-        self.doc.firstChild.appendChild(bs.ToXmlNode())
+            node.parentNode.replaceChild(bd.ToXmlNode(), node)
+        else:
+            self.doc.firstChild.appendChild(bd.ToXmlNode())
         
         # Save
-        try:
-            f = open(self.fileName, 'wb')
-        except IOError:
-            print self.fileName, 'write failed!'
-            raise IOError
-        f.write(self.doc.toprettyxml(encoding = 'utf-8'))
-        f.close()
-    
-    def SetBuilderConfig(self, bc):
-        self.SetBuildSystem(bc)
-    
-    def GetBuilderConfig(self, name):
+        self.Save()
+
+    def GetBuilderSettingsByName(self, name):
         node = XmlUtils.FindNodeByName(
             XmlUtils.GetRoot(self.doc), 'BuildSystem', name)
         if node:
-            return BuildSystem.BuilderConfig(node)
+            return Builder.BuilderSettings(node = node)
         return None
-        
-    
-    def SaveBuilderConfig(self, builder):
-        '''builder 是 Builder（一个通用基类），转为 BuilderConfig 后保存'''
-        # update configuration file, why copy?
-        bs = BuildSystem.BuilderConfig()
-        bs.name = builder.name
-        bs.toolPath = builder.toolPath
-        bs.toolOptions = builder.toolOptions
-        bs.toolJobs = builder.toolJobs
-        bs.isActive = builder.isActive
-        self.SetBuildSystem(bs)
-    
-    def GetSelectedBuildSystem(self):
-        active = 'GNU makefile for g++/gcc'
+
+    def GetActiveBuilderSettings(self):
+        name = 'GNU makefile for g++/gcc'
         
         for i in XmlUtils.GetRoot(self.doc).childNodes:
             if i.nodeName == 'BuildSystem':
                 if i.getAttribute('Active').lower() == 'yes':
-                    active = i.getAttribute('Name')
+                    name = i.getAttribute('Name')
                     break
-        return active
+
+        return self.GetBuilderSettingsByName(name)
 
 
 class BuildSettingsST:
@@ -173,7 +167,7 @@ class BuildSettingsST:
         if not BuildSettingsST.__ins:
             BuildSettingsST.__ins = BuildSettings()
             # 载入默认设置
-            BuildSettingsST.__ins.Load('2.0.7', CONFIG_FILE)
+            BuildSettingsST.__ins.Load('2.1.0', CONFIG_FILE)
         return BuildSettingsST.__ins
 
     @staticmethod
@@ -210,9 +204,6 @@ class testThis(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    CONFIG_FILE = os.path.expanduser('~/.vimlite/config/BuildSettings.xml')
     unittest.main()
-
-
-
-
 

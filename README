@@ -5,9 +5,9 @@ VimLite consists mainly of the following three modules:
 1.Project Manager:
     The project management module is compatible with CodeLite 2.10. It will auto generates makefile for you. 
 2.Code Completion:
-    An enhanced OmniCpp plugin and a clang code completion.
+    An enhanced OmniCpp and a VIMCCC plugin.
         OmniCpp support the following completion: namespace, structure, class member, using, using namespace, class template, stl, etc.
-        Clang code completion support all but is slower than OmniCpp.
+        VIMCCC - A Omni cpp code completion plugin which based on libclang.
 3.Debugger Integration. 
     Gdb integration, by pyclewn.
 
@@ -16,8 +16,7 @@ Such as taglist, tagbar, NERD_commenter, snipmate, etc.
 
 
 NOTE1: Currently, VimLite is not stable enough.
-NOTE2: Currently, VimLite only support Linux(or Unix like?) platform.
-NOTE3: Currently, VimLite need GVim.
+NOTE2: Currently, VimLite need GVim.
 
 Please report bugs here http://code.google.com/p/vimlite/issues/list.
 
@@ -33,8 +32,15 @@ http://forum.ubuntu.org.cn/download/file.php?id=136304&mode=view/Screenshot.png
 http://forum.ubuntu.org.cn/download/file.php?id=136703&mode=view/quickfix.png
 http://forum.ubuntu.org.cn/download/file.php?id=141025&mode=view/Working.png
 
+VIMCCC On Linux:
+http://forum.ubuntu.org.cn/download/file.php?id=148086&mode=view/VIMCCC_On_Linux.png
+
+VIMCCC On Windows:
+http://forum.ubuntu.org.cn/download/file.php?id=148087&mode=view/VIMCCC_On_Windows.png
+
 TODO:
-1. Improve debugger integration.
-2. Filter symbols which are not include.
-3. Port to Windows.
-4. Parse saved file asynchronously.
+1. Improve debugger integration (debugger).
+2. Filter symbols which are not include (OmniCpp).
+X. Port to Windows.
+X. Parse saved file asynchronously (OmniCpp).
+X. Move clang code completion to which based on libclang (VIMCCC).

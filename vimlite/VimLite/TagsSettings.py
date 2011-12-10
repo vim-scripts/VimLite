@@ -4,7 +4,9 @@
 import pickle
 import os.path
 
-CONFIG_FILE = os.path.expanduser('~/.vimlite/config/TagsSettings.conf')
+import Globals
+
+CONFIG_FILE = os.path.join(Globals.VIMLITE_DIR, 'config', 'TagsSettings.conf')
 
 class TagsSettings:
     '''tags 设置'''
@@ -136,7 +138,11 @@ class TagsSettingsST:
 def GetGccIncludeSearchPaths():
     start = False
     result = []
-    for line in os.popen('gcc -v -x c++ /dev/null -fsyntax-only 2>&1'):
+
+    #cmd = 'gcc -v -x c++ /dev/null -fsyntax-only 2>&1'
+    cmd = 'echo "" | gcc -v -x c++ - -fsyntax-only 2>&1'
+
+    for line in os.popen(cmd):
         #if line == '#include <...> search starts here:\n':
         if line.startswith('#include <...>'):
             start = True
@@ -146,7 +152,10 @@ def GetGccIncludeSearchPaths():
             break
 
         if start:
-            result.append(line.strip())
+            if Globals.IsWindowsOS():
+                result.append(os.path.realpath(line.strip()))
+            else:
+                result.append(line.strip())
 
     return result
 

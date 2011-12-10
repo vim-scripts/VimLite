@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 # -*- encoding:utf-8 -*-
 
+'''gnu make 里面统一用 / 来分割路径'''
+
 import os
 import os.path
 import time
+import getpass
+
 import Globals
 import Macros
 
@@ -17,6 +21,17 @@ from EnvVarSettings import EnvVar
 from EnvVarSettings import EnvVarSettings
 from EnvVarSettings import EnvVarSettingsST
 
+
+'''
+GNU make 构建步骤
+1. MakeDirStep, PreBuild 和 $(Objects)，这三个目标可以不按顺序
+2. $(OutputFile)，输出文件，确保不能为空，否则 PostBuild 不执行
+3. PostBuild，最后执行
+
+根据 Makefile 的依赖来实现先后顺序，如: all: PostBuild
+'''
+
+
 def GetMakeDirCmd(bldConf, relPath = ''):
     intermediateDirectory = bldConf.GetIntermediateDirectory()
     relativePath = relPath
@@ -29,24 +44,24 @@ def GetMakeDirCmd(bldConf, relPath = ''):
         intermediateDirectory = intermediateDirectory[2:]
 
     text = ''
-    if Globals.IsLinuxOS():
-        text += '@test -d ' + relativePath + intermediateDirectory \
-                + ' || $(MakeDirCommand) ' + relativePath + intermediateDirectory
-    elif Globals.IsWindowsOS():
-        # TODO
-        pass
+
+    makingDirName = relativePath + intermediateDirectory
+    escStr = Globals.Escape(makingDirName, '"\\')
+
+    if Globals.IsWindowsOS():
+        # NOTE: 如果是 Windows 下 md 命令，只能忽略错误，无法抑制错误信息的输出
+        text += '@-$(MakeDirCommand) "%s"' % escStr
     else:
-        # TODO
-        pass
+        # posix 下
+        text += '@test -d "%s" || $(MakeDirCommand) "%s"' % (escStr, escStr)
 
     return text
 
 
 class BuilderGnuMake(Builder):
     '''GnuMake 的 Buidler'''
-    def __init__(self, name = 'GNU makefile for g++/gcc', buildTool = 'make', 
-                 buildToolOptions = '-f'):
-        Builder.__init__(self, name, buildTool, buildToolOptions)
+    def __init__(self, name = 'GNU makefile for g++/gcc', command = 'make -f'):
+        Builder.__init__(self, name, command)
     
     def Export(self, projName, confToBuild = '', isProjectOnly = False, 
                force = False):
@@ -115,11 +130,11 @@ class BuilderGnuMake(Builder):
         text += '.PHONY: all clean\n\n'
         text += 'all:\n'
         
-        buildTool = self.GetBuildToolCommand(False)
+        builderCmd = self.GetBuilderCommand(False)
         # 展开环境变量
-        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+        builderCmd = EnvVarSettingsST.Get().ExpandVariables(builderCmd)
         #replace all Windows like slashes to POSIX
-        buildTool = buildTool.replace('\\', '/')
+        builderCmd = builderCmd.replace('\\', '/')
         
         # generate the makefile for the selected workspace configuration
         matrix = VLWorkspaceST.Get().GetBuildMatrix()
@@ -219,7 +234,7 @@ class BuilderGnuMake(Builder):
 
             if not isCustom:
                 text += '\t' + self.GetCdCmd(wspFile, relProjFile) \
-                        + buildTool + ' "' + project.GetName() \
+                        + builderCmd + ' "' + project.GetName() \
                         + '.mk" clean\n'
             else:
                 customWd = projectBldConf.GetCustomBuildWorkingDir()
@@ -269,45 +284,24 @@ class BuilderGnuMake(Builder):
         self.Export(projName, confToBuild, False, False)
 
         matrix = VLWorkspaceST.Get().GetBuildMatrix()
-        buildTool = self.GetBuildToolCommand(True)
+        builderCmd = self.GetBuilderCommand(True)
         # 展开环境变量
-        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+        builderCmd = EnvVarSettingsST.Get().ExpandVariables(builderCmd)
 
         # Fix: replace all Windows like slashes to POSIX
-        buildTool = buildTool.replace('\\', '/')
+        # Not need
+        #builderCmd = builderCmd.replace('\\', '/')
 
-        type = self.NormalizeConfigName(matrix.GetSelectedConfigurationName())
-        cmd += buildTool + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
+        cmd += builderCmd + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
 
         return cmd
 
-    def GetBuildCommand(self, projName, confToBuild):
-        cmd = ''
-        bldConf = VLWorkspaceST.Get().GetProjBuildConf(projName, confToBuild)
-        if not bldConf:
-            print projName, 'have not any build config'
-            return ''
-
-        self.Export(projName, confToBuild, False, False)
-
-        matrix = VLWorkspaceST.Get().GetBuildMatrix()
-        buildTool = self.GetBuildToolCommand(True)
-        # 展开环境变量
-        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
-
-        # Fix: replace all Windows like slashes to POSIX
-        buildTool = buildTool.replace('\\', '/')
-
-        type = self.NormalizeConfigName(matrix.GetSelectedConfigurationName())
-        cmd += buildTool + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
-
-        return cmd
-    
     def GetCleanCommand(self, projName, confToBuild):
         return self.GetBuildCommand(projName, confToBuild) + ' clean'
 
     def GetBatchBuildCommand(self, projects, confToBuild):
         cmd = ''
+        #print projects
 
         if not projects:
             return cmd
@@ -315,14 +309,14 @@ class BuilderGnuMake(Builder):
         self.Export2(projects, confToBuild, False)
 
         matrix = VLWorkspaceST.Get().GetBuildMatrix()
-        buildTool = self.GetBuildToolCommand(True)
+        builderCmd = self.GetBuilderCommand(True)
         # 展开环境变量
-        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+        builderCmd = EnvVarSettingsST.Get().ExpandVariables(builderCmd)
 
         # Fix: replace all Windows like slashes to POSIX
-        buildTool = buildTool.replace('\\', '/')
+        #builderCmd = builderCmd.replace('\\', '/')
 
-        cmd += buildTool + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
+        cmd += builderCmd + ' "' + VLWorkspaceST.Get().GetName() + '_wsp.mk"'
 
         return cmd
 
@@ -332,7 +326,7 @@ class BuilderGnuMake(Builder):
         else:
             return self.GetBatchBuildCommand(projects, confToBuild) + ' clean'
 
-    def GetSingleFileCmd(self, projName, confToBuild, fileName):
+    def GetCompileFileCmd(self, projName, confToBuild, fileName):
         '''利用已生成的 Makefile，直接 make 指定文件的对象文件的目标'''
         project = VLWorkspaceST.Get().FindProjectByName(projName)
         if not project:
@@ -360,8 +354,8 @@ class BuilderGnuMake(Builder):
         target = Globals.ExpandAllVariables(
             target, VLWorkspaceST.Get(), project.GetName(), confToBuild)
 
-        cmd = self.GetProjectMakeCommand(project, confToBuild, target, False, 
-                                        False)
+        cmd = self.GetProjectMakeCommand(project, confToBuild, target, False,
+                                         False)
         # 展开环境变量 cmd
         cmd = EnvVarSettingsST.Get().ExpandVariables(cmd)
 
@@ -379,10 +373,10 @@ class BuilderGnuMake(Builder):
         self.Export(projName, confToBuild, True, False)
 
         matrix = VLWorkspaceST.Get().GetBuildMatrix()
-        buildTool = self.GetBuildToolCommand(True)
+        builderCmd = self.GetBuilderCommand(True)
 
         # Fix: replace all Windows like slashes to POSIX
-        buildTool = buildTool.replace('\\', '/')
+        #builderCmd = builderCmd.replace('\\', '/')
 
         # create the target
         target = ''
@@ -446,7 +440,6 @@ class BuilderGnuMake(Builder):
     
     def CreateSrcList(self, project, confToBuild):
         # TODO: 暂不需要
-        files = project.GetAllFiles()
         text = ''
         text += 'Srcs='
 
@@ -455,21 +448,24 @@ class BuilderGnuMake(Builder):
         cmpType = bldConf.GetCompilerType()
         cmp = BuildSettingsST.Get().GetCompiler(cmpType)
 
+        files = project.GetAllFiles(False, bldConf.GetName())
+
         relPath = ''
 
         return text
     
     def CreateObjectList(self, project, confToBuild):
-        files = project.GetAllFiles(True)   # 绝对路径
         text = ''
-        text += 'Objects='
+        text += 'Objects=\\\n'
 
         bldConf = VLWorkspaceST.Get().GetProjBuildConf(project.GetName(), 
                                                        confToBuild)
         cmpType = bldConf.GetCompilerType()
         cmp = BuildSettingsST.Get().GetCompiler(cmpType)
 
-        cwd = os.getcwd()
+        cwd = project.dirName
+
+        files = project.GetAllFiles(True, bldConf.GetName())   # 绝对路径
 
         for i in files:
             ft = cmp.GetCmpFileType(os.path.splitext(i)[1][1:])
@@ -484,7 +480,10 @@ class BuilderGnuMake(Builder):
 
             objPrefix = self.DoGetTargetPrefix(i, cwd)
 
+            text += '\t'
+
             if ft.kind == Compiler.CmpFileKindResource:
+                # 资源文件
                 text += '$(IntermediateDirectory)/' + objPrefix \
                         + os.path.dirname(i) \
                         + '$(ObjectSuffix) '
@@ -494,16 +493,16 @@ class BuilderGnuMake(Builder):
                         + os.path.splitext(os.path.basename(i))[0] \
                         + '$(ObjectSuffix) '
 
-            text += '\\\n\t'
+            text += '\\\n'
 
-        if text.endswith('\\\n\t'):
-            text = text.rstrip('\\\n\t')
+        if text.endswith('\\\n'):
+            text = text.rstrip('\\\n')
         text += '\n\n'
 
         return text
     
     def CreateLinkTargets(self, type, bldConf):
-        '''执行顺序: makeDirStep PreBuild $(Objects) $(OutputFile) PostBuild'''
+        '''执行顺序: MakeDirStep PreBuild $(Objects) $(OutputFile) PostBuild'''
         # incase project is type exe or dll, force link
         # this is to workaround bug in the generated makefiles
         # which causes the makefile to report 'nothing to be done'
@@ -519,9 +518,9 @@ class BuilderGnuMake(Builder):
             #text += '$(OutputFile)\n\n'
             text += 'PostBuild\n\n'
 
-            #text += '$(OutputFile): makeDirStep $(Objects)\n'
+            #text += '$(OutputFile): MakeDirStep $(Objects)\n'
             # 添加 PreBuild 和 PostBuild 依赖
-            text += '$(OutputFile): makeDirStep PreBuild $(Objects)\n'
+            text += '$(OutputFile): MakeDirStep PreBuild $(Objects)\n'
         else:
             # TODO: 为什么静态链接时依赖目标是一个目录？
             text += 'all: $(IntermediateDirectory) '
@@ -553,8 +552,8 @@ class BuilderGnuMake(Builder):
         supportPreprocessOnlyFiles = cmp.GetSwitch('PreprocessOnly') \
                 and cmp.GetPreprocessSuffix()
 
-        absFiles = project.GetAllFiles(True)
-        relFiles = project.GetAllFiles(False)
+        absFiles = project.GetAllFiles(True, bldConf.GetName())
+        relFiles = project.GetAllFiles(False, bldConf.GetName())
 
         text += '\n\n'
         text += '##\n'
@@ -574,11 +573,11 @@ class BuilderGnuMake(Builder):
                 fullNameOnly = os.path.basename(absFile)
                 compilationLine = ft.compilation_line
 
+                objPrefix = self.DoGetTargetPrefix(absFile, cwd)
+
                 # use UNIX style slashes
                 absFile = absFile.replace('\\', '/')
                 relFile = relFiles[index].replace('\\', '/')
-
-                objPrefix = self.DoGetTargetPrefix(absFile, cwd)
 
                 compilationLine = compilationLine.replace('$(FileName)', 
                                                           fileNameOnly)
@@ -631,6 +630,12 @@ class BuilderGnuMake(Builder):
 
                     compilerMacro = self.DoGetCompilerMacro(relFile)
                     if generateDependenciesFiles:
+                        # -MM 指示只添加非系统的头文件到目标的依赖列表
+                        # -MG 忽略找不到指定的头文件错误，直接添加到依赖列表
+                        # -MP 为所有依赖的头文件建立一个目标，预防删除了头文件后
+                        #     再 make 的时候出现找不到头文件的错误
+                        # -MT 规则的目标
+                        # -MF 输出 makefile 规则的文件
                         text += dependFile + ': ' + relFile + '\n'
                         text += '\t' + '@' + compilerMacro + ' ' + cmpOptions \
                                 + ' $(IncludePath) -MG -MP -MT' \
@@ -670,8 +675,8 @@ class BuilderGnuMake(Builder):
         # 不允许星号删除（批量删除）
         useAsterisk = False
 
-        absFiles = project.GetAllFiles(True)
-        relFiles = project.GetAllFiles(False)
+        absFiles = project.GetAllFiles(True, bldConf.GetName())
+        relFiles = project.GetAllFiles(False, bldConf.GetName())
 
         text = ''
 
@@ -711,6 +716,10 @@ class BuilderGnuMake(Builder):
 
         # delete the output file
         text += '\t' + '$(RM) ' + '$(OutputFile)\n'
+        if Globals.IsWindowsOS():
+            # Windows 下如果输出文件不是以 .exe 结尾，会被 gcc 自动加上
+            # 所以要删除此文件
+            text += '\t' + '$(RM) ' + '$(OutputFile).exe\n'
 
         # Remove the pre-compiled header
         pchFile = bldConf.GetPrecompiledHeader().strip()
@@ -724,22 +733,15 @@ class BuilderGnuMake(Builder):
         return text
     
     # Override default methods defined in the builder interface
-    def GetBuildToolCommand(self, isCommandlineCommand):
-        '''isCommandlineCommand 表示是否开多线程构建？'''
-        # TODO: 区分操作系统
+    def GetBuilderCommand(self, isCommandlineCommand):
+        '''isCommandlineCommand 表示在外部调用 make -f x.mk
+        否则就是在 工作区 makefile 中调用'''
         if isCommandlineCommand:
-            jobs = Builder.GetBuildToolJobs(self)
-            if jobs == 'unlimited':
-                jobsCmd = '-j '
-            else:
-                jobsCmd = '-j ' + jobs + ' '
-
-            buildTool = self.GetBuildToolName()
+            builderCmd = Builder.GetBuilderCommand(self)
         else:
-            jobsCmd = ''
-            buildTool = '$(MAKE)'
+            builderCmd = '"$(MAKE)"' + ' -f'
 
-        return '"' + buildTool + '" ' + jobsCmd + self.GetBuildToolOptions()
+        return builderCmd
 
     # private methods?
     def GenerateMakefile(self, project, confToBuild, force):
@@ -816,7 +818,7 @@ class BuilderGnuMake(Builder):
         #targetName = bldConf.GetIntermediateDirectory()
         projType = settings.GetProjectType(bldConf.GetName())
         if projType == Project.EXECUTABLE or projType == Project.DYNAMIC_LIBRARY:
-            targetName = 'makeDirStep'
+            targetName = 'MakeDirStep'
         else:
             targetName = '$(IntermediateDirectory)'
         text += self.CreateLinkTargets(projType, bldConf)
@@ -861,8 +863,10 @@ class BuilderGnuMake(Builder):
         return text
     
     def CreateConfigsVariables(self, project, bldConf):
+        '''生成基本变量'''
+        # TODO: 添加 PATH 变量
         name = bldConf.GetName()
-        name = self.NormalizeConfigName(name)
+        #name = self.NormalizeConfigName(name)
 
         cmpType = bldConf.GetCompilerType()
         cmp = BuildSettingsST.Get().GetCompiler(cmpType)
@@ -877,14 +881,15 @@ class BuilderGnuMake(Builder):
         text += "ConfigurationName      :=" + name + "\n"
         text += "IntermediateDirectory  :=" + bldConf.GetIntermediateDirectory() + "\n"
         text += "OutDir                 := $(IntermediateDirectory)\n"
-        text += "WorkspacePath          := \"" + VLWorkspaceST.Get().dirName + "\"\n"
-        text += "ProjectPath            := \"" + project.dirName + "\"\n"
+        text += "WorkspacePath          :=\"" + Globals.NormalizePath(VLWorkspaceST.Get().dirName) + "\"\n"
+        text += "ProjectPath            :=\"" + Globals.NormalizePath(project.dirName) + "\"\n"
         text += "CurrentFileName        :=\n" # TODO: Need implementation
         text += "CurrentFilePath        :=\n" # TODO: Need implementation
         text += "CurrentFileFullPath    :=\n" # TODO: Need implementation
-        text += "User                   :=" + os.environ['USER'] + "\n"
+        text += "User                   :=" + getpass.getuser() + "\n"
         text += "Date                   :=" + time.strftime('%Y-%m-%d', time.localtime()) + "\n"
-        text += "CodeLitePath           :=\"" + os.environ['HOME'] + '/.codelite' + "\"\n"
+        text += "CodeLitePath           :=\"" + Globals.NormalizePath(
+            os.path.join(os.path.expanduser('~'), '.codelite')) + "\"\n"
         text += "LinkerName             :=" + cmp.GetTool("LinkerName") + "\n"
         text += "ArchiveTool            :=" + cmp.GetTool("ArchiveTool") + "\n"
         text += "SharedObjectLinkerName :=" + cmp.GetTool("SharedObjectLinkerName") + "\n"
@@ -905,10 +910,13 @@ class BuilderGnuMake(Builder):
         text += "ObjectSwitch           :=" + cmp.GetSwitch("Object") + "\n"
         text += "ArchiveOutputSwitch    :=" + cmp.GetSwitch("ArchiveOutput") + "\n"
         text += "PreprocessOnlySwitch   :=" + cmp.GetSwitch("PreprocessOnly") + "\n"
-        text += "ObjectsFileList        :=\"" + objectsFileName + "\"\n"
+        text += "ObjectsFileList        :=\"" + Globals.NormalizePath(objectsFileName) + "\"\n"
 
-        # TODO: 区分操作系统
-        text += 'MakeDirCommand         :=' + 'mkdir -p' + '\n'
+        if Globals.IsWindowsOS():
+            #text += 'MakeDirCommand         :=' + 'md' + '\n'
+            text += 'MakeDirCommand         :=' + 'gmkdir -p' + '\n'
+        else:
+            text += 'MakeDirCommand         :=' + 'mkdir -p' + '\n'
 
         buildOpts = bldConf.GetCompileOptions()
         buildOpts = buildOpts.replace(';', ' ')
@@ -960,7 +968,13 @@ class BuilderGnuMake(Builder):
     
     def CreateTargets(self, type, bldConf):
         text = ''
-        text += '\t@$(MakeDirCommand) $(@D)\n'
+
+        # 不需要，直接在 MakeDirStep 目标里面解决
+        #if Globals.IsWindowsOS():
+            #text += '\t@-$(MakeDirCommand) "$(@D)"\n'
+        #else:
+            #text += '\t@$(MakeDirCommand) "$(@D)"\n'
+
         cmp = bldConf.GetCompiler()
 
         if type == Project.STATIC_LIBRARY:
@@ -986,9 +1000,6 @@ class BuilderGnuMake(Builder):
         return text
 
     def CreatePreBuildEvents(self, bldConf):
-        #name = bldConf.GetName()
-        #name = self.NormalizeConfigName(name)
-
         text = ''
 
         # add PrePreBuild. 也即 Custom Makefile Rules，属于冗余，为了兼容，暂留
@@ -1167,52 +1178,63 @@ class BuilderGnuMake(Builder):
                         break
         return not firstEnter
     
-    # 2
     def GetProjectMakeCommand(self, project, confToBuild, target, 
                               addCleanTarget, cleanOnly, 
                               commandLineBldTool = True):
         '''获取构建项目的命令。
         
-        形如："$(MAKE)" -f "LiteEditor.mk" PrePreBuild \
-                && "$(MAKE)" -f "LiteEditor.mk" PreBuild \
-                && "$(MAKE)" -f "LiteEditor.mk"'''
+        形如: "$(MAKE)" -f "LiteEditor.mk"'''
         bldConf = VLWorkspaceST.Get().GetProjBuildConf(project.GetName(), 
                                                        confToBuild)
 
         makeCommand = ''
         basicMakeCommand = ''
 
-        buildTool = self.GetBuildToolCommand(commandLineBldTool)
-        # 展开环境变量
-        buildTool = EnvVarSettingsST.Get().ExpandVariables(buildTool)
+        lMakeCommands = []
 
-        basicMakeCommand += buildTool + ' "' + project.GetName() + '.mk"'
+        builderCmd = self.GetBuilderCommand(commandLineBldTool)
+        # 展开环境变量
+        builderCmd = EnvVarSettingsST.Get().ExpandVariables(builderCmd)
+
+        basicMakeCommand += builderCmd + ' "' + project.GetName() + '.mk"'
 
         if addCleanTarget:
-            makeCommand += basicMakeCommand + ' clean && '
+            #makeCommand += basicMakeCommand + ' clean && '
+            lMakeCommands.append('%s clean' % basicMakeCommand)
 
         if bldConf and not cleanOnly:
+            # TODO: PrePreBuild is dirty
             prePreBuild = bldConf.GetPreBuildCustom().strip()
             preCmpHeader = bldConf.GetPrecompiledHeader().strip()
 
             if prePreBuild:
-                makeCommand += basicMakeCommand + ' PrePreBuild && '
+                #makeCommand += basicMakeCommand + ' PrePreBuild && '
+                lMakeCommands.append('%s PrePreBuild' % basicMakeCommand)
 
             # NOTE: 不需要在工作区 Makefile 文件指定 PreBuild 目标
             #if self.HasPrebuildCommands(bldConf):
                 #makeCommand += basicMakeCommand + ' PreBuild && '
+                #lMakeCommands.append('%s PreBuild' % basicMakeCommand)
 
             if preCmpHeader:
-                makeCommand += basicMakeCommand + ' ' + preCmpHeader + '.gch' \
-                        + ' && '
+                #makeCommand += basicMakeCommand + ' ' + preCmpHeader + '.gch' \
+                        #+ ' && '
+                lMakeCommands.append('%s %s.gch' % preCmpHeader)
+
         if not target or target == '\n':
-            makeCommand += basicMakeCommand + '\n'
+            #makeCommand += basicMakeCommand + '\n'
+            lMakeCommands.append('%s\n' % basicMakeCommand)
         else:
-            makeCommand += basicMakeCommand + ' ' + target
+            #makeCommand += basicMakeCommand + ' ' + target
+            lMakeCommands.append('%s %s' % (basicMakeCommand, target))
+
+        makeCommand = ' && '.join(lMakeCommands)
+        #print lMakeCommands
+
         return makeCommand
     
     def DoGetCompilerMacro(self, fileName):
-        '''源文件为 c 源文件用 '$(C_CompilerName)'，否则用 '$(CompilerName)' '''
+        '''C 源文件用 '$(C_CompilerName)'，否则用 '$(CompilerName)' '''
         compilerMacro = '$(CompilerName)'
         if os.path.splitext(fileName)[1] == '.c':
             compilerMacro = '$(C_CompilerName)'
@@ -1223,21 +1245,21 @@ class BuilderGnuMake(Builder):
         当前方法为把 (上层目录 + '_') 作为前缀添加。
 
         当 fileName 的目录与 cwd 不同时， 且当 fileName 包含目录层次时，
-        把 fileName 文件的 (上层目录 + '_') 作为前缀返回。'''
+        把 fileName 文件的 (父目录 + '_') 作为前缀返回。'''
         lastDir = ''
 
         if os.path.dirname(fileName) == cwd:
             return ''
 
-        if os.sep in fileName:
-            lastDir = os.path.dirname(fileName).rpartition(os.sep)[2]
+        lastDir = os.path.dirname(fileName)
+        lastDir = os.path.basename(lastDir)
+        if lastDir == '..':
+            lastDir = 'up'
+        elif lastDir == '.':
+            lastDir = 'cur'
 
-            if lastDir == '..':
-                lastDir = 'up'
-            elif lastDir == '.':
-                lastDir = 'cur'
+        if lastDir:
+            lastDir += '_'
 
-            if lastDir:
-                lastDir += '_'
         return lastDir
 

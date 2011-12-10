@@ -6,7 +6,7 @@ import os.path
 
 import Globals
 
-CONFIG_FILE = os.path.expanduser('~/.vimlite/config/EnvVarSettings.conf')
+CONFIG_FILE = os.path.join(Globals.VIMLITE_DIR, 'config', 'EnvVarSettings.conf')
 
 class EnvVar:
     '''代表一个环境变量'''

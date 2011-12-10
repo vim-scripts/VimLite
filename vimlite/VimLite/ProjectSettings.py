@@ -59,7 +59,9 @@ class ProjectSettings:
         '''Find the first build configuration by name
         
         configName: build configuration name to find
-        merge: merge with global settings or not'''
+        merge: merge with global settings or not
+        
+        如果 configName 为空，则取名字为 "Debug" 的配置'''
         if not configName:
             configName = 'Debug'
         

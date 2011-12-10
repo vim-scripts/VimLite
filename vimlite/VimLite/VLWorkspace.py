@@ -21,9 +21,14 @@ TYPE_INVALID = -1
 EXPAND_PREFIX = '~'
 FOLD_PREFIX = '+'
 FILE_PREFIX = '-'
+IGNORED_FILE_PREFIX = '#'
 
-WORKSPACE_FILE_SUFFIX = 'vlworkspace'
-PROJECT_FILE_SUFFIX = 'vlproject'
+WSP_PATH_SEP = Globals.WSP_PATH_SEP
+
+WORKSPACE_FILE_SUFFIX = Globals.WORKSPACE_FILE_SUFFIX
+PROJECT_FILE_SUFFIX = Globals.PROJECT_FILE_SUFFIX
+
+from Globals import Cmp
 
 
 def ConvertWspFileToNewFormat(fileName):
@@ -31,9 +36,25 @@ def ConvertWspFileToNewFormat(fileName):
     ins.ConvertToNewFileFormat()
     del ins
 
-def Cmp(s1, s2):
-    '''忽略大小写比较两个字符串'''
-    return cmp(s1.lower(), s2.lower())
+def GetWspPathByNode(node):
+    '''从 xml 节点获取工作区路径'''
+    wspPathList = []
+    while node:
+        name = node.getAttribute('Name')
+        if not name:
+            return ''
+
+        if node.nodeName == 'File':
+            name = os.path.basename(name)
+
+        wspPathList.insert(0, name)
+
+        if node.nodeName == 'CodeLite_Project':
+            break
+
+        node = node.parentNode
+
+    return WSP_PATH_SEP + WSP_PATH_SEP.join(wspPathList)
 
 def Glob(sDir, filters):
     '''展开通配符的文件
@@ -182,6 +203,9 @@ class VLWorkspace:
         self.fname2file = {} # 用于实现切换源文件/头文件
                              # {文件名: set(文件绝对路径)}
 
+        # Build Matrix，实时缓存，用于提高访问效率，代价是载入变慢
+        self.buildMatrix = None
+
         if fileName:
             try:
                 self.doc = minidom.parse(fileName)
@@ -236,6 +260,10 @@ class VLWorkspace:
                 self.vimLineData[-1]['deepFlag'][0] = 0
 
             self.GenerateFilesIndex()
+
+            # 载入 Build Matrix
+            self.buildMatrix = BuildMatrix(
+                XmlUtils.FindFirstByTagName(self.rootNode, 'BuildMatrix'))
         else:
             # 默认的工作空间, fileName 为空
             self.doc = minidom.parseString('''\
@@ -249,6 +277,101 @@ class VLWorkspace:
             self.rootNode = XmlUtils.GetRoot(self.doc)
             self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')
             self.dirName = os.getcwd()
+            # 载入 Build Matrix
+            self.buildMatrix = BuildMatrix(
+                XmlUtils.FindFirstByTagName(self.rootNode, 'BuildMatrix'))
+
+    def IsIgnoredFile(self, datum):
+        '''为了效率，不进行任何检查'''
+        project = datum['project']
+        buildMatrix = self.GetBuildMatrix()
+        wspSelConfName = buildMatrix.GetSelectedConfigurationName()
+        projSelConfName = buildMatrix.GetProjectSelectedConf(wspSelConfName,
+                                                             project.GetName())
+        settings = project.GetSettings()
+        # 获取非副本
+        bldConf = settings.GetBuildConfiguration(projSelConfName, False)
+
+        fileWspPath = GetWspPathByNode(datum['node'])
+        relFileWspPath = fileWspPath.partition(WSP_PATH_SEP)[2]\
+                .partition(WSP_PATH_SEP)[2]
+
+        if relFileWspPath in bldConf.ignoredFiles:
+            return True
+        else:
+            return False
+
+    def EnableFileByLineNum(self, lineNum, autoSave = True):
+        '''启用行号指定的文件，成功返回行号，失败返回 0'''
+        datum = self.GetDatumByLineNum(lineNum)
+        nodeType = self.GetNodeTypeByLineNum(lineNum)
+        if not datum or nodeType != TYPE_FILE:
+            return 0
+
+        fileWspPath = GetWspPathByNode(datum['node'])
+        relFileWspPath = fileWspPath.partition(WSP_PATH_SEP)[2]\
+                .partition(WSP_PATH_SEP)[2]
+
+        result = 0
+
+        ignoredFiles = self.GetCurIgnoredFilesByDatum(datum)
+        try:
+            ignoredFiles.remove(relFileWspPath)
+        except KeyError:
+            result = 0
+        else:
+            result = lineNum
+
+        if autoSave:
+            datum['project'].Save()
+
+        return result
+
+    def DisableFileByLineNum(self, lineNum, autoSave = True):
+        '''禁用行号指定的文件，成功返回行号，失败返回 0'''
+        datum = self.GetDatumByLineNum(lineNum)
+        nodeType = self.GetNodeTypeByLineNum(lineNum)
+        if not datum or nodeType != TYPE_FILE:
+            return 0
+
+        fileWspPath = GetWspPathByNode(datum['node'])
+        relFileWspPath = fileWspPath.partition(WSP_PATH_SEP)[2]\
+                .partition(WSP_PATH_SEP)[2]
+
+        result = 0
+
+        ignoredFiles = self.GetCurIgnoredFilesByDatum(datum)
+        if relFileWspPath in ignoredFiles:
+            result = 0
+        else:
+            ignoredFiles.add(relFileWspPath)
+            result = lineNum
+
+        if autoSave:
+            datum['project'].Save()
+
+        return result
+
+    def SwapEnableFileByLineNum(self, lineNum, autoSave = True):
+        datum = self.GetDatumByLineNum(lineNum)
+        if not datum:
+            return 0
+        if self.IsIgnoredFile(datum):
+            return self.EnableFileByLineNum(lineNum, autoSave)
+        else:
+            return self.DisableFileByLineNum(lineNum, autoSave)
+
+    def GetCurIgnoredFilesByDatum(self, datum):
+        project = datum['project']
+        buildMatrix = self.GetBuildMatrix()
+        wspSelConfName = buildMatrix.GetSelectedConfigurationName()
+        projSelConfName = buildMatrix.GetProjectSelectedConf(wspSelConfName,
+                                                             project.GetName())
+        settings = project.GetSettings()
+        # 获取非副本
+        bldConf = settings.GetBuildConfiguration(projSelConfName, False)
+
+        return bldConf.ignoredFiles
 
 #===============================================================================
 # 内部用接口，Do 开头
@@ -285,6 +408,8 @@ class VLWorkspace:
         expandText = 'x'
         if type == TYPE_FILE:
             expandText = FILE_PREFIX
+            if self.IsIgnoredFile(datum):
+                expandText = IGNORED_FILE_PREFIX
         elif type == TYPE_VIRTUALDIRECTORY or type == TYPE_PROJECT:
             if datum['expand']:
                 expandText = EXPAND_PREFIX
@@ -332,7 +457,7 @@ class VLWorkspace:
         if parentType == TYPE_FILE or parentType == TYPE_INVALID or not datum:
             return 0
         
-        parentDeep = self.GetNodeDeep(lineNum)
+        parentDeep = self.GetNodeDepthByLineNum(lineNum)
         parent = self.GetDatumByLineNum(lineNum)
         if not self.IsNodeExpand(lineNum):
             self.Expand(lineNum)
@@ -425,7 +550,7 @@ class VLWorkspace:
         if parentType != TYPE_WORKSPACE or not datum:
             return 0
         
-        parentDeep = self.GetNodeDeep(lineNum)
+        parentDeep = self.GetNodeDepthByLineNum(lineNum)
         parent = self.GetDatumByLineNum(lineNum)
         if not self.IsNodeExpand(lineNum):
             self.Expand(lineNum)
@@ -505,13 +630,23 @@ class VLWorkspace:
                 # 若非绝对路径，必须相对于项目的目录
                 name = os.path.join(parentDatum['project'].dirName, name)
             # 修改 name 为相对于项目文件目录的路径
-            name = os.path.relpath(os.path.abspath(name), 
-                                   parentDatum['project'].dirName)
+            try:
+                name = os.path.relpath(os.path.abspath(name), 
+                                       parentDatum['project'].dirName)
+            except ValueError, e:
+                # 在 Windows 下，不同分区的的文件无法以相对路径访问
+                # 不支持组织不同分区的文件于同一项目中
+                print 'Error:',
+                print e
+                return 0
             newNode = self.doc.createElement('File')
         elif nodeType == TYPE_VIRTUALDIRECTORY:
             newNode = self.doc.createElement('VirtualDirectory')
         else:
             return 0
+
+        if Globals.IsWindowsOS():
+            name = Globals.NormalizePath(name)
         
         newNode.setAttribute('Name', name)
         if insertingNode:
@@ -605,8 +740,13 @@ class VLWorkspace:
         fileDict = {}
         if type == TYPE_VIRTUALDIRECTORY or type == TYPE_PROJECT:
             # 如果有上次的缓存，直接用缓存
+            # NOTE: 每次使用缓存的时候都要修正 deepFlag
             if rootDatum.has_key('children'):
                 li = rootDatum['children']
+                nDepth = len(rootDatum['deepFlag'])
+                # 用根节点的 'deepFlag' 覆盖子节点的 'deepFlag'
+                for dCacheDatum in li:
+                    dCacheDatum['deepFlag'][: nDepth] = rootDatum['deepFlag']
                 self.vimLineData[index+1:index+1] = li
                 del rootDatum['children']
                 return len(li)
@@ -660,7 +800,7 @@ class VLWorkspace:
         while True:
             count += self.Expand(i)
             i += 1
-            if self.GetNodeDeep(i) <= deep:
+            if self.GetNodeDepthByLineNum(i) <= deep:
                 break
         return count
 
@@ -750,7 +890,7 @@ class VLWorkspace:
 
     def GetParentLineNum(self, lineNum):#
         '''如没有，返回相同的 lineNum，项目的父节点应为工作空间，但暂未实现'''
-        deep = self.GetNodeDeep(lineNum)
+        deep = self.GetNodeDepthByLineNum(lineNum)
         if deep == 0: return lineNum
         
         if self.GetNodeType(lineNum) == TYPE_PROJECT:
@@ -758,7 +898,7 @@ class VLWorkspace:
         
         for i in range(1, lineNum):
             j = lineNum - i
-            curDeep = self.GetNodeDeep(j)
+            curDeep = self.GetNodeDepthByLineNum(j)
             if curDeep == deep - 1:
                 return j
         
@@ -766,32 +906,49 @@ class VLWorkspace:
 
     def GetNextSiblingLineNum(self, lineNum):#
         '''如没有，返回相同的 lineNum'''
-        deep = self.GetNodeDeep(lineNum)
+        deep = self.GetNodeDepthByLineNum(lineNum)
         if deep == 0: return lineNum
         
         for i in range(lineNum + 1, self.GetLastLineNum() + 1):
-            curDeep = self.GetNodeDeep(i)
+            curDeep = self.GetNodeDepthByLineNum(i)
             if curDeep < deep:
                 break
             elif curDeep == deep:
                 return i
-        
+
         return lineNum
 
     def GetPrevSiblingLineNum(self, lineNum):#
         '''如没有，返回相同的 lineNum'''
-        deep = self.GetNodeDeep(lineNum)
+        deep = self.GetNodeDepthByLineNum(lineNum)
         if deep == 0: return lineNum
         
         for i in range(1, lineNum):
             j = lineNum - i
-            curDeep = self.GetNodeDeep(j)
+            curDeep = self.GetNodeDepthByLineNum(j)
             if curDeep < deep:
                 break
             elif curDeep == deep:
                 return j
         
         return lineNum
+
+    def GetLastChildrenLineNum(self, lineNum):
+        '''获取展开的当前节点的最后个孩子的行号，
+        如没有，返回原来的 lineNum'''
+        deep = self.GetNodeDepthByLineNum(lineNum)
+        if deep == 0: return lineNum
+
+        result = lineNum
+        
+        for i in range(lineNum + 1, self.GetLastLineNum() + 1):
+            curDeep = self.GetNodeDepthByLineNum(i)
+            if curDeep > deep:
+                result = i
+            else:
+                break
+
+        return result
 
     def GetAllDisplayTexts(self):#
         texts = []
@@ -817,7 +974,10 @@ class VLWorkspace:
         else:
             return self.DoGetTypeOfNode(self.vimLineData[index]['node'])
 
-    def GetNodeDeep(self, lineNum):#
+    def GetNodeTypeByLineNum(self, lineNum):
+        return self.GetNodeType(lineNum)
+
+    def GetNodeDepthByLineNum(self, lineNum):#
         '''返回节点的深度，如 lineNum 越界，返回 0'''
         index = self.DoGetIndexByLineNum(lineNum)
         if index < 0 or index >= len(self.vimLineData):
@@ -938,7 +1098,7 @@ class VLWorkspace:
             ln = self.GetPrevSiblingLineNum(lineNum)
             if ln != lineNum:
                 # 修正上一个兄弟节点到删除节点之间的所有节点的 deepFlag
-                delDeep = self.GetNodeDeep(lineNum)
+                delDeep = self.GetNodeDepthByLineNum(lineNum)
                 for i in range(ln, lineNum):
                     datum = self.GetDatumByLineNum(i)
                     datum['deepFlag'][delDeep - 1] = 0
@@ -946,12 +1106,12 @@ class VLWorkspace:
         datum = self.GetDatumByLineNum(lineNum)
         delNode = datum['node']
         project = datum['project']
-        deep = self.GetNodeDeep(lineNum)
+        deep = self.GetNodeDepthByLineNum(lineNum)
         
         # 计算删除的行数
         delLineCount = 1
         for i in range(lineNum + 1, self.GetLastLineNum() + 1):
-            if deep < self.GetNodeDeep(i):
+            if deep < self.GetNodeDepthByLineNum(i):
                 delLineCount += 1
             else:
                 break
@@ -1097,17 +1257,18 @@ class VLWorkspace:
         self.Save()
 
     def GetBuildMatrix(self):
-        return BuildMatrix(XmlUtils.FindFirstByTagName(self.rootNode, 
-                                                       'BuildMatrix'))
+        return self.buildMatrix
 
-    def SetBuildMatrix(self, buildMatrix):
+    def SetBuildMatrix(self, buildMatrix, autoSave = True):
         '''此为保存 BuildMatrix 的唯一方式！'''
         oldBm = XmlUtils.FindFirstByTagName(self.rootNode, 'BuildMatrix')
         if oldBm:
             self.rootNode.removeChild(oldBm)
         
         self.rootNode.appendChild(buildMatrix.ToXmlNode())
-        self.Save()
+        if autoSave:
+            self.Save()
+        self.buildMatrix = buildMatrix
         
         # force regeneration of makefiles for all projects
         for i in self.projects.itervalues():
@@ -1159,6 +1320,14 @@ class VLWorkspace:
 
         return self.FindProjectByName(projName)
 
+    def GetWspPathByLineNum(self, lineNum):
+        '''根据行号获取工作区路径'''
+        datum = self.GetDatumByLineNum(lineNum)
+        if datum:
+            return GetWspPathByNode(datum['node'])
+        else:
+            return ''
+
     def GetWspFilePathByFileName(self, fileName):
         '''从绝对路径的文件名中获取文件在工作空间的绝对路径
         
@@ -1167,19 +1336,7 @@ class VLWorkspace:
             return ''
 
         node = self.filesIndex[fileName]
-        parentNode = node.parentNode
-        wspPathList = [os.path.basename(node.getAttribute('Name'))]
-        while parentNode:
-            name = parentNode.getAttribute('Name')
-            if not name:
-                return ''
-
-            wspPathList.insert(0, name)
-            if parentNode.nodeName == 'CodeLite_Project':
-                break
-            parentNode = parentNode.parentNode
-
-        return '/' + '/'.join(wspPathList)
+        return GetWspPathByNode(node)
 
 
 #=====
@@ -1517,6 +1674,8 @@ class VLWorkspace:
         '''保存 .workspace 文件，如果是默认工作空间，不保存'''
         if not fileName and not self.fileName:
             return
+
+        self.SetBuildMatrix(self.buildMatrix, False)
 
         try:
             if not fileName:
