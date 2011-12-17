@@ -1338,6 +1338,9 @@ class VLWorkspace:
         node = self.filesIndex[fileName]
         return GetWspPathByNode(node)
 
+    def IsWorkspaceFile(self, fileName):
+        '''判断一个文件是否属于工作区'''
+        return self.filesIndex.has_key(fileName)
 
 #=====
     def CreateWorkspace(self, name, path):
@@ -1398,7 +1401,7 @@ class VLWorkspace:
 
         if cmpType:
             settings = project.GetSettings()
-            settings.GetBuildConfiguration().SetCompilerType(cmpType)
+            settings.GetBuildConfiguration('Debug').SetCompilerType(cmpType)
             project.SetSettings(settings)
 
         node = self.doc.createElement('Project')
@@ -1464,7 +1467,7 @@ class VLWorkspace:
         project.fileName = projFile
         if cmpType:
             settings = project.GetSettings()
-            settings.GetBuildConfiguration().SetCompilerType(cmpType)
+            settings.GetBuildConfiguration('Debug').SetCompilerType(cmpType)
             project.SetSettings(settings)
         project.Save()
 

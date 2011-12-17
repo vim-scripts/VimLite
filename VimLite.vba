@@ -132,7 +132,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-6062
+6261
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -193,7 +193,7 @@ call s:InitVariable('g:VLWorkspaceHighlightSourceFile', 1)
 call s:InitVariable('g:VLWorkspaceActiveProjectHlGroup', 'SpecialKey')
 
 "使用 clang 补全, 否则使用 OmniCpp
-call s:InitVariable("g:VLWorkspaceUseClangCC", 0)
+call s:InitVariable("g:VLWorkspaceUseVIMCCC", 0)
 "保存文件时自动解析文件, 仅对属于工作空间的文件有效
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 0)
 "自动解析保存的文件时, 仅解析头文件
@@ -410,6 +410,107 @@ endfunction
 "===============================================================================
 "===============================================================================
 
+"===============================================================================
+" VIMCCC 插件的集成
+"===============================================================================
+"{{{1
+" 1. 进入不同的源文件时，切换不同的 clang index，以提供不同的补全
+" 2. 更改项目的编译选项后，需要及时更新相应的 index 编译选项
+"    可能改变的场合:
+"       (1) 选择不同的工作区构建设置时
+"       (2) 修改项目设置
+"       (3) 修改工作区的 BuildMatrix
+"    应该设置一个需要刷新选项的标识
+" 3. 只有进入插入模式时，才开始更新翻译单元的线程
+function! s:InitVIMCCCFacilities() "{{{2
+    let g:VIMCCC_Enable = 1 " 保证初始化成功
+    call g:InitVIMClangCodeCompletion(1) " 先初始化默认的 clang index
+    py OrigVIMCCCIndex = VIMCCCIndex
+    let g:VIMCCC_Enable = 0 " 再禁用 VIMCCC
+    autocmd! FileType c,cpp call g:InitVIMClangCodeCompletionExt()
+python << PYTHON_EOF
+'''定义一些 VIMCCC 专用的 python 函数'''
+
+def UpdateVIMCCCIndexArgs(VIMCCCIndex, projName):
+    # 参数过多可能会影响速度，有拖慢了 0.05s 的情况，暂时不明原因
+    lArgs = []
+    lArgs += ws.GetProjectCppCompileOptionsForClang(projName)
+    lArgs += ('-I%s' % i for i in ws.GetCommonIncludePaths())
+    lArgs += ('-I%s' % i for i in ws.GetProjectIncludePaths(projName))
+    lArgs += ('-D%s' % i for i in ws.GetProjectPredefineMacros(projName))
+
+    # 过滤重复行
+    d = set()
+    lTmpArgs = lArgs
+    lArgs = []
+    for sArg in lTmpArgs:
+        if sArg in d:
+            continue
+        else:
+            d.add(sArg)
+            lArgs.append(sArg)
+
+    VIMCCCIndex.SetParseArgs(lArgs)
+
+def VLGetCurUnsavedFile():
+    return (vim.current.buffer.name,
+            '\n'.join(vim.current.buffer[:]))
+
+PYTHON_EOF
+endfunction
+"}}}
+" FileType 自动命令调用的函数，第一次初始化
+function! g:InitVIMClangCodeCompletionExt() "{{{2
+    let bak = g:VIMCCC_Enable
+    let g:VIMCCC_Enable = 1
+
+    let bool = 0
+    py project = ws.VLWIns.GetProjectByFileName(vim.eval("expand('%:p')"))
+    py if project: vim.command("let bool = 1")
+
+    if bool
+python << PYTHON_EOF
+# 使用关联的 clang index
+if ws.clangIndices.has_key(project.name):
+    VIMCCCIndex = ws.clangIndices[project.name]
+else:
+    VIMCCCIndex = VIMClangCCIndex()
+    UpdateVIMCCCIndexArgs(VIMCCCIndex, project.name)
+    ws.clangIndices[project.name] = VIMCCCIndex
+    # 稳当起见，先调用一次，这个函数对于多余的调用开销不大
+    vim.command("call s:UpdateClangCodeCompletion()")
+del project
+PYTHON_EOF
+        " 同时安装 BufEnter 自动命令，以保持持续更新
+        autocmd BufEnter <buffer> call <SID>UpdateClangCodeCompletion()
+    else
+        " 文件不属于工作空间，不操作
+        " 使用默认的 clang.cindex.Index
+        py VIMCCCIndex = OrigVIMCCCIndex
+    endif
+
+    call g:InitVIMClangCodeCompletion()
+    let g:VIMCCC_Enable = bak
+endfunction
+"}}}
+function! s:UpdateClangCodeCompletion() "{{{2
+    let bNeedUpdate = 0
+    py if ws.buildMTime >= VIMCCCIndex.GetArgsMTime(): 
+                \vim.command("let bNeedUpdate = 1")
+    if bNeedUpdate
+        py project = ws.VLWIns.GetProjectByFileName(vim.eval("expand('%:p')"))
+        py if project: UpdateVIMCCCIndexArgs(VIMCCCIndex, project.name)
+        py del project
+        " 启动异步更新线程，强制刷新
+        "echom 'call UpdateClangCodeCompletion() at ' . string(localtime())
+        py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("expand('%:p')"), 
+                    \[VLGetCurUnsavedFile()], True, True)
+    endif
+endfunction
+"}}}
+"}}}1
+"===============================================================================
+"===============================================================================
 
 "===============================================================================
 "缓冲区与窗口操作
@@ -431,9 +532,10 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
     "开始
     let g:VLWorkspaceHasStarted = 1
 
-    "文件类型自动命令
-    if g:VLWorkspaceUseClangCC
-        autocmd! FileType c,cpp call g:InitVLClangCodeCompletion()
+    " 文件类型自动命令
+    if g:VLWorkspaceUseVIMCCC
+        " 使用 VIMCCC，算法复杂，分治处理
+        call s:InitVIMCCCFacilities()
     else
         autocmd! FileType c,cpp call omnicpp#complete#Init()
     endif
@@ -457,7 +559,7 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
         augroup end
     endif
 
-    if !g:VLWorkspaceUseClangCC && g:VLWorkspaceParseFileAfterSave
+    if !g:VLWorkspaceUseVIMCCC && g:VLWorkspaceParseFileAfterSave
         augroup VLWorkspace
             au BufWritePost * call <SID>Autocmd_ParseCurrentFile()
         augroup end
@@ -481,7 +583,8 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
         echohl WarningMsg
         echo "NOTE1: Recommend 'yes'."
         echo "NOTE2: It will not change original files."
-        echo "NOTE3: It will override existing VimLite's workspace and project files."
+        echo "NOTE3: It will override existing VimLite's workspace and "
+                    \. "project files."
         echohl Question
         let sAnswer = input("(y/n): ")
         echohl None
@@ -536,7 +639,7 @@ function! s:Autocmd_ParseCurrentFile()
     if isWspFile
         let li = s:GetCurBufIncList()
         if has_key(s:CACHE_INCLUDES, fileName)
-            if s:CACHE_INCLUDES[fileName] == li
+            if s:CACHE_INCLUDES[fileName] ==# li
                 " 包含的头文件没有修改
                 if g:VLWorkspaceNotParseSourceAfterSave 
                             \&& index(['c', 'cpp', 'cxx', 'c++', 'cc'], 
@@ -560,18 +663,18 @@ endfunction
 
 function! s:GetCurBufIncList() "一般包含操作都放在文件前部, 故此函数复杂度不高
     let origCursor = getpos('.')
-    let result = []
+    let results = []
 
     call setpos('.', [0, 1, 1, 0])
     let firstEnter = 1
     while 1
         if firstEnter
-            let flag = 'Wc'
+            let flags = 'Wc'
             let firstEnter = 0
         else
-            let flag = 'W'
+            let flags = 'W'
         endif
-        let ret = search('\C^\s*#include\>', flag)
+        let ret = search('\C^\s*#include\>', flags)
         if ret == 0
             break
         endif
@@ -579,12 +682,12 @@ function! s:GetCurBufIncList() "一般包含操作都放在文件前部, 故此�
         let inc = matchstr(getline('.'), 
                     \'\C^\s*#include\s*\zs\(<\|"\)\f\+\(>\|"\)')
         if inc !=# ''
-            call add(result, inc)
+            call add(results, inc)
         endif
     endwhile
 
     call setpos('.', origCursor)
-    return result
+    return results
 endfunction
 
 
@@ -686,7 +789,7 @@ function! s:LocateFile(fileName) "{{{2
 
     py vim.command("let l:path = '%s'" 
                 \% ws.VLWIns.GetWspFilePathByFileName(vim.eval('a:fileName')))
-    if l:path == ''
+    if l:path ==# ''
         "文件不属于工作空间, 返回
         return 2
     endif
@@ -747,10 +850,10 @@ function! s:InstallMenuBarMenu() "{{{2
     anoremenu <silent> 200 &VimLite.Environment\ Variables\ Settings\.\.\. 
                 \:call <SID>EnvVarSettings()<CR>
 
-    if !g:VLWorkspaceUseClangCC
+    "if !g:VLWorkspaceUseVIMCCC
         anoremenu <silent> 200 &VimLite.Tags\ Settings\.\.\. 
                     \:call <SID>TagsSettings()<CR>
-    endif
+    "endif
 endfunction
 
 
@@ -826,8 +929,8 @@ function! s:ParseCurrentFile(...) "可选参数为是否解析包含的头文件
     let files = [curFile]
     if deep
         py l_project = ws.VLWIns.GetProjectByFileName(vim.eval('curFile'))
-        py l_searchPaths = []
-        py if l_project: l_searchPaths = ws.GetProjectIncludePaths(
+        py l_searchPaths = ws.GetTagsSearchPaths()
+        py if l_project: l_searchPaths += ws.GetProjectIncludePaths(
                     \l_project.GetName())
         py ws.ParseFiles(vim.eval('files') 
                     \+ IncludeParser.GetIncludeFiles(vim.eval('curFile'),
@@ -1371,7 +1474,7 @@ function! s:CreateWorkspace(...) "{{{2
                 continue
             endif
         endfor
-        if sWspName != ''
+        if sWspName !=# ''
             let sep = g:vlutils#os.sep
             if l:isSepPath != 0
                 let l:file = l:wspPath .sep. fnamemodify(sWspName, ":r") . sep
@@ -1384,7 +1487,7 @@ function! s:CreateWorkspace(...) "{{{2
 
         if a:1.type != g:VC_DIALOG
             call a:2.SetId(100)
-            if sWspName != ''
+            if sWspName !=# ''
                 let a:2.label = l:file
             else
                 let a:2.label = ''
@@ -1392,7 +1495,7 @@ function! s:CreateWorkspace(...) "{{{2
             call dialog.RefreshCtlById(100)
         endif
 
-        if a:1.type == g:VC_DIALOG && sWspName != ''
+        if a:1.type == g:VC_DIALOG && sWspName !=# ''
             "echo sWspName
             "echo l:file
             py ret = ws.VLWIns.CreateWorkspace(vim.eval('sWspName'), 
@@ -1572,7 +1675,7 @@ PYTHON_EOF
                 continue
             endif
         endfor
-        if l:projName != ''
+        if l:projName !=# ''
             let sep = g:vlutils#os.sep
             if l:isSepPath != 0
                 let l:file = l:projPath .sep. fnamemodify(l:projName, ":r") .sep
@@ -1585,7 +1688,7 @@ PYTHON_EOF
 
         "更新显示的文件名
         if a:1.type != g:VC_DIALOG
-            if l:projName != ''
+            if l:projName !=# ''
                 let a:2.label = l:file
             else
                 let a:2.label = ''
@@ -1594,7 +1697,7 @@ PYTHON_EOF
         endif
 
         "开始创建项目
-        if a:1.type == g:VC_DIALOG && l:projName != ''
+        if a:1.type == g:VC_DIALOG && l:projName !=# ''
             "echo l:projName
             "echo l:file
             "echo l:projType
@@ -1959,10 +2062,10 @@ function! s:OpenIncludeFile() "{{{2
 
     py l_project = ws.VLWIns.GetProjectByFileName(vim.eval('sCurFile'))
     py l_searchPaths = ws.GetCommonIncludePaths()
-    py if l_project: l_searchPaths = ws.GetProjectIncludePaths(
+    py if l_project: l_searchPaths += ws.GetProjectIncludePaths(
                 \l_project.GetName())
     " 如果没有所属的项目, 就用当前活动的项目的头文件搜索路径
-    py if not l_project: l_searchPaths = ws.GetActiveProjectIncludePaths()
+    py if not l_project: l_searchPaths += ws.GetActiveProjectIncludePaths()
     py vim.command("let sFile = '%s'" % IncludeParser.ExpandIncludeFile(
                 \l_searchPaths,
                 \vim.eval('sInclude'),
@@ -2119,7 +2222,7 @@ function! s:AddEnvVarCbk(ctl, data) "{{{2
     echohl Question
     let input = input("New Environment Variable:\n")
     echohl None
-    if input != ''
+    if input !=# ''
         call a:ctl.AddLineByValues(input)
     endif
 endfunction
@@ -2129,7 +2232,7 @@ function! s:EditEnvVarCbk(ctl, data) "{{{2
     echohl Question
     let input = input("Edit Environment Variable:\n", value)
     echohl None
-    if input != '' && input != value
+    if input !=# '' && input !=# value
         call a:ctl.SetCellValue(a:ctl.selection, 0, input)
     endif
 endfunction
@@ -2293,9 +2396,11 @@ function! s:SaveTagsSettingsCbk(dlg, data) "{{{2
             py ins.tagsTypes = vim.eval("ctl.values")
         endif
     endfor
-    "保存
+    " 保存
     py ins.Save()
     py del ins
+    " 重新初始化 Omnicpp 类型替换字典
+    py ws.InitOmnicppTypesVar()
 endfunction
 
 function! s:CreateTagsSettingsDialog() "{{{2
@@ -2517,7 +2622,7 @@ function! s:CompilerSettingsChangeCompilerCbk(dCtl, data) "{{{2
         let sAnswer = input("Settings seems to have been modified, "
                     \."would you like to save them? (y/n): ", "y")
         echohl None
-        if sAnswer == 'y'
+        if sAnswer ==? 'y'
             call s:CompilerSettings_OperateContents(dDlg, 1, 1)
         endif
     endif
@@ -3067,7 +3172,7 @@ function! s:NewConfigCbk(dlg, data) "{{{2
         endif
     endfor
 
-    if newConfName != ''
+    if newConfName !=# ''
         if index(comboCtl.GetItems(), newConfName) != -1
             "存在同名设置
             echohl ErrorMsg
@@ -3093,6 +3198,7 @@ def NewBuildConfig(projName, newConfName, copyFrom):
     newBldConf.name = newConfName
     settings.SetBuildConfiguration(newBldConf)
     project.SetSettings(settings)
+    ws.UpdateBuildMTime()
     del BuildConfig
 NewBuildConfig(
     vim.eval('projName'), 
@@ -3115,7 +3221,7 @@ function! s:WspBCMRenameCbk(ctl, data) "{{{2
         let line = ctl.GetLine(ctl.selection)
         let oldBcName = line[0]
         let newBcName = input("Enter New Name:\n", oldBcName)
-        if newBcName != '' && newBcName != oldBcName
+        if newBcName !=# '' && newBcName !=# oldBcName
 python << PYTHON_EOF
 def RenameProjectBuildConfig(projName, oldBcName, newBcName):
     '''可能重命名失败, 当同名的配置已经存在的时候
@@ -3142,6 +3248,7 @@ def RenameProjectBuildConfig(projName, oldBcName, newBcName):
     oldBldConf.SetName(newBcName)
     settings.SetBuildConfiguration(oldBldConf)
     project.SetSettings(settings)
+    ws.UpdateBuildMTime()
 
     # 修改工作空间文件
     matrix = ws.VLWIns.GetBuildMatrix()
@@ -3150,6 +3257,7 @@ def RenameProjectBuildConfig(projName, oldBcName, newBcName):
             if mapping.name == oldBcName:
                 mapping.name = newBcName
     ws.VLWIns.SetBuildMatrix(matrix)
+    ws.UpdateBuildMTime()
 
     # 更新当前窗口显示
     vim.command("let line[0] = newBcName")
@@ -3171,7 +3279,7 @@ PYTHON_EOF
         let line = ctl.GetLine(ctl.selection)
         let oldConfName = line[0]
         let newConfName = input("Enter New Configuration Name:\n", oldConfName)
-        if newConfName != '' && newConfName != oldConfName
+        if newConfName !=# '' && newConfName !=# oldConfName
 python << PYTHON_EOF
 def RenameWorkspaceConfiguration(oldConfName, newConfName):
     if not newConfName or newConfName == oldConfName:
@@ -3193,6 +3301,8 @@ def RenameWorkspaceConfiguration(oldConfName, newConfName):
     oldWspConf.SetName(newConfName)
     matrix.SetConfiguration(oldWspConf)
     ws.VLWIns.SetBuildMatrix(matrix)
+    # 更新 buildMTime
+    ws.UpdateBuildMTime()
 
     # 更新当前窗口表格
     vim.command("let line[0] = newConfName")
@@ -3229,7 +3339,7 @@ function! s:WspBCMRemoveCbk(ctl, data) "{{{2
         let input = input("Remove configuration \""
                     \.bldConfName."\"? (y/n): ", 'y')
         echohl None
-        if input == 'y'
+        if input ==? 'y'
             call ctl.DeleteLine(ctl.selection)
             let ctl.selection = 0
             "更新组合框
@@ -3244,6 +3354,7 @@ def RemoveProjectBuildConfig(projName, bldConfName):
     settings = project.GetSettings()
     settings.RemoveConfiguration(bldConfName)
     project.SetSettings(settings)
+    ws.UpdateBuildMTime()
 
     # 修正工作空间文件
     matrix = ws.VLWIns.GetBuildMatrix()
@@ -3253,6 +3364,7 @@ def RemoveProjectBuildConfig(projName, bldConfName):
                 # 随便选择一个可用的补上
                 mapping.name = settings.GetFirstBuildConfiguration().GetName()
     ws.VLWIns.SetBuildMatrix(matrix)
+    ws.UpdateBuildMTime()
 
 RemoveProjectBuildConfig(vim.eval('projName'), vim.eval('bldConfName'))
 PYTHON_EOF
@@ -3267,7 +3379,7 @@ PYTHON_EOF
         let input = input("Remove workspace configuration \""
                     \.configName."\"? (y/n): ", 'y')
         echohl None
-        if input == 'y'
+        if input ==? 'y'
             call ctl.DeleteLine(ctl.selection)
             let ctl.selection = 0
             "更新组合框
@@ -3279,6 +3391,7 @@ def RemoveWorkspaceConfiguration(confName):
     matrix = ws.VLWIns.GetBuildMatrix()
     matrix.RemoveConfiguration(confName)
     ws.VLWIns.SetBuildMatrix(matrix)
+    ws.UpdateBuildMTime()
 
 RemoveWorkspaceConfiguration(vim.eval('configName'))
 PYTHON_EOF
@@ -3306,13 +3419,13 @@ function! s:WspBCMActionPostCbk(ctl, data) "{{{2
     if a:ctl.id == s:WspConfigurationCtlID
     "工作空间的构建设置
         let wspSelConfName = a:ctl.GetValue()
-        if wspSelConfName == '<New...>'
+        if wspSelConfName ==# '<New...>'
             echohl Question
             let input = input("\nEnter New Configuration Name:\n")
             echohl None
             let copyFrom = a:ctl.GetPrevValue()
             call a:ctl.SetValue(copyFrom)
-            if input != ''
+            if input !=# ''
                 if index(a:ctl.GetItems(), input) != -1
                     "存在同名
                     echohl ErrorMsg
@@ -3337,10 +3450,11 @@ def NewWspConfig(newConfName, copyFrom):
     newWspConf.SetName(newConfName)
     matrix.SetConfiguration(newWspConf)
     ws.VLWIns.SetBuildMatrix(matrix)
+    ws.UpdateBuildMTime()
 NewWspConfig(vim.eval('input'), vim.eval('copyFrom'))
 PYTHON_EOF
             endif
-        elseif wspSelConfName == '<Edit...>'
+        elseif wspSelConfName ==# '<Edit...>'
             call a:ctl.SetValue(a:ctl.GetPrevValue())
             let editConfigsDlg = g:VimDialog.New(
                         \'Edit Wrokspace Configurations', dlg)
@@ -3358,7 +3472,7 @@ PYTHON_EOF
             call newCtl.DisableButton(4)
             call newCtl.DisableButton(5)
             for item in a:ctl.GetItems()
-                if item != '<New...>' && item != '<Edit...>'
+                if item !=# '<New...>' && item !=# '<Edit...>'
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
@@ -3413,7 +3527,7 @@ PYTHON_EOF
     else
     "项目的构建设置
         let value = ctl.GetValue()
-        if value == '<New...>'
+        if value ==# '<New...>'
             call a:ctl.SetValue(a:ctl.GetPrevValue())
             let newConfDlg = g:VimDialog.New('New Configuration', dlg)
             let newCtl = g:VCSingleText.New('Configuration Name:')
@@ -3425,7 +3539,7 @@ PYTHON_EOF
             call newCtl.SetId(2)
             call newCtl.AddItem('--None--')
             for item in ctl.GetItems()
-                if item != '<New...>' && item != '<Edit...>'
+                if item !=# '<New...>' && item !=# '<Edit...>'
                     call newCtl.AddItem(item)
                 endif
             endfor
@@ -3434,7 +3548,7 @@ PYTHON_EOF
             call newConfDlg.AddControl(newCtl)
             call newConfDlg.AddFooterButtons()
             call newConfDlg.Display()
-        elseif value == '<Edit...>'
+        elseif value ==# '<Edit...>'
             call a:ctl.SetValue(a:ctl.GetPrevValue())
             let editConfigsDlg = g:VimDialog.New('Edit Configurations', dlg)
             let newCtl = g:VCTable.New('')
@@ -3451,7 +3565,7 @@ PYTHON_EOF
             call newCtl.DisableButton(4)
             call newCtl.DisableButton(5)
             for item in ctl.GetItems()
-                if item != '<New...>' && item != '<Edit...>'
+                if item !=# '<New...>' && item !=# '<Edit...>'
                     call newCtl.AddLineByValues(item)
                 endif
             endfor
@@ -3490,6 +3604,7 @@ PYTHON_EOF
 
     "保存
     py ws.VLWIns.SetBuildMatrix(matrix)
+    py ws.UpdateBuildMTime()
     py del matrix
 
     "重置为未修改
@@ -3601,9 +3716,9 @@ function! s:SaveWspSettingsCbk(dlg, data) "{{{2
             py ws.VLWSettings.tagsTypes = vim.eval("ctl.values")
         endif
     endfor
-    "保存
+    " 保存
     py ws.SaveWspSettings()
-    "重新初始化 Omnicpp 类型替换字典
+    " 重新初始化 Omnicpp 类型替换字典
     py ws.InitOmnicppTypesVar()
 endfunction
 
@@ -3611,7 +3726,7 @@ function! s:AddSearchPathCbk(ctl, data) "{{{2
     echohl Question
     let input = input("Add Parser Search Path:\n")
     echohl None
-    if input != ''
+    if input !=# ''
         call a:ctl.AddLineByValues(input)
     endif
 endfunction
@@ -3621,7 +3736,7 @@ function! s:EditSearchPathCbk(ctl, data) "{{{2
     echohl Question
     let input = input("Edit Search Path:\n", value)
     echohl None
-    if input != '' && input != value
+    if input !=# '' && input !=# value
         call a:ctl.SetCellValue(a:ctl.selection, 1, input)
     endif
 endfunction
@@ -3651,8 +3766,9 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddBlankLine()
 
 "===============================================================================
+    " TODO: 如果不需要，隐藏这个设置
     "2.Include Files
-    let ctl = g:VCStaticText.New("Tags Setttings")
+    let ctl = g:VCStaticText.New("Tags Settings")
     call ctl.SetHighlight("Special")
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
@@ -3938,10 +4054,12 @@ function! s:SaveProjectSettingsCbk(dlg, data) "{{{2
     let projName = a:data
     py g_projects[vim.eval('projName')].SetSettings(
                 \g_settings[vim.eval('projName')])
+    py ws.UpdateBuildMTime()
     "py del g_projects[vim.eval('projName')]
     "py del g_settings[vim.eval('projName')]
     "py del g_bldConfs[vim.eval('projName')]
     "py del g_glbBldConfs[vim.eval('projName')]
+    " 更新 buildMTime
     return 0
 endfunction
 
@@ -3981,7 +4099,7 @@ function! s:AddBuildTblLineCbk(ctl, data) "{{{2
     echohl Question
     let input = input("New Command:\n")
     echohl None
-    if input != ''
+    if input !=# ''
         call a:ctl.AddLineByValues(1, input)
     endif
 endfunction
@@ -3990,7 +4108,7 @@ function! s:EditBuildTblLineCbk(ctl, data) "{{{2
     echohl Question
     let input = input("Edit Command:\n", value)
     echohl None
-    if input != '' && input != value
+    if input !=# '' && input !=# value
         call a:ctl.SetCellValue(a:ctl.selection, 2, input)
     endif
 endfunction
@@ -4000,7 +4118,7 @@ function! s:CustomBuildTblAddCbk(ctl, data) "{{{2
     echohl Question
     let input = input("New Target:\n")
     echohl None
-    if input != ''
+    if input !=# ''
         for lLine in ctl.table
             if lLine[0] ==# input
                 echohl ErrorMsg
@@ -4223,7 +4341,8 @@ PYTHON_EOF
     "call l:dialog.AddBlankLine()
 
     "1.1.5.忽略的文件，暂不支持修改，只能看
-    let ctl = g:VCMultiText.New("Ignored Files (Please add/remove them by Workspace popup menus):")
+    let ctl = g:VCMultiText.New("Ignored Files "
+                \. "(Please add/remove them by Workspace popup menus):")
     call ctl.SetIndent(8)
     py vim.command("let sIgnoredFiles = '%s'" 
                 \% '\n'.join(g_bldConfs[vim.eval("projName")].ignoredFiles))
@@ -4664,7 +4783,7 @@ endfunction
 function! s:InitPythonInterfaces() "{{{2
 python << PYTHON_EOF
 # -*- encoding:utf-8 -*-
-import sys, os, os.path, subprocess
+import sys, os, os.path, subprocess, time
 import vim
 
 sys.path.append(os.path.join(vim.eval('g:VimLiteDir'), 'VimLite'))
@@ -4683,7 +4802,6 @@ import BuilderGnuMake
 import IncludeParser
 
 from GetTemplateDict import GetTemplateDict
-
 
 def GenerateMenuList(li):
     liLen = len(li)
@@ -4723,8 +4841,17 @@ class VimLiteWorkspace():
         self.builder = BuilderManagerST.Get().GetActiveBuilder() # 构建器实例
         self.VLWSettings = VLWorkspaceSettings() # 工作空间设置实例
 
+        self.clangIndices = {} # 项目名字到 clang.cindex.Index 实例的字典
+
         vim.command("call VimTagsManagerInit()")
         self.tagsManager = vtm # 标签管理器
+
+        # 标识任何跟构建相关的设置的最后修改时间，粗略算法，可能更新的场合有:
+        # (1) 选择工作区构建设置
+        # (2) 修改了工作区构建设置
+        # (3) 修改了项目的构建设置
+        # (4) 修改了全局的头文件搜索路径
+        self.buildMTime = time.time()
 
         # 工作空间右键菜单列表
         self.popupMenuW = [ 'Please select an operation:', 
@@ -4745,7 +4872,7 @@ class VimLiteWorkspace():
             'Workspace Batch Build Settings...', 
             'Workspace Settings...' ]
 
-        if vim.eval('g:VLWorkspaceUseClangCC') != '0':
+        if vim.eval('g:VLWorkspaceUseVIMCCC') != '0':
             self.popupMenuW.remove('Parse Workspace (Full)')
             self.popupMenuW.remove('Parse Workspace (Quick)')
             self.popupMenuW.remove('-Sep3-')
@@ -4775,7 +4902,7 @@ class VimLiteWorkspace():
             '-Sep6-', 
             'Settings...' ]
 
-        if vim.eval('g:VLWorkspaceUseClangCC') == '0':
+        if vim.eval('g:VLWorkspaceUseVIMCCC') == '0':
             self.popupMenuP.remove('Edit PCH Header For Clang...')
             self.popupMenuP.remove('-Sep6-')
 
@@ -4842,6 +4969,9 @@ class VimLiteWorkspace():
         self.OpenWorkspace(fileName)
         self.RefreshBuffer()
 
+    def UpdateBuildMTime(self):
+        self.buildMTime = time.time()
+
     def LoadWspSettings(self):
         if self.VLWIns.fileName:
             # 读取配置文件
@@ -4860,7 +4990,7 @@ class VimLiteWorkspace():
             self.LoadWspSettings()
 
     def OpenTagsDatabase(self):
-        if self.VLWIns.fileName and vim.eval('g:VLWorkspaceUseClangCC') == '0':
+        if self.VLWIns.fileName and vim.eval('g:VLWorkspaceUseVIMCCC') == '0':
             dbFileName = os.path.splitext(self.VLWIns.fileName)[0] + '.vltags'
             self.tagsManager.OpenDatabase(dbFileName)
 
@@ -4971,23 +5101,23 @@ class VimLiteWorkspace():
             return
 
         name = os.path.splitext(os.path.basename(fileName))[0]
-        result = []
+        results = []
 
         if Globals.IsCppSourceFile(fileName):
             for ext in Globals.CPP_HEADER_EXT:
                 swapFileName = name + os.path.extsep + ext
                 if self.VLWIns.fname2file.has_key(swapFileName):
-                    result.extend(self.VLWIns.fname2file[swapFileName])
+                    results.extend(self.VLWIns.fname2file[swapFileName])
         elif Globals.IsCppHeaderFile(fileName):
             for ext in Globals.CPP_SOURCE_EXT:
                 swapFileName = name + os.path.extsep + ext
                 if self.VLWIns.fname2file.has_key(swapFileName):
-                    result.extend(self.VLWIns.fname2file[swapFileName])
+                    results.extend(self.VLWIns.fname2file[swapFileName])
         else:
             pass
 
-        result.sort(Globals.Cmp)
-        return result
+        results.sort(Globals.Cmp)
+        return results
 
     def SwapSourceHeader(self, fileName):
         '''切换源/头文件，仅对在工作区中的文件有效
@@ -5027,7 +5157,7 @@ class VimLiteWorkspace():
 
         fnames = self.VLWIns.fname2file.keys()
         fnames.sort()
-        result = []
+        results = []
         questionList = []
         for fname in fnames:
             fname2 = fname
@@ -5038,12 +5168,12 @@ class VimLiteWorkspace():
             if matchName2 in fname2:
                 tmpList = []
                 for absFileName in self.VLWIns.fname2file[fname]:
-                    result.append(absFileName)
+                    results.append(absFileName)
                     tmpList.append('%s --> %s' % (fname, absFileName))
                 tmpList.sort()
                 questionList.extend(tmpList)
 
-        if not result:
+        if not results:
             vim.command('echohl WarningMsg')
             vim.command('echo "No matched file was found!"')
             vim.command('echohl None')
@@ -5059,7 +5189,7 @@ class VimLiteWorkspace():
                 #'input("Type number and <Enter> (empty cancels): ")')
             choice = int(choice) - 1
             if choice >= 0 and choice < len(questionList):
-                vim.command("call s:OpenFile('%s')" % result[choice])
+                vim.command("call s:OpenFile('%s')" % results[choice])
         except:
             pass
 
@@ -5230,6 +5360,8 @@ class VimLiteWorkspace():
             self.RefreshStatusLine()
             # 需要全部刷新，因为不同设置，忽略的文件不一样
             vim.command("call s:RefreshBuffer()")
+            # 更新 buildMTime
+            self.UpdateBuildMTime()
 
     def GotoParent(self):
         row, col = self.window.cursor
@@ -5296,6 +5428,13 @@ class VimLiteWorkspace():
             if idx == len(names) - 1:
                 # 最后的，保存
                 ret = self.VLWIns.AddFileNode(row, names[idx])
+                # 强制保存
+                try:
+                    project = self.VLWIns.GetDatumByLineNum(row)['project']
+                    project.Save()
+                except:
+                    print 'Save project filed after AddFileNodes()'
+                    pass
             else:
                 ret = self.VLWIns.AddFileNodeQuickly(row, names[idx])
             # 只需刷新添加的节点的上一个兄弟节点到添加的节点之间的显示
@@ -5707,16 +5846,53 @@ class VimLiteWorkspace():
         else:
             self.tagsManager.ParseFiles(files, replacements, None)
 
+    def GetTagsSearchPaths(self):
+        '''获取 tags 包含文件的搜索路径'''
+        results = \
+            TagsSettingsST.Get().includePaths + self.VLWSettings.includePaths
+        return results
+
     def GetCommonIncludePaths(self):
         '''获取公共的头文件搜索路径'''
-        result = \
+        # TODO: 不应该返回 tags 设置的包含路径，暂时算是正确
+        results = \
             TagsSettingsST.Get().includePaths + self.VLWSettings.includePaths
-        return result
+        return results
+
+    def GetProjectCCompileOptionsForClang(self, projName, wspConfName = ''):
+        results = self.GetProjectCompileOptions(projName, wspConfName, 1)
+        cmd = Globals.ExpandShellCmd(results[0].replace(';', ' '))
+        return Globals.GetIncludesAndMacrosFromArgs(cmd)
+
+    def GetProjectCppCompileOptionsForClang(self, projName, wspConfName = ''):
+        results = self.GetProjectCompileOptions(projName, wspConfName, 2)
+        cmd = Globals.ExpandShellCmd(results[0].replace(';', ' '))
+        return Globals.GetIncludesAndMacrosFromArgs(cmd)
 
     def GetProjectIncludePaths(self, projName, wspConfName = ''):
         '''获取指定项目指定构建设置的头文件搜索路径
+
+        wspConfName 为空则获取当前激活的工作区构建设置
         
         返回绝对路径列表'''
+        return self.GetProjectCompileOptions(projName, wspConfName, 4)
+
+    def GetProjectPredefineMacros(self, projName, wspConfName = ''):
+        '''返回预定义的宏的列表'''
+        return self.GetProjectCompileOptions(projName, wspConfName, 8)
+
+    def GetProjectCompileOptions(self, projName, wspConfName = '',
+                                 flags = 2 | 4 | 8):
+        '''获取编译选项，暂时只获取包含目录和预定义宏
+
+        flags: 可用二进制的或操作
+            0 -> 无
+            1 -> C 编译器选项
+            2 -> C++ 编译器选项
+            4 -> 包含路径
+            8 -> 预定义宏
+        
+        返回列表'''
         project = self.VLWIns.FindProjectByName(projName)
         if not project:
             return []
@@ -5725,20 +5901,23 @@ class VimLiteWorkspace():
         if not wspConfName:
             wspConfName = matrix.GetSelectedConfigurationName()
 
-        result = \
-            TagsSettingsST.Get().includePaths + self.VLWSettings.includePaths
+        # TODO: 需要获取编译器的全局包含路径
+
+        results = []
+        cCompileOpts = []
+        cppCompileOpts = []
+        includePaths = []
+        predefineMacros = []
 
         ds = Globals.DirSaver()
         try:
             os.chdir(project.dirName)
         except OSError:
-            return result
+            return []
         projConfName = matrix.GetProjectSelectedConf(wspConfName, project.name)
         if not projConfName:
-            return result
+            return []
 
-        '添加编译选项指定的搜索路径'
-        # FIXME: 无效的 projConfName 居然也返回有效的 bldConf
         bldConf = self.VLWIns.GetProjBuildConf(project.name, projConfName)
         if bldConf and not bldConf.IsCustomBuild():
             tmpIncPaths = bldConf.GetIncludePath().split(';')
@@ -5746,26 +5925,46 @@ class VimLiteWorkspace():
                 # 从 xml 里提取的字符串全部都是 unicode
                 tmpPath = Globals.ExpandAllVariables(tmpPath, self.VLWIns,
                                                      projName, projConfName)
-                result.append(os.path.abspath(tmpPath).encode('utf-8'))
+                includePaths.append(os.path.abspath(tmpPath).encode('utf-8'))
 
-        return result
+            predefineMacros += [i.encode('utf-8').strip()
+                                for i in bldConf.GetPreprocessor().split(';')
+                                    if i.strip()]
+
+        # NOTE: 编译器选项是一个字符串，而不是列表
+        cCompileOpts.append(bldConf.GetCCompileOptions().encode('utf-8'))
+        cppCompileOpts.append(bldConf.GetCompileOptions().encode('utf-8'))
+        if flags & 1:
+            # C 编译器选项
+            results += cCompileOpts
+        if flags & 2:
+            # C++ 编译器选项
+            results += cppCompileOpts
+        if flags & 4:
+            # 包含路径
+            results += includePaths
+        if flags & 8:
+            # 预定义宏
+            results += predefineMacros
+
+        return results
 
     def GetActiveProjectIncludePaths(self, wspConfName = ''):
         actProjName = self.VLWIns.GetActiveProjectName()
         return self.GetProjectIncludePaths(actProjName, wspConfName)
 
     def GetWorkspaceIncludePaths(self, wspConfName = ''):
-        incPaths = []
+        incPaths = self.GetCommonIncludePaths()
         for projName in ws.VLWIns.projects.keys():
             incPaths += ws.GetProjectIncludePaths(projName, wspConfName)
         guard = set()
-        result = []
+        results = []
         # 过滤重复的项
         for path in incPaths:
             if not path in guard:
-                result.append(path)
+                results.append(path)
                 guard.add(path)
-        return result
+        return results
 
     def ShowMenu(self):
         row, col = self.window.cursor
@@ -6499,768 +6698,6 @@ endfunction
 
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
-plugin/VLClangCodeCompletion.vim	[[[1
-760
-" Vim global plugin for code-completion with clang
-" Author:   fanhe <fanhed@163.com>
-" License:  This file is placed in the public domain.
-" Create:   2011 Apr 21
-" Change:   2011 Jun 25
-
-"if !has('python')
-    "echo "Error: ".expand('%:p')." required vim compiled with +python"
-    "finish
-"endif
-
-if exists("g:loaded_VLClangCodeCompletion")
-    finish
-endif
-let g:loaded_VLClangCodeCompletion = 1
-
-if !executable('clang')
-    finish
-endif
-
-function! s:InitVariable(varName, defaultVal) "{{{2
-    if !exists(a:varName)
-		let {a:varName} = a:defaultVal
-        return 1
-    endif
-    return 0
-endfunction
-"}}}
-
-let s:CompletionType_NormalCompl = 0
-let s:CompletionType_MemberCompl = 1
-
-"autocmd FileType c,cpp call g:InitVLClangCodeCompletion()
-
-function! g:GetClangCodeCompletionOutput() "{{{2
-    let nLine = line('.')
-    let nCol = col('.')
-    return s:GetCodeCompletionOutput(nLine, nCol, '', '')
-endfunction
-"}}}
-
-"临时启用选项函数 {{{2
-function! s:SetOpts()
-    let s:bak_cot = &completeopt
-
-    if g:VLCCC_ItemSelectionMode == 0 " 不选择
-        set completeopt-=menu,longest
-        set completeopt+=menuone
-    elseif g:VLCCC_ItemSelectionMode == 1 " 选择并插入文本
-        set completeopt-=menuone,longest
-        set completeopt+=menu
-    elseif g:VLCCC_ItemSelectionMode == 2 " 选择但不插入文本
-        set completeopt-=menu,longest
-        set completeopt+=menuone
-    else
-        set completeopt-=menu
-        set completeopt+=menuone,longest
-    endif
-
-    return ''
-endfunction
-function! s:RestoreOpts()
-    if exists('s:bak_cot')
-        let &completeopt = s:bak_cot
-        unlet s:bak_cot
-    else
-        return ""
-    endif
-
-    let sRet = ""
-
-    if pumvisible()
-        if g:VLCCC_ItemSelectionMode == 0 " 不选择
-            let sRet = "\<C-p>"
-        elseif g:VLCCC_ItemSelectionMode == 1 " 选择并插入文本
-            let sRet = ""
-        elseif g:VLCCC_ItemSelectionMode == 2 " 选择但不插入文本
-            let sRet = "\<C-p>\<Down>"
-        else
-            let sRet = "\<Down>"
-        endif
-    endif
-
-    return sRet
-endfunction
-function! s:CheckIfSetOpts()
-    let sLine = getline('.')
-    let nCol = col('.') - 1
-    "若是成员补全，添加 longest
-    if sLine[nCol-2:] =~ '->' || sLine[nCol-1:] =~ '\.' 
-                \|| sLine[nCol-2:] =~ '::'
-        call s:SetOpts()
-    endif
-
-    return ''
-endfunction
-"}}}
-function! s:CanComplete() "{{{2
-    if (getline('.') =~ '#\s*include')
-        " 写头文件，忽略
-        return 0
-    else
-        " 检测光标所在的位置，如果在注释、双引号、浮点数时，忽略
-        let nLine = line('.')
-        let nCol = col('.') - 1 " 是前一列 eg. ->|
-        if nCol < 1
-            " TODO: 支持续行的补全
-            return 0
-        endif
-        if g:VLCCC_EnableSyntaxTest
-            let lStack = synstack(nLine, nCol)
-            let lStack = empty(lStack) ? [] : lStack
-            for nID in lStack
-                if synIDattr(nID, 'name') 
-                            \=~? 'comment\|string\|float\|character'
-                    return 0
-                endif
-            endfor
-        else
-            " TODO
-        endif
-
-        return 1
-    endif
-endfunction
-"}}}
-function! s:LaunchVLClangCodeCompletion() "{{{2
-    if s:CanComplete()
-        return "\<C-x>\<C-o>"
-    else
-        return ''
-    endif
-endfunction
-"}}}
-function! s:CompleteByChar(char) "{{{2
-    if a:char ==# '.'
-        return a:char . s:LaunchVLClangCodeCompletion()
-    elseif a:char ==# '>'
-        if getline('.')[col('.') - 2] != '-'
-            return a:char
-        else
-            return a:char . s:LaunchVLClangCodeCompletion()
-        endif
-    elseif a:char ==# ':'
-        if getline('.')[col('.') - 2] != ':'
-            return a:char
-        else
-            return a:char . s:LaunchVLClangCodeCompletion()
-        endif
-    endif
-endfunction
-"}}}
-function! g:InitVLClangCodeCompletion() "{{{2
-    setlocal omnifunc=VLClangCodeCompletion
-
-    " MayComplete to '.'
-    call s:InitVariable('g:VLCCC_MayCompleteDot', 1)
-
-    " MayComplete to '->'
-    call s:InitVariable('g:VLCCC_MayCompleteArrow', 1)
-
-    " MayComplete to '::'
-    call s:InitVariable('g:VLCCC_MayCompleteColon', 1)
-
-    " 把回车映射为: 
-    " 在补全菜单中选择并结束补全时, 若选择的是函数, 自动显示函数参数提示
-    call s:InitVariable('g:VLCCC_MapReturnToDispCalltips', 1)
-
-    " When completeopt does not contain longest option, this setting 
-    " controls the behaviour of the popup menu selection 
-    " when starting the completion
-    "   0 = don't select first item
-    "   1 = select first item (inserting it to the text)
-    "   2 = select first item (without inserting it to the text)
-    "   default = 2
-    call s:InitVariable('g:VLCCC_ItemSelectionMode', 2)
-
-    " 使用语法测试
-    call s:InitVariable('g:VLCCC_EnableSyntaxTest', 1)
-
-    " Clang program
-    call s:InitVariable('g:VLCCC_ClangProgram', 'clang')
-
-    " Indicate syntax error when completing
-    call s:InitVariable('g:VLCCC_IndicateError', 1)
-
-
-    " 初始化函数参数提示服务
-    call g:InitVLCalltips()
-
-    if g:VLCCC_MayCompleteDot
-        inoremap <silent> <buffer> . 
-                    \<C-r>=<SID>SetOpts()<CR>
-                    \<C-r>=<SID>CompleteByChar('.')<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
-    endif
-
-    if g:VLCCC_MayCompleteArrow
-        inoremap <silent> <buffer> > 
-                    \<C-r>=<SID>SetOpts()<CR>
-                    \<C-r>=<SID>CompleteByChar('>')<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
-    endif
-
-    if g:VLCCC_MayCompleteColon
-        inoremap <silent> <buffer> : 
-                    \<C-r>=<SID>SetOpts()<CR>
-                    \<C-r>=<SID>CompleteByChar(':')<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
-    endif
-
-    if g:VLCCC_ItemSelectionMode > 4
-        inoremap <silent> <buffer> <C-n> 
-                    \<C-r>=<SID>CheckIfSetOpts()<CR>
-                    \<C-r>=<SID>LaunchVLClangCodeCompletion()<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
-    else
-        "inoremap <silent> <buffer> <C-n> 
-                    "\<C-r>=<SID>SetOpts()<CR>
-                    "\<C-r>=<SID>LaunchVLClangCodeCompletion()<CR>
-                    "\<C-r>=<SID>RestoreOpts()<CR>
-    endif
-
-    if g:VLCCC_MapReturnToDispCalltips
-        inoremap <silent> <expr> <buffer> <CR> pumvisible() ? 
-                    \"\<C-y>\<C-r>=<SID>RequestCalltips(1)\<Cr>" : 
-                    \"\<CR>"
-    endif
-
-    "显示函数 calltips 的快捷键
-    exec 'inoremap <silent> <buffer> ' . g:VLCalltips_DispCalltipsKey 
-                \. ' <C-r>=<SID>RequestCalltips()<CR>'
-endfunction
-"}}}
-function! s:GetCalltips(lOutput, sFuncName) "{{{2
-    let lOutput = a:lOutput
-    let sFuncName = a:sFuncName
-
-    let lCalltips = []
-
-    for sLine in lOutput
-        if sLine[:11] == 'COMPLETION: '
-            let sString = sLine[12:]
-
-            if sString !~# '^' . sFuncName . '\>'
-                continue
-            endif
-
-            let nColonIdx = stridx(sString, ' : ')
-            if nColonIdx != -1
-                let sFuncName = sString[: nColonIdx-1]
-                let sProto = sString[nColonIdx+3 :]
-            else
-                continue
-            endif
-
-            let sKind = s:GetKind(sProto)
-            if sKind == 'f'
-                call add(lCalltips, s:PruneProto(sProto))
-            endif
-        endif
-    endfor
-
-    return lCalltips
-endfunction
-"}}}
-function! s:RequestCalltips(...) "{{{2
-    if a:0 > 0 && a:1 "从全能补全菜单选择条目后，使用上次的输出
-        let sLine = getline('.')
-        let nCol = col('.')
-        if sLine[nCol-3:] =~ '^()'
-            normal! h
-            let sFuncName = matchstr(sLine[: nCol-4], '\w\+$')
-
-            let lCalltips = s:GetCalltips(s:lOutput, sFuncName)
-            call g:DisplayVLCalltips(lCalltips, 0)
-        endif
-    else "普通情况，请求 calltips
-        "确定函数括号开始的位置
-        let lOrigCursor = getpos('.')
-        let lStartPos = searchpairpos('(', '', ')', 'nWb', 
-                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
-        "考虑刚好在括号内，加 'c' 参数
-        let lEndPos = searchpairpos('(', '', ')', 'nWc', 
-                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
-        let lCurPos = lOrigCursor[1:2]
-
-        "不在括号内
-        if lStartPos ==# [0, 0]
-            return ''
-        endif
-
-        "获取函数名称和名称开始的列，只能处理 '(' "与函数名称同行的情况，
-        "允许之间有空格
-        let sStartLine = getline(lStartPos[0])
-        let sFuncName = matchstr(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
-        let nFuncStartIdx = match(sStartLine[: lStartPos[1]-1], '\w\+\ze\s*($')
-
-        let lCalltips = []
-        if sFuncName != ''
-            "找到了函数名，开始全能补全
-
-            "初始化 VLWorkspace 的附加参数
-            let sAdditionOpts = g:GetVLWAdditionClangOpts()
-
-            let sOutput = s:GetCodeCompletionOutput(lStartPos[0], 
-                        \nFuncStartIdx+1, sAdditionOpts, '')
-            let s:lOutput = split(sOutput, "\n")
-            let lCalltips = s:GetCalltips(s:lOutput, sFuncName)
-        endif
-
-        call setpos('.', lOrigCursor)
-        call g:DisplayVLCalltips(lCalltips, 0)
-    endif
-
-    return ''
-endfunction
-"}}}
-function! s:GetClangVersion() "{{{2
-    if !executable('clang')
-        return 0.0
-    endif
-
-    return str2float(matchstr(system('clang -v'), 'version\s\zs[0-9.]\+\ze\s'))
-endfunction
-"}}}
-function! s:GetKind(proto) "{{{2
-    " v 变量
-    " f 函数或方法
-    " m 结构或类成员
-    " t typedef
-    " d #define 或宏
-    if a:proto == ''
-        return 't'
-    endif
-    let l:ret = match(a:proto, '^\[#')
-    let l:params = match(a:proto, '(')
-    if l:ret == -1 && l:params == -1
-        return 't'
-    endif
-    if l:ret != -1 && l:params == -1
-        return 'v'
-    endif
-    if l:params != -1
-        return 'f'
-    endif
-    return 'm'
-endfunction
-"}}}
-function! s:PruneProto(prototype) "{{{2
-    " [# 属性（返回类型、修饰） #]
-    let sProto = substitute(a:prototype, '[#', '', 'g')
-    let sProto = substitute(sProto, '#]', ' ', 'g')
-
-    " <# 函数参数列表 #>
-    let sProto = substitute(sProto, '#>', '', 'g')
-    let sProto = substitute(sProto, '<#', '', 'g')
-    " {# 可选的函数参数（有默认值的参数） #}
-    let sProto = substitute(sProto, '{#.*#}', '', 'g')
-
-    "清理所有尖括号内容
-    let l:tmp = sProto
-    let sProto = ''
-    let idx = 0
-    let l:count = 0
-    while l:tmp[idx] != ''
-        if l:tmp[idx] == '<'
-            let l:count += 1
-        elseif l:tmp[idx] == '>'
-            let l:count -= 1
-        elseif l:count == 0
-            let sProto .= l:tmp[idx]
-        endif
-
-        let idx += 1
-    endwhile
-
-    return sProto
-endfunction
-"}}}
-function! s:SyntaxCheck(sLine) "{{{2
-    let sLine = a:sLine
-
-    if match(sLine, '\%(error\): ') == -1
-        return 0
-    endif
-
-    let sPattern = '^\(.*\):\(\d*\):\(\d*\):\(\%({\d\+:\d\+-\d\+:\d\+}\)*\)'
-    let sTmp = matchstr(sLine, sPattern)
-    let sFName = substitute(sTmp, sPattern, '\1', '')
-    let nLine = substitute(sTmp, sPattern, '\2', '')
-    let nCol = substitute(sTmp, sPattern, '\3', '')
-    let sErrors = substitute(sTmp, sPattern, '\4', '')
-
-    " Highlighting the ^
-    let sPat = '/\%' . nLine . 'l' . '\%' . nCol . 'c./'
-    exec 'syntax match' . ' SpellBad ' . sPat
-
-    let lRanges = split(sErrors, '}')
-    for sRange in lRanges
-        " Doing precise error and warning handling.
-        " The highlight will be the same as clang's carets.
-        let sPattern = '{\%(\d\+\):\(\d\+\)-\%(\d\+\):\(\d\+\)'
-        let sTmp = matchstr(sRange, sPattern)
-        let nStartCol = substitute(sTmp, sPattern, '\1', '')
-        let nEndCol = substitute(sTmp, sPattern, '\2', '')
-        " Highlighting the ~~~~
-        let sPat = '/\%' . nLine . 'l'
-                    \. '\%' . nStartCol . 'c'
-                    \. '.*'
-                    \. '\%' . nEndCol . 'c/'
-        exec 'syntax match' . ' SpellBad ' . sPat
-    endfor
-
-    return 1
-endfunction
-"}}}
-function! VLClangCodeCompletion(findstart, base) "{{{2
-    if a:findstart
-        syntax clear SpellBad
-        call g:Timer.Start() "计时用
-
-        let sLine = getline('.')
-        let nStartIdx = col('.') - 1
-        "普通补全
-        let b:nCompletionType = s:CompletionType_NormalCompl
-        let nBlankIdx = nStartIdx
-        if sLine[nBlankIdx - 1] =~ '\s'
-            "跳过空格， . -> :: 之间是允许空格的...
-            while nBlankIdx > 0 && sLine[nBlankIdx - 1] =~ '\s'
-                let nBlankIdx -= 1
-            endwhile
-        endif
-        if sLine[nBlankIdx - 1] =~ '[(,]'
-            "在括号内或者前面遇到逗号（括号内？），应该是函数 calltips
-            let b:findstart = nBlankIdx
-            return nBlankIdx
-        endif
-        "不会是函数 calltips
-        while nStartIdx > 0 && sLine[nStartIdx - 1] =~ '\i'
-            "跳过缩进， . -> :: 之间是允许空格的...
-            let nStartIdx -= 1
-        endwhile
-        if sLine[nStartIdx - 2:] =~ '->' || sLine[nStartIdx - 1] == '.'
-            "是成员补全
-            let b:nCompletionType = s:CompletionType_MemberCompl
-        endif
-        let b:findstart = nStartIdx
-        return nStartIdx
-    endif
-
-    "===========================================================================
-    " 补全操作开始
-    "===========================================================================
-
-    let nLine = line('.') "行
-    let nCol = col('.') "列
-    "初始化 VLWorkspace 的附加参数
-    let sAdditionOpts = g:GetVLWAdditionClangOpts()
-
-    "返回的是列表，以后可能改为返回字符串
-    let b:sOutput = s:GetCodeCompletionOutput(nLine, nCol, sAdditionOpts, '')
-    let s:lOutput = split(b:sOutput, "\n")
-
-    "调试用
-    let b:lRes = []
-    let b:base = a:base
-    let sBase = a:base
-
-    if sBase != ''
-        "使用二分查找搜索匹配的结果，效果不明显，瓶颈在 clang
-        "暂时没有处理 'Pattern'
-        "let lOutput = s:DoBinarySearch(s:lOutput, 'COMPLETION: ' . sBase)
-        let lOutput = s:lOutput
-    else
-        let lOutput = s:lOutput
-    endif
-
-    let bHasErrors = 0
-
-    for sLine in lOutput
-        "clang 输出示例:
-        "一般单词: 候选单词
-        "'Pattern': 为可用语法
-        "'(Hidden)': 被覆盖的函数(派生类覆盖基类)
-        "[# #]: 限定词(类型, 修饰)
-        "<# #>: 必要形参
-        "{# #}: 可选参数
-        "=======================================================================
-        "COMPLETION: useconds_t : useconds_t
-        "COMPLETION: Pattern : using <#qualifier#>::<#name#>
-        "COMPLETION: at : [#const_reference#]at(<#size_type __n#>)[# const#]
-        "COMPLETION: reserve : [#void#]reserve({#<#size_type __res_arg#>#})
-        "COMPLETION: GameClean (Hidden) : [#void#]MB_GAME::GameClean()
-        "=======================================================================
-        if sLine[:11] ==# 'COMPLETION: '
-            if bHasErrors
-                break
-            endif
-
-            let sString = sLine[12:]
-
-            "Chop off anything after " : ", if present, and move it to the menu.
-            let sMenu = ''
-            let nColonIdx = stridx(sString, ' : ')
-            if nColonIdx != -1
-                let sWord = sString[:nColonIdx-1]
-                let sAbbr = sWord
-                let sMenu = sString[nColonIdx+3:]
-            else
-                let sWord = sString
-                let sAbbr = sWord
-                let sMenu = sString
-            endif
-
-            "处理 'Pattern'
-            if sWord ==# 'Pattern'
-                let sWord = matchstr(sMenu, '\w\+\>')
-            endif
-
-            " Chop off " (Hidden)", if present, and move it to the menu.
-            let nHiddenIdx = stridx(sWord, " (Hidden)")
-            if nHiddenIdx != -1
-               let sMenu .= " (Hidden)"
-               let sWord = sWord[:nHiddenIdx-1]
-            endif
-
-            "不符合要求，跳过
-            if sWord !~ '^' . sBase "大小写由选项控制
-                continue
-            endif
-
-            let sKind = s:GetKind(sMenu)
-            if sKind ==# 't' 
-                        \&& b:nCompletionType == s:CompletionType_MemberCompl
-                "在成员补全中过滤掉类型定义的条目
-                "continue
-            endif
-
-            if sKind ==# 'f'
-                "若为函数类型，添加左括号
-                let sWord .= '()'
-            endif
-
-            "let sMenu = s:PruneProto(sMenu)
-        elseif sLine[:9] == 'OVERLOAD: '
-            "TODO: 重载?! 2.7 版貌似没有这个东东?
-            throw "OVERLOAD!"
-            continue
-        else
-            if s:SyntaxCheck(sLine)
-                let bHasErrors = 1
-            endif
-            continue
-        endif
-
-
-        let sMenu = ''
-        let sLine = ''
-        let dItem = {
-                    \ 'word' : sWord,
-                    \ 'menu' : sMenu,
-                    \ 'info' : sLine,
-                    \ 'kind' : sKind,
-                    \ 'icase': &ignorecase,
-                    \ 'dup'  : 0,
-                    \}
-
-        "一般都比较慢，所以用异步方法
-        if complete_add(dItem) == 0
-            "加入失败 (空字符串或者内存不足)
-            break
-        endif
-        if complete_check()
-            "搜索被中止
-            break
-        endif
-
-        "调试用
-        "call add(b:lRes, dItem)
-    endfor
-
-    if has('python')
-        py g_ds = None
-    endif
-
-    call g:Timer.EndEchoMes()
-
-    "return b:lRes
-    return []
-    "===========================================================================
-    " 补全操作结束
-    "===========================================================================
-endfunction
-"}}}
-" 二分查找匹配的结果
-function! s:DoBinarySearch(list, base) "{{{2
-    let l:res = []
-
-    let pat = a:base
-    let listLen = len(a:list)
-    let l = len(pat)
-    let b:idx = s:BinaryGetIndex(a:list, pat)
-    if b:idx != -1
-        let min = b:idx
-        let max = b:idx
-        while min-1 >= 0 && a:list[min-1][: l-1] ==? pat
-            let min -= 1
-        endwhile
-        while max+1 < listLen && a:list[max+1][: l-1] ==? pat
-            let max += 1
-        endwhile
-        let l:res = a:list[min : max]
-    endif
-
-    return l:res
-endfunction
-"}}}
-" 二分查找匹配的索引，-1 为无匹配
-function! s:BinaryGetIndex(list, base) "{{{2
-    let n1 = 0
-    let n2 = len(a:list) - 1
-    let l = len(a:base)
-    if n1 == n2 || l == 0
-        return -1
-    endif
-
-    let n = (n1 + n2) / 2
-    while n2 != n1 + 1
-        if a:list[n][: l-1] <? a:base
-            let n1 = n
-        elseif a:list[n][: l-1] >? a:base
-            let n2 = n
-        else
-            return n
-        endif
-        let n = (n1 + n2) / 2
-    endwhile
-
-    "已无中间值，分别比较两端值
-    if a:list[n1] ==? a:base
-        return n1
-    elseif a:list[n2] ==? a:base
-        return n2
-    else
-        return -1
-    endif
-endfunction
-"}}}
-"获取当前编辑的文件指定位置的自动完成列表(原始输出)
-"附加选项和预编译头选项都是完全的选项，而不仅仅是其中的一部分！
-function! s:GetCodeCompletionOutput(nLine, nCol, sAdtOpts, sPchFile) "{{{2
-    let nLine = a:nLine
-    let nCol = a:nCol
-    let sAdtOpts = a:sAdtOpts
-    let sPchOpts = ''
-    if a:sPchFile !=# ''
-        let sPchOpts = '-include-pch ' . a:sPchFile
-    endif
-
-    if s:GetClangVersion() > 2.7
-        "新版本，直接从标准输入读入，无须请求 IO，快！
-        "代码取自 llvm svn
-
-        " Build a clang commandline to do code completion on stdin.
-        let sCommand = shellescape(g:VLCCC_ClangProgram)
-                    \. ' -cc1 -fsyntax-only'
-                    \. ' -fno-caret-diagnostics'
-                    \. ' -fdiagnostics-print-source-range-info'
-                    \. ' -cc1 -code-completion-at=-:' . nLine . ':' . nCol
-                    \. ' -x c++ '
-                    \. ' ' . sAdtOpts
-                    \. ' ' . sPchOpts
-                    \. ' - '
-
-        " Copy the contents of the current buffer into a string for stdin.
-        " TODO: The extra space at the end is for working around clang's
-        " apparent inability to do code completion at the very end of the
-        " input.
-        " TODO: Is it better to feed clang the entire file instead of truncating
-        " it at the current line?
-        let sClangInput = join(getline(1, nLine), "\n") . " "
-
-        " Run it!
-        let sOutput = system(sCommand, sClangInput)
-    endif
-
-    return sOutput
-endfunction
-"}}}
-function! g:GetVLWAdditionClangOpts() "{{{2
-    if !has('python') || !g:VLWorkspaceHasStarted
-        return ''
-    endif
-    let sPchFile = ''
-    py g_ds = None
-python << PYTHON_EOF
-def GetVLWAdditionClangOpts():
-    # NOTE: 这个文件内的 dir() 为空！
-    #if 'ws' not in dir() or not ws:
-    if not ws:
-        vim.command("echom 'Why?'")
-        return
-
-    matrix = ws.VLWIns.GetBuildMatrix()
-    wspSelConf = matrix.GetSelectedConfigurationName()
-    fileName = vim.eval("expand('%:p')")
-    project = ws.VLWIns.GetProjectByFileName(fileName)
-    if not project:
-        vim.command("echom 'no project'")
-        return
-
-    global g_ds
-    g_ds = Globals.DirSaver()
-    os.chdir(project.dirName)
-
-    projSelConf = matrix.GetProjectSelectedConf(wspSelConf, project.GetName())
-    bldConf = ws.VLWIns.GetProjBuildConf(project.GetName(), projSelConf)
-    if not bldConf or bldConf.IsCustomBuild():
-        vim.command("echom 'no bldConf or is custom build'")
-        return
-
-    opts = []
-
-    includePaths = bldConf.GetIncludePath()
-    for i in includePaths.split(';'):
-        if i:
-            opts.append('-I%s' % i)
-
-    cmpOpts = bldConf.GetCompileOptions().replace('$(shell', '$(')
-
-    isCFile = (os.path.splitext(fileName)[1] == '.c')
-    if isCFile:
-        cmpOpts = bldConf.GetCCompileOptions().replace('$(shell', '$(')
-
-    # clang 不接受 -g3 参数
-    cmpOpts = cmpOpts.replace('-g3', '-g')
-
-    opts += cmpOpts.split(';')
-
-    pprOpts = bldConf.GetPreprocessor()
-
-    for i in pprOpts.split(';'):
-        if i:
-            opts.append('-D%s' % i)
-
-    vim.command("let sAdditionOpts = '%s'" % ' '.join(opts).encode('utf-8'))
-
-    vim.command("let sPchFile = '%s'" % os.path.join(
-        project.dirName, project.name + '_VLWPCH.h.pch'))
-GetVLWAdditionClangOpts()
-PYTHON_EOF
-    if filereadable(sPchFile)
-        let sAdditionOpts .= ' -include-pch ' . sPchFile
-    endif
-
-    return sAdditionOpts
-endfunction
-"}}}
-" vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 plugin/VLUtils.vim	[[[1
 240
 " Vim script utilities for VimLite
@@ -7503,6 +6940,502 @@ endfunction
 
 
 " vim:fdm=marker:fen:fdl=1:et:
+plugin/VIMClangCC.vim	[[[1
+494
+" Vim Script
+" Author:   fanhe <fanhed@163.com>
+" License:  GPLv2
+" Create:   2011-12-16
+" Change:   2011-12-16
+
+if !has('python')
+    echohl ErrorMsg
+    echom "Error: ".expand('<sfile>:p')." required vim compiled with +python"
+    echohl None
+    finish
+endif
+
+if exists("g:loaded_VIMClangCC")
+    finish
+endif
+let g:loaded_VIMClangCC = 1
+
+autocmd FileType c,cpp call g:InitVIMClangCodeCompletion()
+
+" 标识是否第一次初始化
+let s:bFirstInit = 1
+
+let s:sPluginPath = substitute(expand('<sfile>:p:h'), '\\', '/', 'g')
+
+if has('win32') || has('win64')
+    let s:sDefaultPyModPath = fnamemodify($VIM . '\vimlite\VimLite', ":p")
+else
+    let s:sDefaultPyModPath = fnamemodify("~/.vimlite/VimLite", ":p")
+endif
+
+function! s:InitVariable(varName, defaultVal) "{{{2
+    if !exists(a:varName)
+        let {a:varName} = a:defaultVal
+        return 1
+    else
+        return 0
+    endif
+endfunction
+"}}}
+
+
+" 临时启用选项函数 {{{2
+function! s:SetOpts()
+    let s:bak_cot = &completeopt
+
+    if g:VIMCCC_ItemSelectionMode == 0 " 不选择
+        set completeopt-=menu,longest
+        set completeopt+=menuone
+    elseif g:VIMCCC_ItemSelectionMode == 1 " 选择并插入文本
+        set completeopt-=menuone,longest
+        set completeopt+=menu
+    elseif g:VIMCCC_ItemSelectionMode == 2 " 选择但不插入文本
+        set completeopt-=menu,longest
+        set completeopt+=menuone
+    else
+        set completeopt-=menu
+        set completeopt+=menuone,longest
+    endif
+
+    return ''
+endfunction
+function! s:RestoreOpts()
+    if exists('s:bak_cot')
+        let &completeopt = s:bak_cot
+        unlet s:bak_cot
+    else
+        return ""
+    endif
+
+    let sRet = ""
+
+    if pumvisible()
+        if g:VIMCCC_ItemSelectionMode == 0 " 不选择
+            let sRet = "\<C-p>"
+        elseif g:VIMCCC_ItemSelectionMode == 1 " 选择并插入文本
+            let sRet = ""
+        elseif g:VIMCCC_ItemSelectionMode == 2 " 选择但不插入文本
+            let sRet = "\<C-p>\<Down>"
+        else
+            let sRet = "\<Down>"
+        endif
+    endif
+
+    return sRet
+endfunction
+function! s:CheckIfSetOpts()
+    let sLine = getline('.')
+    let nCol = col('.') - 1
+    " 若是成员补全，添加 longest
+    if sLine[nCol-2:] =~ '->' || sLine[nCol-1:] =~ '\.' 
+                \|| sLine[nCol-2:] =~ '::'
+        call s:SetOpts()
+    endif
+
+    return ''
+endfunction
+"}}}
+function! s:ShouldComplete() "{{{2
+    if (getline('.') =~ '#\s*include')
+        " 写头文件，忽略
+        return 0
+    else
+        " 检测光标所在的位置，如果在注释、双引号、浮点数时，忽略
+        let nLine = line('.')
+        let nCol = col('.') - 1 " 是前一列 eg. ->|
+        if nCol < 1
+            " TODO: 支持续行的补全
+            return 0
+        endif
+        if g:VIMCCC_EnableSyntaxTest
+            let lStack = synstack(nLine, nCol)
+            let lStack = empty(lStack) ? [] : lStack
+            for nID in lStack
+                if synIDattr(nID, 'name') 
+                            \=~? 'comment\|string\|float\|character'
+                    return 0
+                endif
+            endfor
+        else
+            " TODO
+        endif
+
+        return 1
+    endif
+endfunction
+"}}}
+function! s:LaunchVIMClangCodeCompletion() "{{{2
+    if s:ShouldComplete()
+        return "\<C-x>\<C-o>"
+    else
+        return ''
+    endif
+endfunction
+"}}}
+function! s:CompleteByChar(char) "{{{2
+    if a:char ==# '.'
+        return a:char . s:LaunchVIMClangCodeCompletion()
+    elseif a:char ==# '>'
+        if getline('.')[col('.') - 2] != '-'
+            return a:char
+        else
+            return a:char . s:LaunchVIMClangCodeCompletion()
+        endif
+    elseif a:char ==# ':'
+        if getline('.')[col('.') - 2] != ':'
+            return a:char
+        else
+            return a:char . s:LaunchVIMClangCodeCompletion()
+        endif
+    endif
+endfunction
+"}}}
+" 可选参数存在且非零，不 '冷启动'(异步新建不存在的当前文件对应的翻译单元)
+function! g:InitVIMClangCodeCompletion(...) "{{{2
+    " MayComplete to '.'
+    call s:InitVariable('g:VIMCCC_MayCompleteDot', 1)
+
+    " MayComplete to '->'
+    call s:InitVariable('g:VIMCCC_MayCompleteArrow', 1)
+
+    " MayComplete to '::'
+    call s:InitVariable('g:VIMCCC_MayCompleteColon', 1)
+
+    " 把回车映射为: 
+    " 在补全菜单中选择并结束补全时, 若选择的是函数, 自动显示函数参数提示
+    call s:InitVariable('g:VIMCCC_MapReturnToDispCalltips', 1)
+
+    " When completeopt does not contain longest option, this setting 
+    " controls the behaviour of the popup menu selection 
+    " when starting the completion
+    "   0 = don't select first item
+    "   1 = select first item (inserting it to the text)
+    "   2 = select first item (without inserting it to the text)
+    "   default = 2
+    call s:InitVariable('g:VIMCCC_ItemSelectionMode', 2)
+
+    " 使用语法测试
+    call s:InitVariable('g:VIMCCC_EnableSyntaxTest', 1)
+
+    " 本插件的 python 模块路径
+    call s:InitVariable('g:VIMCCC_PythonModulePath', s:sDefaultPyModPath)
+
+    " Clang library path
+    call s:InitVariable('g:VIMCCC_ClangLibraryPath', '')
+
+    " If clang should complete preprocessor macros and constants
+    call s:InitVariable('g:VIMCCC_CompleteMacros', 0)
+
+    " If clang should complete code patterns, i.e loop constructs etc.
+    call s:InitVariable('g:VIMCCC_CompletePatterns', 0)
+
+    " Update quickfix list periodically
+    call s:InitVariable('g:VIMCCC_PeriodicQuickFix', 0)
+
+    " Ignore case in code completion
+    call s:InitVariable('g:VIMCCC_IgnoreCase', &ignorecase)
+
+    " 用于外部控制
+    call s:InitVariable('g:VIMCCC_Enable', 1)
+    if !g:VIMCCC_Enable
+        return
+    endif
+
+    if s:bFirstInit
+        command! -nargs=0 -bar VIMCCCUpdateQuickFix 
+                    \call <SID>VIMCCCUpdateClangQuickFix(expand('%:p'))
+
+        command! -nargs=+ VIMCCCSetArgs call <SID>VIMCCCSetArgsCmd(<f-args>)
+    endif
+
+    let g:VIMCCC_CodeCompleteFlags = 0
+    if g:VIMCCC_CompleteMacros
+        let g:VIMCCC_CodeCompleteFlags += 1
+    endif
+    if g:VIMCCC_CompletePatterns
+        let g:VIMCCC_CodeCompleteFlags += 2
+    endif
+
+    call s:InitPythonInterfaces()
+
+    setlocal omnifunc=VIMClangCodeCompletion
+
+    if g:VIMCCC_PeriodicQuickFix
+        augroup VIMCCC_AUGROUP
+            autocmd! CursorHold,CursorHoldI <buffer> VIMCCCUpdateQuickFix
+        augroup END
+    endif
+
+    " 初始化函数参数提示服务
+    call g:InitVLCalltips()
+
+    if g:VIMCCC_MayCompleteDot
+        inoremap <silent> <buffer> . 
+                    \<C-r>=<SID>SetOpts()<CR>
+                    \<C-r>=<SID>CompleteByChar('.')<CR>
+                    \<C-r>=<SID>RestoreOpts()<CR>
+    endif
+
+    if g:VIMCCC_MayCompleteArrow
+        inoremap <silent> <buffer> > 
+                    \<C-r>=<SID>SetOpts()<CR>
+                    \<C-r>=<SID>CompleteByChar('>')<CR>
+                    \<C-r>=<SID>RestoreOpts()<CR>
+    endif
+
+    if g:VIMCCC_MayCompleteColon
+        inoremap <silent> <buffer> : 
+                    \<C-r>=<SID>SetOpts()<CR>
+                    \<C-r>=<SID>CompleteByChar(':')<CR>
+                    \<C-r>=<SID>RestoreOpts()<CR>
+    endif
+
+    if g:VIMCCC_ItemSelectionMode > 4
+        inoremap <silent> <buffer> <C-n> 
+                    \<C-r>=<SID>CheckIfSetOpts()<CR>
+                    \<C-r>=<SID>LaunchVIMClangCodeCompletion()<CR>
+                    \<C-r>=<SID>RestoreOpts()<CR>
+    else
+        "inoremap <silent> <buffer> <C-n> 
+                    "\<C-r>=<SID>SetOpts()<CR>
+                    "\<C-r>=<SID>LaunchVIMClangCodeCompletion()<CR>
+                    "\<C-r>=<SID>RestoreOpts()<CR>
+    endif
+
+    if g:VIMCCC_MapReturnToDispCalltips
+        inoremap <silent> <expr> <buffer> <CR> pumvisible() ? 
+                    \"\<C-y>\<C-r>=<SID>RequestCalltips(1)\<Cr>" : 
+                    \"\<CR>"
+    endif
+
+    " 显示函数 calltips 的快捷键
+    exec 'inoremap <silent> <buffer> ' . g:VLCalltips_DispCalltipsKey 
+                \. ' <C-r>=<SID>RequestCalltips()<CR>'
+
+    if a:0 > 0 && a:1
+        " 可控制不 '冷启动'
+    else
+        " '冷启动'
+        py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("expand('%:p')"))
+    endif
+
+    let s:bFirstInit = 0
+endfunction
+"}}}
+function! s:RequestCalltips(...) "{{{2
+    if a:0 > 0 && a:1
+    " 从全能补全菜单选择条目后，使用上次的输出
+        let sLine = getline('.')
+        let nCol = col('.')
+        if sLine[nCol-3:] =~ '^()'
+            normal! h
+            let sFuncName = matchstr(sLine[: nCol-4], '\~\?\w\+$')
+
+            py vim.command("let lCalltips = %s" 
+                        \% VIMCCCIndex.GetCalltipsFromCacheCCResults(
+                        \   vim.eval("sFuncName")))
+            call g:DisplayVLCalltips(lCalltips, 0)
+        endif
+    else
+    " 普通情况，请求 calltips
+        " 确定函数括号开始的位置
+        let lOrigCursor = getpos('.')
+        let lStartPos = searchpairpos('(', '', ')', 'nWb', 
+                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
+        " 考虑刚好在括号内，加 'c' 参数
+        let lEndPos = searchpairpos('(', '', ')', 'nWc', 
+                \'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
+        let lCurPos = lOrigCursor[1:2]
+
+        " 不在括号内
+        if lStartPos ==# [0, 0]
+            return ''
+        endif
+
+        " 获取函数名称和名称开始的列，只能处理 '(' "与函数名称同行的情况，
+        " 允许之间有空格
+        let sStartLine = getline(lStartPos[0])
+        let sFuncName = matchstr(sStartLine[: lStartPos[1]-1], '\~\?\w\+\ze\s*($')
+        let nFuncStartIdx = match(sStartLine[: lStartPos[1]-1], '\~\?\w\+\ze\s*($')
+
+        let nRow = lStartPos[0]
+        let nCol = nFuncStartIdx + 1
+
+        let lCalltips = []
+        if sFuncName !=# ''
+            let calltips = []
+            " 找到了函数名，开始全能补全
+            py VIMCCCIndex.GetTUCodeCompleteResults(
+                        \vim.eval("expand('%:p')"), 
+                        \int(vim.eval("nRow")),
+                        \int(vim.eval("nCol")),
+                        \[GetCurUnsavedFile()])
+            py vim.command("let lCalltips = %s" 
+                        \% VIMCCCIndex.GetCalltipsFromCacheCCResults(
+                        \   vim.eval("sFuncName")))
+        endif
+
+        call setpos('.', lOrigCursor)
+        call g:DisplayVLCalltips(lCalltips, 0)
+    endif
+
+    return ''
+endfunction
+"}}}
+" 设置 clang 命令参数，参数可以是字符串或者列表
+" 设置完毕后立即异步重建当前文件的翻译单元
+function! VIMCCCSetArgs(lArgs) "{{{2
+    if type(a:lArgs) == type('')
+        let lArgs = split(a:lArgs)
+    else
+        let lArgs = a:lArgs
+    endif
+
+    py VIMCCCIndex.SetParseArgs(vim.eval("lArgs"))
+    py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("expand('%:p')"), 
+                \[GetCurUnsavedFile()], True, True)
+endfunction
+"}}}
+function! s:VIMCCCSetArgsCmd(...) "{{{2
+    call VIMCCCSetArgs(a:000)
+endfunction
+"}}}
+function! VIMClangCodeCompletion(findstart, base) "{{{2
+    if a:findstart
+        "call vlutils#TimerStart() " 计时
+
+        let nRow = line('.')
+        let lPos = searchpos('\<\|\.\|->\|::', 'cb', nRow)
+
+        let nCol = col('.')
+
+        if lPos == [0, 0]
+            let nStartCol = nCol
+        else
+            let sLine = getline('.')
+            if sLine[nCol - 1] ==# '.'
+                let nStartCol = nCol + 1
+            elseif sLine[nCol -1 : nCol] ==# '->' 
+                        \|| sLine[nCol - 1: nCol] ==# '::'
+                let nStartCol = nCol + 2
+            else
+                " BUG: 返回 5 后，下次调用此函数是，居然 col('.') 返回 6
+                "let nStartCol = nCol
+                let nStartCol = nCol - 1
+            endif
+        endif
+
+        return nStartCol
+    endif
+
+    "===========================================================================
+    " 补全操作开始
+    "===========================================================================
+
+    let b:base = a:base
+    let sBase = a:base
+
+    let nRow = line('.') "行
+    let nCol = col('.') "列
+
+    py lResults = VIMCCCIndex.GetVimCodeCompleteResults(
+                \vim.current.buffer.name, 
+                \int(vim.eval("nRow")),
+                \int(vim.eval("nCol")),
+                \[GetCurUnsavedFile()],
+                \vim.eval("sBase"),
+                \vim.eval("g:VIMCCC_IgnoreCase") != '0',
+                \int(vim.eval("g:VIMCCC_CodeCompleteFlags")))
+    "call vlutils#TimerEndEcho()
+    py vim.command("let lResults = %s" % lResults)
+    "call vlutils#TimerEndEcho()
+
+    " 调试用
+    let b:lResults = lResults
+
+    "call vlutils#TimerEndEcho()
+
+    return lResults
+    "===========================================================================
+    " 补全操作结束
+    "===========================================================================
+endfunction
+" 更新本地当前窗口的 quickfix 列表
+function! s:VIMCCCUpdateClangQuickFix(sFile) "{{{2
+    let sFile = a:sFile
+
+    "py t = UpdateQuickFixThread(vim.eval("sFile"), [GetCurUnsavedFile()], True)
+    "py t.start()
+    "return
+
+    py VIMCCCIndex.UpdateTranslationUnit(vim.eval("sFile"), 
+                \[GetCurUnsavedFile()], True)
+    py vim.command("let lQF = %s" 
+                \% VIMCCCIndex.GetVimQucikFixListFromRecentTU())
+    if !empty(lQF)
+        "call setqflist(lQF)
+        call setloclist(0, lQF)
+        silent! lopen
+    endif
+endfunction
+"}}}
+function! s:InitPythonInterfaces() "{{{2
+    if !s:bFirstInit
+        return
+    endif
+
+    py import sys
+    py import vim
+    py sys.path.append(vim.eval("g:VIMCCC_PythonModulePath"))
+    py sys.argv = [vim.eval("g:VIMCCC_ClangLibraryPath")]
+    "silent! exec 'pyfile ' . s:VIMCCC_PythonModulePath . '/VIMClangCC.py'
+    py from VIMClangCC import *
+python << PYTHON_EOF
+
+#import threading
+#class UpdateQuickFixThread(threading.Thread):
+#    def __init__(self, sFile, lUnsavedFiles = [], bReparse = False):
+#        threading.Thread.__init__(self)
+#        self.sFile = sFile
+#        self.lUnsavedFiles = lUnsavedFiles
+#        self.bReparse = bReparse
+#
+#    def run(self):
+#        global VIMCCCIndex
+#        VIMCCCIndex.UpdateTranslationUnit(self.sFile, self.lUnsavedFiles,
+#                                          self.bReparse)
+#        vim.command("call setqflist(%s)" 
+#                    % VIMCCCIndex.GetVimQucikFixListFromRecentTU())
+
+def GetCurUnsavedFile():
+    return (vim.current.buffer.name,
+            '\n'.join(vim.current.buffer[:]))
+
+def GetCurCursorPos():
+    return vim.current.window.cursor
+
+def GetCurRow():
+    #return vim.current.window.cursor[0]
+    return int(vim.eval("line('.')"))
+
+def GetCurCol():
+    # NOTE: 在补全函数中，与 col('.') 的结果不一致！
+    #       这个返回结果为进入补全函数前的位置
+    #return vim.current.window.cursor[1]
+    return int(vim.eval("col('.')"))
+
+# 本插件只操作这个实例，其他事都不管
+VIMCCCIndex = VIMClangCCIndex()
+PYTHON_EOF
+endfunction
+"}}}
+
+" vim: fdm=marker fen et sts=4 fdl=1
 plugin/vimdialog.vim	[[[1
 3358
 " Vim interactive dialog and control library.
@@ -8317,7 +8250,7 @@ function! g:VCComboBox.RemoveItem(item)
 	let idx = index(self.items, a:item)
 	if idx != -1
 		call remove(self.items, idx)
-		if self.GetValue() == a:item
+		if self.GetValue() ==# a:item
 			if !empty(self.items)
 				if idx - 1 > 0
 					call self.SetValue(self.items[idx - 1])
@@ -8346,7 +8279,7 @@ function! g:VCComboBox.RenameItem(oldItem, newItem)
 	let idx = index(self.items, oldItem)
 	if idx != -1
 		let self.items[idx] = newItem
-		if self.GetValue() == oldItem
+		if self.GetValue() ==# oldItem
 			call self.SetValue(newItem)
 		endif
 	endif
@@ -9099,7 +9032,7 @@ function! g:VCTable.Action(...) "可选参数指示是否 clear 操作 {{{2
 						echohl Question
 						let input = input("Edit:\n", tmpLine[index])
 						echohl None
-						if input != '' && input != tmpLine[index]
+						if input != '' && input !=# tmpLine[index]
 							let tmpLine[index] = input
 							let l:ret = 1
 						endif
@@ -10072,7 +10005,7 @@ function! g:VimDialog.RefreshCtlByLnum(lnum)
 	for i in range(1, nLn)
 		let l:curKey = self._GetCtlKeyByLnum(nLn - i)
 "		echo l:curKey
-		if l:curKey != ctlKey
+		if l:curKey !=# ctlKey
 			break
 		endif
 		let l:ctlSln = nLn - i
@@ -10080,7 +10013,7 @@ function! g:VimDialog.RefreshCtlByLnum(lnum)
 	for i in range(nLn + 1, line('$'))
 		let l:curKey = self._GetCtlKeyByLnum(i)
 "		echo l:curKey
-		if l:curKey != ctlKey
+		if l:curKey !=# ctlKey
 			break
 		endif
 		let l:ctlEln = i
@@ -11018,8 +10951,8 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-659
-*VimLite.txt*              An IDE inspired by CodeLite
+681
+*VimLite.txt*           A C/C++ IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
                   | | / /_  _// | /, / /  /_  _/_  __/ ____/~
@@ -11043,13 +10976,13 @@ CONTENTS                                *VimLite-Contents*
         5.1.1. Commands                 |VimLite-CodeCompletion-OmniCpp-Cmds|
         5.1.2. Macros Handling          |VimLite-CodeCompletion-OmniCpp-Macros|
         5.1.3. Limitation               |VimLite-CodeCompletion-OmniCpp-Limit|
-    5.2. Clang                          |VimLite-CodeCompletion-Clang|
+    5.2. VIMCCC                         |VimLite-CodeCompletion-VIMCCC|
 6. Debugger                             |VimLite-Debugger|
 7. Options                              |VimLite-Options|
     7.1. Project Manager Options        |VimLite-Options-ProjectManager|
     7.2. Calltips Options               |VimLite-Options-Calltips|
     7.3. OmniCpp Options                |VimLite-Options-OmniCpp|
-    7.4. Clang Options                  |VimLite-Options-Clang|
+    7.4. VIMCCC Options                 |VimLite-Options-VIMCCC|
     7.5. Debugger Options               |VimLite-Options-Debugger|
 8. Tips                                 |VimLite-Tips|
     8.1. Configuration Sample           |VimLite-ConfigSample|
@@ -11069,13 +11002,14 @@ VimLite consists mainly of the following three modules:
     * Code Completion:                  An enhanced OmniCpp plugin and a clang 
                                         code completion plugin.
 
-                                        OmniCpp support the following 
+                                        OmniCpp supports the following 
                                         completion: namespace, structure, 
                                         class member, using, using namespace, 
                                         class template, stl, etc.
 
-                                        Clang code completion supports all but 
-                                        is slower than OmniCpp.
+                                        VIMCCC which based on libclang
+                                        supports mostly accurate code
+                                        completion.
 
     * Debugger Integration:             Gdb integration, by pyclewn. 
 
@@ -11442,17 +11376,23 @@ Here is a list for whiches are not supported:~
 7. Does not support '.' and '->' overload for performance considerations. 
 
 ------------------------------------------------------------------------------
-5.1. Clang                              *VimLite-CodeCompletion-Clang*
+5.1. VIMCCC                             *VimLite-CodeCompletion-VIMCCC*
 
-You can set g:VLWorkspaceUseClangCC to 1 to enable clang code completion. >
-    let g:VLWorkspaceUseClangCC = 1
+You can set g:VLWorkspaceUseVIMCCC to 1 to enable clang code completion. >
+    let g:VLWorkspaceUseVIMCCC = 1
 
-Clang code completion will auto work, but need the current build configuration
-of the project is not a custom build. VimLite need version of clang >= 2.9
-to work.
+You need to install liblang to let it work. After installation, VIMCCC code
+completion will auto work, but not when the current build configuration of the
+project is a custom build. VIMCCC currently work with libclang 3.0.
 
-On ubuntu 10.04, you can download the deb package here:
-    http://code.google.com/p/vimlite/downloads/list
+
+There are only two commands of VIMCCC.
+
+    VIMCCCUpdateQuickFix                Retrieve clang diagnostics to quickfix,
+                                        if the diagnostics are not empty, open
+                                        the quickfix window.
+
+    VIMCCCSetArgs {arg1} [arg2] ...     Set clang compiler options
 
 ==============================================================================
 6. Debugger                             *VimLite-Debugger*
@@ -11538,8 +11478,8 @@ Insert worksapce name into title. >
 Auto save all modified files before build projects. >
     let g:VLWorkspaceSaveAllBeforeBuild = 0
 
-Use Clang code completion instead of OmniCpp which based on modified ctags. >
-    let g:VLWorkspaceUseClangCC = 0
+Use VIMCCC code completion instead of OmniCpp which based on modified ctags. >
+    let g:VLWorkspaceUseVIMCCC = 0
 
 The active project highlight group name. >
     let g:VLWorkspaceActiveProjectHlGroup = 'SpecialKey'
@@ -11609,33 +11549,48 @@ NOTE: You should keep the ctags database up to date. >
     let g:VLOmniCpp_GotoImplementationKey = '<C-]>'
 
 ------------------------------------------------------------------------------
-7.4. Clang Options                      *VimLite-Options-Clang*
+7.4. VIMCCC Options                     *VimLite-Options-VIMCCC*
 
-Clang program. >
-    let g:VLCCC_ClangProgram = 'clang'
+Clang library path. >
+    let g:VIMCCC_ClangLibraryPath = ''
 
-Enable syntax check for C/C++ when trigger code completion. >
-    let g:VLCCC_IndicateError = 1
+VIMCCC python module path, make sure you set it correctly.
+On Linux, the default value is: >
+    let g:VIMCCC_PythonModulePath = '~/.vimlite/VimLite'
+On Windows, the default value is: >
+    let g:VIMCCC_PythonModulePath = $VIM . '\vimlite\VimLite'
+
+If equal to 1, it will periodically update the quickfix window. >
+    let g:VIMCCC_PeriodicQuickFix = 0
+
+If equal to 1, clang should complete preprocessor macros and constants. >
+    let g:VIMCCC_CompleteMacros = 0
+
+If equal to 1, clang should complete code patterns, i.e loop constructs etc. >
+    let g:VIMCCC_CompletePatterns = 0
+
+Ignore case in code completion. >
+    let g:VIMCCC_IgnoreCase = &ignorecase
 
 Auto trigger code completion when input '.' (dot). >
-    let g:VLCCC_MayCompleteDot = 1
+    let g:VIMCCC_MayCompleteDot = 1
 
 Auto trigger code completion when input '>' (right arrow). >
-    let g:VLCCC_MayCompleteArrow = 1
+    let g:VIMCCC_MayCompleteArrow = 1
 
 Auto trigger code completion when input ':' (colon). >
-    let g:VLCCC_MayCompleteColon = 1
+    let g:VIMCCC_MayCompleteColon = 1
 
 When completeopt does not contain longest option, this setting controls the
 behaviour of the popup menu selection.
   * 0 -> don't select first item.
   * 1 -> select first item (inserting it to the text).
   * 2 -> select first item (without inserting it to the text). >
-    let g:VLCCC_ItemSelectionMode = 2
+    let g:VIMCCC_ItemSelectionMode = 2
 
 Map <CR> (return) key to auto trigger function calltips after select a
 function item in the code completion popup menu. >
-    let g:VLCCC_MapReturnToDispCalltips = 1
+    let g:VIMCCC_MapReturnToDispCalltips = 1
 
 ------------------------------------------------------------------------------
 7.5. Debugger Options                   *VimLite-Options-Debugger*
@@ -11654,7 +11609,7 @@ so you may want to disable this feature. >
 
 Configuration sample of VimLite >
     let g:VLWorkspaceSaveAllBeforeBuild = 1
-    let g:VLCCC_ItemSelectionMode = 10
+    let g:VIMCCC_ItemSelectionMode = 10
     let g:VLWorkspaceParseFileAfterSave = 1
     let g:VLWorkspaceNotParseSourceAfterSave = 1
     let g:VLCalltips_IndicateArgument = 0
@@ -13568,7 +13523,7 @@ let g:vlutils#os = os
 
 " vim:fdm=marker:fen:fdl=1:et:ts=4:sw=4:sts=4:
 autoload/omnicpp/resolvers.vim	[[[1
-2217
+2528
 " Description:  Omnicpp completion resolving functions
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -13605,6 +13560,18 @@ endfunc
 "}}}
 function! s:NewPrmtInfo() "{{{2
     return {'kind': '', 'name': '', 'default': ''}
+endfunc
+"}}}
+" 类模版信息
+" template<typename T1, class T2 = std::vector<int> >
+" 对应以下数据结构
+" {
+"     list: [{'typename': 'T1', 'realtype': ''},
+"            {'typename': 'T2', 'realtype': 'std::vector<int>'}] 
+"     dict: {'T1': '', 'T2': 'std::vector<int>'}
+" }
+function! s:NewTpltInfo() "{{{2
+    return {'list': [], 'dict': {}}
 endfunc
 "}}}
 function! s:NewTypeInfo() "{{{2
@@ -14243,65 +14210,61 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                 let bNeedExpandUsing = 1
                 continue
             else
-                " 常规处理
+                " variable 常规处理
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dMember.name)
-
-                if !empty(dTmpTag)
-                    " 从 cmd 域解析变量
-                    let sDecl = dTmpTag.cmd[2:-3]
-                    let dTypeInfo = s:GetVariableTypeInfo(sDecl, dTmpTag.name)
-                    let dMember.typeinfo = dTypeInfo
-                    let dMember.tag = dTmpTag
-
-                    try
-                        let dOrigTypeInfo = copy(dMember.typeinfo)
-                        let sCurName = omnicpp#resolvers#ResolveTemplate(
-                                    \dMember, lMemberStack[idx-1])
-                        "if dOrigTypeInfo != dMember.typeinfo
-                        if dOrigTypeInfo.name !=# dMember.typeinfo.name
-                            " 处理了模版替换, 需要重头再来
-                            let sCode = omnicpp#utils#GenCodeFromTypeInfo(
-                                        \dMember.typeinfo)
-                            " 解析完毕的类型必然是容器, 所以附加 '::'
-                            let dTmpOmniInfo = omnicpp#resolvers#GetOmniInfo(
-                                        \sCode . '::')
-                            " 替换 dMember
-                            call remove(lMemberStack, 0, idx)
-                            call extend(lMemberStack, dTmpOmniInfo.omniss, 0)
-
-                            " TODO: 是否需要添加局部搜索域?
-                            let lSearchScopes = lOrigScopes
-                            if dTmpOmniInfo.precast ==# '<global>'
-                            " 可能带 '::' 前缀
-                                let lOrigScopes = dScopeInfo.global
-                                let lSearchScopes = lOrigScopes
-                            endif
-
-                            " 重头再来
-                            let idx = 0
-                            let bNeedExpandUsing = 1
-                            continue
-                        endif
-                    catch
-                        " 语法错误
-                        let lSearchScopes = []
-                        break
-                    endtry
-
-                    " 变量的情况, 需要添加变量的 path 的所有途经的 scope
-                    " eg. std::map::iterator = iterator -> std::map, std
-                    " TODO: 是否需要添加上 lOrigScopes ?
-                    " 若是模版变量, 应该需要添加 lOrigScopes
-                    " 因为可能在声明的时候用到了 using
-                    " eg.
-                    " using namespace std;
-                    " map<string, int> foo;
-                    call extend(
-                                \lSearchScopes, 
-                                \s:ExpandSearchScopeStatckFromScope(
-                                \   dTmpTag.scope), 
-                                \0)
+                if empty(dTmpTag)
+                    let lSearchScopes = []
+                    break
                 endif
+
+                " 从 cmd 域解析变量
+                let sDecl = dTmpTag.cmd[2:-3]
+                let dTypeInfo = s:GetVariableTypeInfo(sDecl, dTmpTag.name)
+                let dMember.typeinfo = dTypeInfo
+                let dMember.tag = dTmpTag
+                let sCurName = dTypeInfo.name
+
+                " 解释出了当前变量的类型，需要检查是否需要处理模板
+                " TODO: 要处理复杂的模板参数: T1::T2 t;
+                " 暂时只处理最简单的情形: T t;
+                let sCode = omnicpp#resolvers#ResolveTemplate(
+                            \lMemberStack[idx-1], dMember)
+                if sCode != ''
+                " 处理了模版替换, 需要重头再来
+                    " 解析完毕的类型必然是容器, 所以附加 '::'
+                    let dTmpOmniInfo = omnicpp#resolvers#GetOmniInfo(
+                                \sCode . '::')
+                    " 替换 dMember
+                    call remove(lMemberStack, 0, idx)
+                    call extend(lMemberStack, dTmpOmniInfo.omniss, 0)
+
+                    " TODO: 是否需要添加局部搜索域?
+                    let lSearchScopes = lOrigScopes
+                    if dTmpOmniInfo.precast ==# '<global>'
+                    " 可能带 '::' 前缀
+                        let lOrigScopes = dScopeInfo.global
+                        let lSearchScopes = lOrigScopes
+                    endif
+
+                    " 重头再来
+                    let idx = 0
+                    let bNeedExpandUsing = 1
+                    continue
+                endif
+
+                " 变量的情况, 需要添加变量的 path 的所有途经的 scope
+                " eg. std::map::iterator = iterator -> std::map, std
+                " TODO: 是否需要添加上 lOrigScopes ?
+                " 若是模版变量, 应该需要添加 lOrigScopes
+                " 因为可能在声明的时候用到了 using
+                " eg.
+                " using namespace std;
+                " map<string, int> foo;
+                call extend(
+                            \lSearchScopes, 
+                            \s:ExpandSearchScopeStatckFromScope(
+                            \   dTmpTag.scope), 
+                            \0)
             endif
         elseif dMember.kind == 'function'
             if idx == 0
@@ -14341,6 +14304,7 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                 let bNeedExpandUsing = 0 " 函数的返回不能依赖 using
                 continue
             else
+                " function 常规处理
                 let dTmpTag = s:GetFirstMatchTag(lSearchScopes, dMember.name)
                 if empty(dTmpTag)
                     let lSearchScopes = []
@@ -14353,17 +14317,13 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
 
                 let dMember.typeinfo = dTypeInfo
                 let dMember.tag = dTmpTag
+                let sCurName = dTypeInfo.name
+
                 try
-                    "let sCurName = omnicpp#resolvers#ResolveTemplate(
-                                "\dMember, lMemberStack[idx-1])
-                    let dOrigTypeInfo = copy(dMember.typeinfo)
-                    let sCurName = omnicpp#resolvers#ResolveTemplate(
-                                \dMember, lMemberStack[idx-1])
-                    "if dOrigTypeInfo != dMember.typeinfo
-                    if dOrigTypeInfo.name !=# dMember.typeinfo.name
-                        " 处理了模版替换, 需要重头再来
-                        let sCode = omnicpp#utils#GenCodeFromTypeInfo(
-                                    \dMember.typeinfo)
+                    let sCode = omnicpp#resolvers#ResolveTemplate(
+                                \lMemberStack[idx-1], dMember)
+                    if sCode !=# ''
+                    " 处理了模版替换, 需要重头再来
                         " 解析完毕的类型必然是容器, 所以附加 '::'
                         let dTmpOmniInfo = omnicpp#resolvers#GetOmniInfo(
                                     \sCode . '::')
@@ -14386,6 +14346,7 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
                     endif
                 catch
                     " 语法错误
+                    echom 'Is there any syntax error?'
                     let lSearchScopes = []
                     break
                 endtry
@@ -14445,23 +14406,35 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
 
         let dMember.tag = dCurTag
 
-        " 从 dCurTag 和 上一个的 typeinfo.types 的 til 生成当前的 typeinfo
-        " NOTE: 此 typeinfo 必须为全局路径
-        let dTypeInfo = omnicpp#utils#GetVariableType(dCurTag.path)
-        let dTypeInfo.types[-1].til = dMember.til[:]
-        let dTypeInfo.til = dTypeInfo.types[-1].til
-        let dMember.typeinfo = dTypeInfo
-        if idx > 0
-            let dPrevTypeInfo = lMemberStack[idx-1].typeinfo
-            " 最里层的 til 为 dMember.til
+        if dMember.kind == 'container' 
+                    \|| ((dMember.kind == 'function' 
+                    \     || dMember.kind == 'variable')
+                    \    && dMember.tag.scope ==# lMemberStack[idx-1].tag.path)
+        " 容器类型必须处理
+        " 并且以下条件满足时，也需要拼接 til
+        " dMember.tag.scope ==# lMemberStack[idx-1].tag.path
+        " eg. GNU 头文件中的 std::map::iterator
+            " 从 dCurTag 和 上一个的 typeinfo.types 的 til 生成当前的 typeinfo
+            " eg. A::B::C 和 [['X', 'Y'], ['Z']]
+            " ->
+            " A<X, Y>::B<Z>::C 的 typeinfo
+            " NOTE: 此 typeinfo 必须为全局路径
+            let dTypeInfo = omnicpp#utils#GetVariableType(dCurTag.path)
             let dTypeInfo.types[-1].til = dMember.til[:]
-            let nTmpIdx = 0
-            for dTmpUnitType in dPrevTypeInfo.types
-                let dTypeInfo.types[nTmpIdx].til = dTmpUnitType.til
-                let nTmpIdx += 1
-            endfor
             let dTypeInfo.til = dTypeInfo.types[-1].til
             let dMember.typeinfo = dTypeInfo
+            if idx > 0
+                let dPrevTypeInfo = lMemberStack[idx-1].typeinfo
+                " 最外层的 til 为 dMember.til
+                let dTypeInfo.types[-1].til = dMember.til[:]
+                let nTmpIdx = 0
+                for dTmpUnitType in dPrevTypeInfo.types
+                    let dTypeInfo.types[nTmpIdx].til = dTmpUnitType.til
+                    let nTmpIdx += 1
+                endfor
+                let dTypeInfo.til = dTypeInfo.types[-1].til
+                let dMember.typeinfo = dTypeInfo
+            endif
         endif
 
         " 解析 tag 前处理一次类型替换
@@ -14513,6 +14486,29 @@ function! omnicpp#resolvers#ResolveOmniScopeStack(
             let bNeedExpandUsing = 0 " 类型替换不能依赖 using
             let lSearchScopes = lOrigScopes
             continue
+        endif
+
+        " tag 的类型为类或者结构时需要添加模板信息
+        if dMember.tag.kind[0] == 'c' || dMember.tag.kind[0] == 's'
+            " 添加 tplt 域标识模版参数信息
+            let dMember.tplt = g:GetTemplateInfo(dMember.tag.qualifiers)
+            " 根据当前的 typeinfo.til 填充模版参数信息的内容
+            let nTmpIdx = 0
+            for sTpltInst in dMember.typeinfo.til
+                "echom string(dMember.tplt)
+                try
+                " BUG: 数量不一定对应，ctags 的原因。例如 std::string 时，
+                " dMember.typeinfo.til[0] 为 'char'，但是 dMember.tplt.list = []
+                " 因为 'cmd': '/^    class basic_string$/'，模板信息没有提取到
+                    let dMember.tplt.list[nTmpIdx].realtype = sTpltInst
+                    let dMember.tplt.dict[dMember.tplt.list[nTmpIdx].typename] 
+                                \= sTpltInst
+                catch
+                    break
+                endtry
+                "echom string(dMember.tplt)
+                let nTmpIdx += 1
+            endfor
         endif
 
         let idx += 1
@@ -14730,7 +14726,9 @@ function! s:GetTemplatePrmtInfo(sDecl) "{{{2
         if sDecl =~# '='
             " 有默认值
             let dPrmtInfo.name = matchstr(sDecl, '\w\+\ze\s*=')
-            let dPrmtInfo.default = matchstr(sDecl, '=\s*\zs\S\+\ze$')
+            " 这里的提取默认值的方法是假设 sDecl 无多余字符才成立
+            " eg. 'class _Alloc = allocator<pair<const _Kty, _Ty> >'
+            let dPrmtInfo.default = matchstr(sDecl, '=\s*\zs.\+\ze$')
         else
             " 无默认值
             let dPrmtInfo.name = matchstr(sDecl, '\w\+$')
@@ -14741,7 +14739,7 @@ function! s:GetTemplatePrmtInfo(sDecl) "{{{2
         if sDecl =~# '='
             " 有默认值
             let dPrmtInfo.name = matchstr(sDecl, '\w\+\ze\s*=')
-            let dPrmtInfo.default = matchstr(sDecl, '=\s*\zs\S\+\ze$')
+            let dPrmtInfo.default = matchstr(sDecl, '=\s*\zs.\+\ze$')
         else
             " 无默认值
             let dPrmtInfo.name = matchstr(sDecl, '\w\+$')
@@ -14794,6 +14792,62 @@ function! s:GetTemplatePrmtInfoList(sQualifiers) "{{{2
     return lResult
 endfunc
 "}}}
+" 从前缀限定修饰文本中获取类模版信息
+function! g:GetTemplateInfo(sQualifiers) "{{{2
+    let sQualifiers = substitute(a:sQualifiers, '\\t', ' ', 'g')
+    let dResult = s:NewTpltInfo()
+
+    if sQualifiers == ''
+        return dResult
+    endif
+
+    let idx = stridx(sQualifiers, '<')
+    if idx == -1
+        return dResult
+    endif
+    let nNestDepth = 0
+    let nLen = len(sQualifiers)
+    let nSubStart = 0
+    while idx < nLen
+        let c = sQualifiers[idx]
+        if c == '<'
+            let nNestDepth += 1
+            if nNestDepth == 1
+                let nSubStart = idx + 1
+            endif
+        elseif c == '>'
+            let nNestDepth -= 1
+            if nNestDepth == 0
+                let sText = sQualifiers[nSubStart : idx - 1]
+                let dPrmtInfo = s:GetTemplatePrmtInfo(sText)
+                if dPrmtInfo.name !=# ''
+                " 因为空字符串不能为字典的键值
+                    call add(dResult.list, {'typename': dPrmtInfo.name,
+                                \           'realtype': dPrmtInfo.default})
+                    let dResult.dict[dPrmtInfo.name] = dPrmtInfo.default
+                endif
+                break
+            endif
+        elseif c == ','
+            if nNestDepth == 1
+                let sText = sQualifiers[nSubStart : idx - 1]
+                let dPrmtInfo = s:GetTemplatePrmtInfo(sText)
+                if dPrmtInfo.name !=# ''
+                " 因为空字符串不能为字典的键值
+                    call add(dResult.list, {'typename': dPrmtInfo.name,
+                                \           'realtype': dPrmtInfo.default})
+                    let dResult.dict[dPrmtInfo.name] = dPrmtInfo.default
+                endif
+                let nSubStart = idx + 1
+            endif
+        endif
+
+        let idx += 1
+    endwhile
+
+    return dResult
+endfunc
+"}}}
 " Param: sInstDecl 为实例化声明. eg. A<B, C<D>, E> Z;
 " Return:   模版实例化列表
 function! s:GetTemplateInstList(sInstDecl) "{{{2
@@ -14835,7 +14889,45 @@ function! s:GetTemplateInstList(sInstDecl) "{{{2
     return til
 endfunc
 "}}}
-" Return: 与 TypeInfo 一致的字典
+" 从 tag 的 inherits 域的文本中分割出每个基类的类型代码
+" Return: list，元素是原始代码
+"         eg. ['A<B>::C<D>', 'B']
+function! s:SplitTypeCodeFromInherits(sInherits) "{{{2
+    let sInherits = a:sInherits
+    if sInherits == ''
+        return []
+    endif
+
+    let lResult = []
+
+    let idx = 0
+    let nNestDepth = 0
+    let nLen = len(sInherits)
+    let nSubStart = 0
+    while idx < nLen
+        let c = sInherits[idx]
+        if c == '<'
+            let nNestDepth += 1
+        elseif c == '>'
+            let nNestDepth -= 1
+        elseif c == ','
+            if nNestDepth == 0
+                let sText = sInherits[nSubStart : idx - 1]
+                call add(lResult, sText)
+                let nSubStart = idx + 1
+            endif
+        endif
+
+        let idx += 1
+    endwhile
+
+    let sText = sInherits[nSubStart : idx - 1]
+    call add(lResult, sText)
+
+    return lResult
+endfunc
+"}}}
+" Return: list, 元素是与 TypeInfo 一致的字典
 "         eg. [{'name': 'A', 'til': ['B', 'C<D>']}, {'name': 'B', 'til': []}]
 function! s:GetInheritsInfoList(sInherits) "{{{2
     let sInherits = a:sInherits
@@ -15210,11 +15302,180 @@ function! s:ExpandUsingAndNSAlias(sName) "{{{2
     return sVarType
 endfunc
 "}}}
+" 这个函数处理类模板
+" Param1: 包含 Param2 成员的容器的变量信息，是顶层容器
+"         eg. class A : B { }; class B { V b; }; // 处理变量 b 时
+"         A -> Param1
+"         b -> Param2
+" Param2: 当前变量信息
+" Return: 若无需处理返回空字符串，否则返回替换后的类型的字符串，即原始代码字符串
+"         eg. 'std::vector<int>'
+" NOTE: 暂时只处理最简单的情形 eg. T t;
+" eg. template<T> class { T t; };
+" template<T> -> Param1
+" T -> Param2
+function! omnicpp#resolvers#ResolveTemplate(dCtnVarInfo, dCurVarInfo) "{{{2
+    let dCtnVarInfo = a:dCtnVarInfo
+    let dCurVarInfo = a:dCurVarInfo
+
+    let sResult = ''
+
+    " 检查是否类或者结构
+    if dCtnVarInfo.tag.kind[0] != 'c' && dCtnVarInfo.tag.kind[0] != 's'
+        return ''
+    endif
+
+    let dTpltInfo = dCtnVarInfo.tplt
+    let dTypeInfo = dCurVarInfo.typeinfo
+    " 必须以代码方式比较，因为可能如此: A<T1, T2> a;
+    let sTypeCode = omnicpp#utils#GenCodeFromTypeInfo(dTypeInfo)
+
+    " NOTE: 如果 dTpltInfo.dict 为空，sRe = '\<\>'，这样是不会匹配任何字符串的
+    let sRe = printf('\<%s\>', join(keys(dTpltInfo.dict), '\>\|\<'))
+
+    if match(sTypeCode, sRe) != -1
+    " 先检查变量是否顶层容器的模板参数
+        " 此变量是顶层容器的模板参数
+        let sResult = sTypeCode
+        " 文本级别的替换
+        for dTmp in dTpltInfo.list
+            let sResult = substitute(sResult, dTmp.typename, dTmp.realtype, 'g')
+        endfor
+    else
+    " 搜索当前变量的父类，也即 scope，获取模板信息
+        let sScope = dCurVarInfo.tag.scope
+        " TODO: 同时处理结构类型，暂时假定只使用了 class
+        let lTags = g:GetTagsByKindAndPath('c', sScope)
+        if empty(lTags)
+            return ''
+        endif
+
+        let dTag = lTags[0]
+        let dTmpTpltInfo = g:GetTemplateInfo(dTag.qualifiers)
+        if empty(dTmpTpltInfo.list)
+            return ''
+        endif
+
+        let sRe = printf('\<%s\>', join(keys(dTmpTpltInfo.dict), '\>\|\<'))
+
+        "if has_key(dTmpTpltInfo.dict, dTypeInfo.name)
+        if match(sTypeCode, sRe) != -1
+            " 是直接容器中的模板参数
+            " 需要进一步的处理
+            let sResult = g:DoResolveTemplate(a:dCtnVarInfo.tag, 
+                        \dTpltInfo, dCurVarInfo.tag.scope, dTypeInfo)
+        else
+            return ''
+        endif
+    endif
+
+    return sResult
+endfunc
+" 从顶层容器一路递归寻找变量的直接容器
+" Param1: 当前正在处理的容器的 tag，递归搜索时要使用的变量
+" Param2: 当前正在处理的容器的模板信息，递归搜索时要使用的变量
+" Param3: 变量的直接容器的完整的 path，一直不变
+" Param4: 要处理的变量的类型信息，一直不变
+" Return: 模板替换后的类型的原始代码字符串，失败返回空字符串
+" NOTE: 暂时只处理最简单的情形 eg. T t;
+" 算法:
+" 1. 深度优先递归搜索继承树中的容器，直到 path 与 sDrtCtnPath 相同，至步骤 2
+" 2. 替换模板信息，返回替换后的字符串
+" 3. 一路找不到，返回空字符串
+function! g:DoResolveTemplate(dCurCtnTag, dTpltInfo, sDrtCtnPath, dTypeInfo) "{{{2
+    let dCurCtnTag = a:dCurCtnTag
+    let sCurCtnPath = dCurCtnTag.path
+    let dTpltInfo = a:dTpltInfo
+    let sDrtCtnPath = a:sDrtCtnPath
+    let dTypeInfo = a:dTypeInfo
+
+    let sResult = ''
+
+    if sCurCtnPath == sDrtCtnPath
+    " 找到了，处理
+        let sTypeCode = omnicpp#utils#GenCodeFromTypeInfo(dTypeInfo)
+        let sRe = printf('\<%s\>', join(keys(dTpltInfo.dict), '\>\|\<'))
+        if match(sTypeCode, sRe) != -1
+            let sResult = sTypeCode
+            " 文本级别的替换
+            for dTmp in dTpltInfo.list
+                let sResult = substitute(
+                            \sResult, dTmp.typename, dTmp.realtype, 'g')
+            endfor
+        endif
+    else
+    " 还没有找到
+        if !has_key(dCurCtnTag, 'inherits')
+            " 查找失败
+            let sResult = ''
+        else
+            " 递归查找继承树
+" ==============================================================================
+            " TODO: 如果继承的类是类型定义 eg. typedef A<B, C> D;
+            " 需要先解析完成类型定义
+            let sInherits = dCurCtnTag.inherits
+            let lTypeCodes = 
+                        \s:SplitTypeCodeFromInherits(dCurCtnTag.inherits)
+            " 深度优先搜索
+            for sTypeCode in lTypeCodes
+                " TODO: 为了支持嵌套的类定义，需要展开当前搜索域
+                " NOTE: 不支持在头文件中的类定义中使用特定的上下文
+                "       假定所有头文件都是从全局作用域开始
+                " 这里解释出类型信息只为了获取 tag
+                let dTmpTypeInfo = omnicpp#utils#GetVariableType(sTypeCode)
+                let lTags = g:GetTagsByPath(dTmpTypeInfo.name)
+                if empty(lTags)
+                    " 应该有语法错误或者 tags 数据库不是最新
+                    let sResult = ''
+                    break
+                endif
+
+                let dInheritsTag = lTags[0]
+                " 这个类即使不是模板类
+                " 但也可能是这个类的某个基类是带默认参数的模板类
+                let dTmpTpltInfo = g:GetTemplateInfo(dInheritsTag.qualifiers)
+
+                " 直接从字符串层面上替换，效率较低
+                for dTmp in dTpltInfo.list
+                    let sTypeCode = substitute(
+                                \sTypeCode,
+                                \printf('\<%s\>', dTmp.typename),
+                                \dTmp.realtype,
+                                \'g')
+                endfor
+
+                if !empty(dTpltInfo.list)
+                " 判断一下，避免无必要的调用，因为这个函数开销不小
+                    let dTmpTypeInfo = omnicpp#utils#GetVariableType(sTypeCode)
+                endif
+                " 根据 dTypeInfo.til 填充模版参数信息的内容
+                let nTmpIdx = 0
+                for sTpltInst in dTmpTypeInfo.til
+                    let dTmpTpltInfo.list[nTmpIdx].realtype = sTpltInst
+                    let dTmpTpltInfo.dict[dTmpTpltInfo.list[nTmpIdx].typename] 
+                                \= sTpltInst
+                    let nTmpIdx += 1
+                endfor
+
+                let sResult = g:DoResolveTemplate(
+                            \dInheritsTag, dTmpTpltInfo, sDrtCtnPath, dTypeInfo)
+                if sResult !=# ''
+                    " 已解决
+                    break
+                endif
+            endfor
+" ==============================================================================
+        endif
+    endif
+
+    return sResult
+endfunc
+"}}}
 " 解析模版
 " Param1: 当前变量信息
 " Param2: 包含 Param1 成员的容器变量信息
 " Return: 解析完成的 TB (typename) 的具体值(实例化后的类型名), 非绝对路径
-function! omnicpp#resolvers#ResolveTemplate(dCurVarInfo, dCtnVarInfo) "{{{2
+function! omnicpp#resolvers#ResolveTemplate_old(dCurVarInfo, dCtnVarInfo) "{{{2
     " 同时处理类内的模版补全
     " 如果在类内要求补全模版, 因为没有 til, 所以需要检查 til
     let dCurVarInfo = a:dCurVarInfo
@@ -15735,7 +15996,12 @@ function! s:ResolveTypedef(dTag, dScopeInfo) "{{{2
         else
             " eg. typedef basic_string<char> string;
             " 从模式中提取类型信息
-            let sDecl = matchstr(dTag.cmd[2:-3], '\Ctypedef\s\+\zs.\+')
+            " 删除干扰的字符
+            " eg. typedef typename _Alloc::template rebind<value_type>::other _Pair_alloc_type;
+            "let sDecl = substitute(dTag.cmd[2:-3], 
+                        "\'\C\\t\|\<typename\>\|\<template\>', ' ', 'g')
+            let sDecl = dTag.cmd[2:-3]
+            let sDecl = matchstr(sDecl, '\Ctypedef\s\+\zs.\+')
             let sDecl = matchstr(sDecl, '\C.\{-1,}\ze\s\+\<' . dTag.name . '\>')
             " NOTE: 这里得到的可能是复合类型, 第一个作用域可能是嵌套的 typedef
             "       应该尝试展开第一个作用域的符号, 只可能在第一个作用域有嵌套
@@ -16290,7 +16556,7 @@ function! s:GotoTagPosition(lTags) "{{{2
         normal! m'
         exec sLineNr
     else
-        let sCmd = printf('e +%s %s', sLineNr, sFileName)
+        let sCmd = printf('e +%s %s', sLineNr, escape(sFileName, ' \'))
         exec sCmd
     endif
 

@@ -23,7 +23,7 @@ def GetTemplateDict(dir):
             template['name'] = tmpProj.GetName()
             template['file'] = tmpProj.GetFileName()
             template['desc'] = tmpProj.GetDescription()
-            bldConf = tmpProj.GetSettings().GetBuildConfiguration()
+            bldConf = tmpProj.GetSettings().GetBuildConfiguration('Debug')
             template['cmpType'] = bldConf.GetCompilerType()
 
             if internalType:

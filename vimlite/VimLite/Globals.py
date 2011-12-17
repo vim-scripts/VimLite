@@ -7,6 +7,7 @@ import os.path
 import time
 import re
 import getpass
+import subprocess
 
 # 版本号 850 -> 0.8.5.0
 VIMLITE_VER = 870
@@ -115,7 +116,8 @@ def ExpandVariables(sString, dVariables):
 def ExpandAllVariables(expression, workspace, projName, confToBuild = '', 
                        fileName = ''):
     '''展开所有变量
-    
+    会展开脱字符(`)的表达式，但是，不展开 $(shell ) 形式的表达式
+
     expression  - 需要展开的表达式, 可为空
     workspace   - 工作区实例, 可为空
     projName    - 项目名字, 可为空
@@ -128,6 +130,7 @@ def ExpandAllVariables(expression, workspace, projName, confToBuild = '',
     # 先展开所有命令表达式
     # 只支持 `` 内的表达式, 不支持 $() 形式的
     # 因为经常用到在 Makefile 里面的变量, 为了统一, 无法支持 $() 形式
+    # TODO: 用以下正则匹配脱字符包含的字符串 r'`(?:[^`]|(?<=\\)`)*`'
     while i < len(expression):
         c = expression[i]
         if c == '`':
@@ -227,6 +230,7 @@ def ExpandAllInterVariables(expression, workspace, projName, confToBuild = '',
                 dVariables['IntermediateDirectory'] = imd
                 dVariables['OutDir'] = imd
 
+            # TODO: 怎么处理忽略的文件？
             if '$(ProjectFiles)' in expression:
                 dVariables['ProjectFiles'] = \
                         ' '.join([ '"%s"' % i for i in project.GetAllFiles()])
@@ -260,6 +264,40 @@ def IsCppHeaderFile(fileName):
         return True
     else:
         return False
+
+#===============================================================================
+# shell 命令展开工具
+#===============================================================================
+def ExpandShellCmd(s):
+    p = re.compile(r'\$\(shell +(.+?)\)')
+    return p.sub(ExpandCallback, s)
+
+def GetIncludesAndMacrosFromArgs(s):
+    '''不支持 -I /usr/include 形式，只支持 -I/usr/include'''
+    results = []
+    p = re.compile(r'(?:-I"((?:[^"]|(?<=\\)")*)")|-I((?:\\ |\S)+)'
+                   + r'|(-D[a-zA-Z_][a-zA-Z_0-9]*)')
+    for m in p.finditer(s):
+        if m.group(1):
+            # -I""
+            results.append('-I' + m.group(1)[1:-1].replace('\\', ''))
+        if m.group(2):
+            # -I\ \ a 和 -Iabc
+            results.append('-I' + m.group(2).replace('\\', ''))
+        if m.group(3):
+            # -D_DEBUG
+            results.append(m.group(3))
+
+    return results
+
+def GetCmdOutput(cmd):
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    return p.stdout.read().rstrip()
+
+def ExpandCallback(m):
+    return GetCmdOutput(m.group(1))
+
+#===============================================================================
 
 
 if __name__ == '__main__':

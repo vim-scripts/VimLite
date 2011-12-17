@@ -254,6 +254,7 @@ class TagsStorageSQLite(ITagsStorage):
                     try:
                         os.remove(fileName)
                     except WindowsError:
+                        print "WindowsError: remove %s failed" % fileName
                         pass
                 else:
                     raise sqlite3.OperationalError
@@ -1325,9 +1326,7 @@ def ParseFiles(files, replacements = []):
         #cmd = '"%s" %s -f - "%s"' % (CTAGS, CTAGS_OPTS, f)
         #tags += os.popen(cmd).read()
     if platform.system() == 'Windows':
-        cmd = '"%s" %s -f - "%s"' % (Escape(CTAGS, '\\'),
-                                     CTAGS_OPTS,
-                                     Escape('" "'.join(files), '\\'))
+        cmd = '"%s" %s -f - "%s"' % (CTAGS, CTAGS_OPTS, '" "'.join(files))
     else:
         cmd = '"%s" %s -f - "%s"' % (CTAGS, CTAGS_OPTS, '" "'.join(files))
 

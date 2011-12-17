@@ -150,7 +150,11 @@ class Project:
         self.SetModified(True)
 
     def GetAllFiles(self, absPath = False, projConfName = ''):
-        '''如果 projConfName 非空，获取 projConfName 的 ignoredFiles'''
+        '''
+        如果 projConfName 为空，返回结果会包含被忽略的文件，也就是全部文件
+        如果 projConfName 非空，排除 projConfName 配置指定忽略的文件
+        NOTE: 暂时只有在构建的时候才需要排除忽略的文件
+        '''
         ignoredFiles = set()
         if projConfName:
             settings = self.GetSettings()
@@ -277,7 +281,6 @@ class Project:
     def IsFileExists(self, fileName):
         '''find the file under this node.
         Convert the file path to be relative to the project path'''
-        
         ds = Globals.DirSaver()
         
         os.chdir(self.dirName)
