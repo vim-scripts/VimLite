@@ -34,6 +34,52 @@ def GetIncludeFiles(fileName, searchPaths = []):
 
     return ret
 
+def GetIncludeStmtsForClang(fileName, excludeFile):
+    li = GetIncludeRelatedStmtList(fileName, excludeFile)
+    return '\n'.join(li)
+
+def FillHeaderInSource(sSourceFile, sHeaderFile, sHeaderContents):
+    '''前两个参数尽量要是绝对路径'''
+    sRet = ''
+    global reInclude
+    sBaseName = os.path.basename(sHeaderFile)
+    reBaseName = re.compile(r'[<"/\\]' + sBaseName + r'\b')
+    with open(sSourceFile) as f:
+        li = f.readlines()
+        for (i, sLine) in enumerate(li):
+            m = reInclude.match(sLine)
+            if m and reBaseName.search(m.group()):
+                sRet = ''.join(li[:i]) + sHeaderContents + ''.join(li[i+1:])
+                break
+        else:
+            sRet = ''.join(li)
+
+    return sRet
+
+def FillHeaderWithSource(sHeaderFile, sHeaderContents, sSourceFile):
+    '''前两个参数尽量要是绝对路径，用源文件的内容填充头文件的头部和尾部的内容
+    返回 (包含指令所在行号, 结果内容)'''
+    sRet = ''
+    nRow = 0
+    global reInclude
+    sBaseName = os.path.basename(sHeaderFile)
+    reBaseName = re.compile(r'[<"/\\]' + sBaseName + r'\b')
+    if not sHeaderContents.endswith('\n'):
+        # 文本内容必须以换行结束
+        sHeaderContents += '\n'
+    with open(sSourceFile) as f:
+        li = f.readlines()
+        for (i, sLine) in enumerate(li):
+            m = reInclude.match(sLine)
+            if m and reBaseName.search(m.group()):
+                sRet = ''.join(li[:i]) + sHeaderContents + ''.join(li[i+1:])
+                nRow = i + 1
+                break
+        else:
+            sRet = sHeaderContents
+
+    return (nRow, sRet)
+
 # ==============================================================================
 
 enableCache = True
@@ -46,6 +92,16 @@ CACHE_RAWINCLUDELIST = {}
 
 # 匹配 #include 行
 reInclude = re.compile(r'^\s*#\s*include\s*(<[^>]+>|"[^"]+")')
+
+# 匹配 #include 以及相关的行，如 #if, #else, #ifdef, #endif
+patInclude =    r'^\s*#\s*include\b.+'
+patIf =         r'^\s*#\s*if\s+.+'
+patIfdef =      r'^\s*#\s*ifdef\s+.+'
+patIfndef =     r'^\s*#\s*ifndef\s+.+'
+patElse =       r'^\s*#\s*else\b'
+patEndif =      r'^\s*#\s*endif\b'
+reIncludeRelated = re.compile(
+    r'|'.join([patInclude, patIf, patIfdef, patIfndef, patElse, patEndif]))
 
 def ClearCache():
     CACHE_INCLUDELIST.clear()
@@ -141,6 +197,46 @@ def GetRawIncludeList(file):
 
         return ret
 
+def GetIncludeRelatedStmtList(file, excludeFile):
+    '''获取包含文件的语句的列表, 整个语句'''
+    ret = []
+    global reIncludeRelated
+
+    # 字符串的前面必须是 " 或 < 或 /(posix) 或 \(Windows)
+    if excludeFile:
+        reTmp = re.compile(r'[<"/\\]' + excludeFile + r'\b')
+    else:
+        reTmp = None
+
+    if enableCache:
+        # NOTE: 时间戳比较应该用 ==
+        if CACHE_RAWINCLUDELIST.has_key(file) and \
+           int(os.path.getmtime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
+            ret = CACHE_RAWINCLUDELIST[file]['inclist']
+            return ret
+
+    try:
+        f = open(file)
+        for l in f:
+            m = reIncludeRelated.match(l)
+            if m:
+                if reTmp and reTmp.search(m.group()):
+                # 找到了需要排除的文件，直接终止，因为后面的不在需要了
+                # TODO: 需要处理预处理条件栈
+                    break
+                ret.append(m.group())
+        f.close()
+    except IOError:
+        return ret
+    else:
+        # 缓存结果
+        #if enableCache:
+            #CACHE_RAWINCLUDELIST[file] = {}
+            #CACHE_RAWINCLUDELIST[file]['inclist'] = ret
+            #CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+
+        return ret
+
 def GetRawIncludeList2(file):
     '''获取包含文件列表, 包含 <> 或 ""
     这个函数表面上看更快, 实际上更慢!
@@ -199,7 +295,28 @@ def DoGetIncludeFiles(file, guard, searchPaths):
 
     return ret
 
-if __name__ == '__main__':
+def test():
+
+    sFile = '/home/eph/Desktop/projects/mcapi/TestApi/THashTable.cpp'
+    #sFile = '/home/eph/Desktop/VimLite/VIMClangCC/t2.hpp'
+    excludeFile = 'THashTable.h'
+    #excludeFile = 'AVLTree.h'
+    sHeaderFile = '/home/eph/Desktop/projects/mcapi/TestApi/THashTable.h'
+
+    with open(sHeaderFile) as f:
+        print FillHeaderWithSource(sHeaderFile, f.read(), sFile)
+    return
+
+    li = GetIncludeRelatedStmtList(sFile, '')
+    print '\n'.join(li)
+    print '=' * 40
+    #print GetRawIncludeList(sFile)
+    reTmp = re.compile('%s\\b' % excludeFile)
+    print '\n'.join(filter(lambda x: not reTmp.search(x), li))
+    print '=' * 40
+    print GetIncludeStmtsForClang(sFile, excludeFile)
+
+    return
     enableCache = False
     import sys
     if len(sys.argv) > 1:
@@ -216,6 +333,8 @@ if __name__ == '__main__':
         print GetRawIncludeList(sys.argv[1])
         print '=' * 40
         print GetRawIncludeList2(sys.argv[1])
+    else:
+        return
 
     import time
     t1 = time.time()
@@ -232,3 +351,5 @@ if __name__ == '__main__':
     print li
     print t2 - t1
 
+if __name__ == '__main__':
+    test()

@@ -39,9 +39,9 @@ def GetResultType(iCompletionString):
 def GetQuickFixItem(diagnostic):
     # Some diagnostics have no file, e.g. "too many errors emitted, stopping now"
     if diagnostic.location.file:
-        sFileName = diagnostic.location.file.name
+        sFileName = os.path.normpath(diagnostic.location.file.name)
     else:
-        sFileName = ""
+        sFileName = ''
 
     if diagnostic.severity == diagnostic.Ignored:
         sType = 'I'
@@ -56,7 +56,7 @@ def GetQuickFixItem(diagnostic):
     else:
         return None
 
-    return {'filename': os.path.normpath(sFileName),
+    return {'filename': sFileName,
             'lnum': diagnostic.location.line,
             'col': diagnostic.location.column,
             'text': diagnostic.spelling,
@@ -103,6 +103,22 @@ def GetCalltipsFromCCResults(sFuncName, iCCResults):
     return lCalltips
 
 
+def GetCalltipsFromFilteredResults(sFuncName, results):
+    lCalltips = []
+
+    # 理论上，这里基本上过滤完毕
+    results = filter(lambda x: GetTypedText(x.string) == sFuncName, results)
+    for result in results:
+        iCompletionString = result.string
+
+        sCalltips = ' '.join([i.spelling for i in iCompletionString])
+
+        if sCalltips:
+            lCalltips.append(sCalltips)
+
+    return lCalltips
+
+
 class UpdateTUThread(threading.Thread):
     def __init__(self, sFileName, lArgs, lUnsavedFiles, index, tus,
                  bReparse = False, bRebuild = False):
@@ -139,6 +155,7 @@ class UpdateTUThread(threading.Thread):
                 # 为了效率，nFlags 是必需的
                 nFlags = TranslationUnit.PrecompiledPreamble \
                         | TranslationUnit.CXXPrecompiledPreamble
+                nFlags |= TranslationUnit.DetailedPreprocessingRecord
                 #nFlags |= TranslationUnit.Incomplete
                 #nFlags |= TranslationUnit.CacheCompletionResults
                 tu = self.index.parse(self.sFileName,
@@ -170,6 +187,7 @@ class VIMClangCCIndex(object):
         self.tus = {} # {文件名绝对路径: tu, [, ...]}，不能直接修改
         self.lArgs = [] # 传给 clang 的参数列表 ['-D_DEBUG', ...]
         self.cacheCCResults = None # 最近一次的结果
+        self.cacheResults = []
 
         self.updateThread = threading.Thread()
         self.updateThread.start()
@@ -272,6 +290,8 @@ class VIMClangCCIndex(object):
             results = filter(lambda x: patBase.match(GetTypedText(x.string)),
                              results)
 
+        self.cacheResults = results
+
         for result in results:
             dVimResult = {}
 
@@ -314,12 +334,56 @@ class VIMClangCCIndex(object):
     def GetCalltipsFromCacheCCResults(self, sFuncName):
         return GetCalltipsFromCCResults(sFuncName, self.cacheCCResults)
 
+    def GetCalltipsFromCacheFilteredResults(self, sFuncName):
+        return GetCalltipsFromFilteredResults(sFuncName, self.cacheResults)
+
     def GetVimQucikFixListFromRecentTU(self):
         tu = self.updateThread.tu
         if tu:
             return filter(None, map(GetQuickFixItem, tu.diagnostics))
         else:
             return []
+
+    def GetSymbolDeclarationLocation(self, sFileName, nLine, nCol,
+                                     lUnsavedFiles = [], bReparse = False):
+        '''返回字典，若获取失败，返回空字典'''
+        tu = self.GetCurrentTranslationUnit(sFileName, lUnsavedFiles, bReparse)
+        if not tu:
+            return {}
+        cursor = tu.getCursor(
+            tu.getLocation(tu.getFile(sFileName), nLine, nCol))
+        if not cursor:
+            return {}
+        declCursor = cursor.get_referenced()
+        if declCursor:
+            #return (declCursor.location.file.name, declCursor.location.line,
+                    #declCursor.location.column, declCursor.location.offset)
+            return {'filename': declCursor.location.file.name,
+                    'line': declCursor.location.line,
+                    'column': declCursor.location.column,
+                    'offset': declCursor.location.offset}
+        else:
+            return {}
+
+    def GetSymbolDefinitionLocation(self, sFileName, nLine, nCol,
+                                     lUnsavedFiles = [], bReparse = False):
+        tu = self.GetCurrentTranslationUnit(sFileName, lUnsavedFiles, bReparse)
+        if not tu:
+            return {}
+        cursor = tu.getCursor(
+            tu.getLocation(tu.getFile(sFileName), nLine, nCol))
+        if not cursor:
+            return {}
+        declCursor = cursor.get_definition()
+        if declCursor:
+            #return (declCursor.location.file.name, declCursor.location.line,
+                    #declCursor.location.column, declCursor.location.offset)
+            return {'filename': declCursor.location.file.name,
+                    'line': declCursor.location.line,
+                    'column': declCursor.location.column,
+                    'offset': declCursor.location.offset}
+        else:
+            return {}
 
 
 Availabilitys = {
@@ -475,6 +539,10 @@ def test():
     ccr = ins.GetTUCodeCompleteResults(sFileName, nLine, nColumn)
     print 'Second code completion elapsed: %f' % (time.time() - start)
     print '=' * 40
+
+    print ins.GetSymbolDeclarationLocation(sFileName, nLine, nColumn)
+    print ins.GetSymbolDefinitionLocation(sFileName, nLine, nColumn)
+    return
 
     ccr = ins.GetTUCodeCompleteResults(sFileName, nLine, nColumn)
     print ins.GetCalltipsFromCacheCCResults('operator=')

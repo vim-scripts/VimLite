@@ -132,7 +132,7 @@ endif
 " The 'Pyclewn' command starts pyclewn and vim netbeans interface.
 command -nargs=* -complete=file Pyclewn call pyclewn#StartClewn(<f-args>)
 plugin/VLWorkspace.vim	[[[1
-6261
+6314
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -146,7 +146,7 @@ let g:loaded_VLWorkspace = 1
 
 
 if !has('python')
-    echo "Error: Required vim compiled with +python"
+    echoerr "Error: Required vim compiled with +python"
     finish
 endif
 
@@ -156,7 +156,7 @@ endif
 "endif
 "noremap <unique> <script> <Plug>TypecorrAdd  <SID>Add
 
-"Return: 1 表示赋值为默认, 否则返回 0
+" Return: 1 表示赋值为默认, 否则返回 0
 function! s:InitVariable(var, value) "初始化变量仅在变量没有定义时才赋值 {{{2
     if !exists(a:var)
         let {a:var} = a:value
@@ -177,7 +177,7 @@ call s:InitVariable("g:VLWorkspaceWinPos", "left")
 call s:InitVariable("g:VLWorkspaceBufName", '==VLWorkspace==')
 call s:InitVariable("g:VLWorkspaceShowLineNumbers", 0)
 call s:InitVariable("g:VLWorkspaceHighlightCursorline", 1)
-"若为 1，编辑项目文件时，在工作空间的光标会自动定位到对应的文件所在的行
+" 若为 1，编辑项目文件时，在工作空间的光标会自动定位到对应的文件所在的行
 call s:InitVariable('g:VLWorkspaceLinkToEidtor', 1)
 call s:InitVariable('g:VLWorkspaceEnableMenuBarMenu', 1)
 call s:InitVariable('g:VLWorkspaceEnableToolBarMenu', 1)
@@ -192,16 +192,16 @@ call s:InitVariable('g:VLWorkspaceCscpoeOutFile', '_cscope.out')
 call s:InitVariable('g:VLWorkspaceHighlightSourceFile', 1)
 call s:InitVariable('g:VLWorkspaceActiveProjectHlGroup', 'SpecialKey')
 
-"使用 clang 补全, 否则使用 OmniCpp
+" 使用 clang 补全, 否则使用 OmniCpp
 call s:InitVariable("g:VLWorkspaceUseVIMCCC", 0)
-"保存文件时自动解析文件, 仅对属于工作空间的文件有效
+" 保存文件时自动解析文件, 仅对属于工作空间的文件有效
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 0)
-"自动解析保存的文件时, 仅解析头文件
+" 自动解析保存的文件时, 仅解析头文件
 call s:InitVariable("g:VLWorkspaceNotParseSourceAfterSave", 0)
-"保存调试器信息, 默认不保存, 因为暂时无法具体控制
+" 保存调试器信息, 默认不保存, 因为暂时无法具体控制
 call s:InitVariable("g:VLWDbgSaveBreakpointsInfo", 1)
 
-"键绑定
+" 键绑定
 call s:InitVariable('g:VLWShowMenuKey', '.')
 call s:InitVariable('g:VLWPopupMenuKey', ',')
 call s:InitVariable('g:VLWOpenNodeKey', 'o')
@@ -220,66 +220,31 @@ call s:InitVariable('g:VLWRefreshBufferKey', 'R')
 call s:InitVariable('g:VLWToggleHelpInfo', '<F1>')
 
 "=======================================
-"标记是否已经运行
+" 标记是否已经运行
 call s:InitVariable("g:VLWorkspaceHasStarted", 0)
 
 call s:InitVariable("g:VLWorkspaceDbgConfName", "VLWDbg.conf")
 
-"模板所在路径
+" 模板所在路径
 if has('win32') || has('win64')
     call s:InitVariable("g:VLWorkspaceTemplatesPath", 
-                \$VIM . '\vimlite\templates\projects')
+                \       $VIM . '\vimlite\templates\projects')
 else
     call s:InitVariable("g:VLWorkspaceTemplatesPath", 
-                \$HOME . '/.vimlite/templates/projects')
+                \       $HOME . '/.vimlite/templates/projects')
 endif
 
-"工作空间文件后缀名
+" 工作空间文件后缀名
 call s:InitVariable("g:VLWorkspaceWspFileSuffix", "vlworkspace")
-"项目文件后缀名
+" 项目文件后缀名
 call s:InitVariable("g:VLWorkspacePrjFileSuffix", "vlproject")
 
+" 标识是否第一次初始化
+let s:bFirstInit = 1
 
-"命令导出
+" 命令导出
 command! -nargs=? -complete=file VLWorkspaceOpen 
-            \call <SID>InitVLWorkspace('<args>')
-
-command! -nargs=? VLWInitCscopeDatabase 
-            \call <SID>InitVLWCscopeDatabase(<f-args>)
-command! -nargs=0 VLWUpdateCscopeDatabase 
-            \call <SID>UpdateVLWCscopeDatabase(1)
-
-command! -nargs=0 -bar VLWBuildActiveProject    call <SID>BuildActiveProject()
-command! -nargs=0 -bar VLWCleanActiveProject    call <SID>CleanActiveProject()
-command! -nargs=0 -bar VLWRunActiveProject      call <SID>RunActiveProject()
-command! -nargs=0 -bar VLWBuildAndRunActiveProject 
-            \call <SID>BuildAndRunActiveProject()
-
-command! -nargs=* -complete=file VLWParseFiles  call <SID>ParseFiles(<f-args>)
-command! -nargs=0 -bar VLWParseCurrentFile      call <SID>ParseCurrentFile(0)
-command! -nargs=0 -bar VLWDeepParseCurrentFile  call <SID>ParseCurrentFile(1)
-
-command! -nargs=0 -bar VLWDbgStart          call <SID>DbgStart()
-command! -nargs=0 -bar VLWDbgStop           call <SID>DbgStop()
-command! -nargs=0 -bar VLWDbgStepIn         call <SID>DbgStepIn()
-command! -nargs=0 -bar VLWDbgNext           call <SID>DbgNext()
-command! -nargs=0 -bar VLWDbgStepOut        call <SID>DbgStepOut()
-command! -nargs=0 -bar VLWDbgRunToCursor    call <SID>DbgRunToCursor()
-command! -nargs=0 -bar VLWDbgContinue       call <SID>DbgContinue()
-command! -nargs=0 -bar VLWDbgToggleBp       call <SID>DbgToggleBreakpoint()
-command! -nargs=0 -bar VLWDbgBacktrace      call <SID>DbgBacktrace()
-
-command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
-command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
-command! -nargs=0 -bar VLWCompilersSettings call <SID>CompilersSettings()
-command! -nargs=0 -bar VLWBuildersSettings  call <SID>BuildersSettings()
-
-command! -nargs=0 -bar VLWSwapSourceHeader  call <SID>SwapSourceHeader()
-
-command! -nargs=? -bar VLWFindFiles         call <SID>FindFiles(<q-args>)
-command! -nargs=? -bar VLWFindFilesNoCase   call <SID>FindFiles(<q-args>, 1)
-
-command! -nargs=? -bar VLWOpenIncludeFile   call <SID>OpenIncludeFile()
+            \                               call <SID>InitVLWorkspace('<args>')
 
 
 function! g:VLWGetAllFiles() "{{{2
@@ -294,7 +259,7 @@ endfunction
 "}}}
 
 "===============================================================================
-"基本实用函数
+" 基本实用函数
 "===============================================================================
 "{{{1
 function! s:SID() "获取脚本 ID {{{2
@@ -428,6 +393,7 @@ function! s:InitVIMCCCFacilities() "{{{2
     py OrigVIMCCCIndex = VIMCCCIndex
     let g:VIMCCC_Enable = 0 " 再禁用 VIMCCC
     autocmd! FileType c,cpp call g:InitVIMClangCodeCompletionExt()
+
 python << PYTHON_EOF
 '''定义一些 VIMCCC 专用的 python 函数'''
 
@@ -456,7 +422,18 @@ def VLGetCurUnsavedFile():
     return (vim.current.buffer.name,
             '\n'.join(vim.current.buffer[:]))
 
+def HandleHeaderIssue(sHeaderFile):
+    '''处理头文件的问题'''
+    if Globals.IsCppHeaderFile(sHeaderFile):
+        # 头文件的话，需要添加对应的源文件中在包含此头文件之前的所有包含语句内容
+        swapFiles = ws.GetSHSwapList(sHeaderFile)
+        if swapFiles:
+            # 简单处理，只取第一个
+            srcFile = swapFiles[0]
+            vim.command("call VIMCCCSetRelatedFile('%s')" % srcFile)
+
 PYTHON_EOF
+
 endfunction
 "}}}
 " FileType 自动命令调用的函数，第一次初始化
@@ -464,23 +441,30 @@ function! g:InitVIMClangCodeCompletionExt() "{{{2
     let bak = g:VIMCCC_Enable
     let g:VIMCCC_Enable = 1
 
+    let sFile = expand('%:p')
     let bool = 0
-    py project = ws.VLWIns.GetProjectByFileName(vim.eval("expand('%:p')"))
+    py project = ws.VLWIns.GetProjectByFileName(vim.eval("sFile"))
     py if project: vim.command("let bool = 1")
 
     if bool
+
 python << PYTHON_EOF
 # 使用关联的 clang index
 if ws.clangIndices.has_key(project.name):
+    # 使用已经存在的
     VIMCCCIndex = ws.clangIndices[project.name]
+    HandleHeaderIssue(vim.eval("sFile"))
 else:
+    # 新建并关联
     VIMCCCIndex = VIMClangCCIndex()
     UpdateVIMCCCIndexArgs(VIMCCCIndex, project.name)
     ws.clangIndices[project.name] = VIMCCCIndex
+    HandleHeaderIssue(vim.eval("sFile"))
     # 稳当起见，先调用一次，这个函数对于多余的调用开销不大
     vim.command("call s:UpdateClangCodeCompletion()")
 del project
 PYTHON_EOF
+
         " 同时安装 BufEnter 自动命令，以保持持续更新
         autocmd BufEnter <buffer> call <SID>UpdateClangCodeCompletion()
     else
@@ -513,7 +497,7 @@ endfunction
 "===============================================================================
 
 "===============================================================================
-"缓冲区与窗口操作
+" 缓冲区与窗口操作
 "===============================================================================
 "{{{1
 function! s:InitVLWorkspace(file) "初始化 {{{2
@@ -540,13 +524,16 @@ function! s:InitVLWorkspace(file) "初始化 {{{2
         autocmd! FileType c,cpp call omnicpp#complete#Init()
     endif
 
+    " 安装命令
+    call s:InstallCommands()
+
     if g:VLWorkspaceEnableMenuBarMenu
-        "添加菜单栏菜单
+        " 添加菜单栏菜单
         call s:InstallMenuBarMenu()
     endif
 
     if g:VLWorkspaceEnableToolBarMenu
-        "添加工具栏菜单
+        " 添加工具栏菜单
         call s:InstallToolBarMenu()
     endif
 
@@ -838,8 +825,57 @@ function! s:LocateFile(fileName) "{{{2
 
     return l:paths
 endfunction
+"}}}
+function! s:InstallCommands() "{{{2
+    if !s:bFirstInit
+        return
+    endif
 
+    " 初始化可用的命令
+    command! -nargs=? VLWInitCscopeDatabase 
+                \                   call <SID>InitVLWCscopeDatabase(<f-args>)
+    command! -nargs=0 VLWUpdateCscopeDatabase 
+                \                   call <SID>UpdateVLWCscopeDatabase(1)
 
+    command! -nargs=0 -bar VLWBuildActiveProject    
+                \                           call <SID>BuildActiveProject()
+    command! -nargs=0 -bar VLWCleanActiveProject    
+                \                           call <SID>CleanActiveProject()
+    command! -nargs=0 -bar VLWRunActiveProject      
+                \                           call <SID>RunActiveProject()
+    command! -nargs=0 -bar VLWBuildAndRunActiveProject 
+                \                           call <SID>BuildAndRunActiveProject()
+
+    command! -nargs=* -complete=file VLWParseFiles  
+                \                               call <SID>ParseFiles(<f-args>)
+    command! -nargs=0 -bar VLWParseCurrentFile      
+                \                               call <SID>ParseCurrentFile(0)
+    command! -nargs=0 -bar VLWDeepParseCurrentFile  
+                \                               call <SID>ParseCurrentFile(1)
+
+    command! -nargs=0 -bar VLWDbgStart          call <SID>DbgStart()
+    command! -nargs=0 -bar VLWDbgStop           call <SID>DbgStop()
+    command! -nargs=0 -bar VLWDbgStepIn         call <SID>DbgStepIn()
+    command! -nargs=0 -bar VLWDbgNext           call <SID>DbgNext()
+    command! -nargs=0 -bar VLWDbgStepOut        call <SID>DbgStepOut()
+    command! -nargs=0 -bar VLWDbgRunToCursor    call <SID>DbgRunToCursor()
+    command! -nargs=0 -bar VLWDbgContinue       call <SID>DbgContinue()
+    command! -nargs=0 -bar VLWDbgToggleBp       call <SID>DbgToggleBreakpoint()
+    command! -nargs=0 -bar VLWDbgBacktrace      call <SID>DbgBacktrace()
+
+    command! -nargs=0 -bar VLWEnvVarSetttings   call <SID>EnvVarSettings()
+    command! -nargs=0 -bar VLWTagsSetttings     call <SID>TagsSettings()
+    command! -nargs=0 -bar VLWCompilersSettings call <SID>CompilersSettings()
+    command! -nargs=0 -bar VLWBuildersSettings  call <SID>BuildersSettings()
+
+    command! -nargs=0 -bar VLWSwapSourceHeader  call <SID>SwapSourceHeader()
+
+    command! -nargs=? -bar VLWFindFiles         call <SID>FindFiles(<q-args>)
+    command! -nargs=? -bar VLWFindFilesNoCase   call <SID>FindFiles(<q-args>, 1)
+
+    command! -nargs=? -bar VLWOpenIncludeFile   call <SID>OpenIncludeFile()
+endfunction
+"}}}
 function! s:InstallMenuBarMenu() "{{{2
     anoremenu <silent> 200 &VimLite.Build\ Settings.Compilers\ Settings\.\.\. 
                 \:call <SID>CompilersSettings()<CR>
@@ -851,7 +887,7 @@ function! s:InstallMenuBarMenu() "{{{2
                 \:call <SID>EnvVarSettings()<CR>
 
     "if !g:VLWorkspaceUseVIMCCC
-        anoremenu <silent> 200 &VimLite.Tags\ Settings\.\.\. 
+        anoremenu <silent> 200 &VimLite.Tags\ And\ Clang\ Settings\.\.\. 
                     \:call <SID>TagsSettings()<CR>
     "endif
 endfunction
@@ -954,7 +990,7 @@ endfunction
 
 
 "===============================================================================
-"基本操作
+" 基本操作
 "===============================================================================
 "=================== 工作空间树操作 ===================
 "{{{1
@@ -2086,7 +2122,7 @@ endfunction
 
 
 "===============================================================================
-"使用控件系统的交互操作
+" 使用控件系统的交互操作
 "===============================================================================
 "=================== 环境变量设置 ===================
 "{{{1
@@ -2404,7 +2440,7 @@ function! s:SaveTagsSettingsCbk(dlg, data) "{{{2
 endfunction
 
 function! s:CreateTagsSettingsDialog() "{{{2
-    let dlg = g:VimDialog.New('==Tags Settings==')
+    let dlg = g:VimDialog.New('==Tags And Clang Settings==')
     py ins = TagsSettingsST.Get()
 
 "===============================================================================
@@ -2414,7 +2450,8 @@ function! s:CreateTagsSettingsDialog() "{{{2
     "call dlg.AddControl(ctl)
     "call dlg.AddBlankLine()
 
-    let ctl = g:VCTable.New('Add search paths for the parser.', 1)
+    let ctl = g:VCTable.New(
+                \'Add search paths for the vlctags and libclang parser', 1)
     call ctl.SetId(s:ID_TagsSettingsIncludePaths)
     call ctl.SetIndent(4)
     call ctl.SetDispHeader(0)
@@ -2428,6 +2465,13 @@ function! s:CreateTagsSettingsDialog() "{{{2
     endfor
     call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
+    call dlg.AddControl(ctl)
+    call dlg.AddBlankLine()
+
+    call dlg.AddBlankLine()
+    call dlg.AddSeparator()
+    let ctl = g:VCStaticText.New('The followings are only for vlctags parser')
+    call ctl.SetHighlight('WarningMsg')
     call dlg.AddControl(ctl)
     call dlg.AddBlankLine()
 
@@ -3768,12 +3812,13 @@ function! s:CreateWspSettingsDialog() "{{{2
 "===============================================================================
     " TODO: 如果不需要，隐藏这个设置
     "2.Include Files
-    let ctl = g:VCStaticText.New("Tags Settings")
+    let ctl = g:VCStaticText.New("Tags And Clang Settings")
     call ctl.SetHighlight("Special")
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCTable.New('Add search paths for the parser.', 1)
+    let ctl = g:VCTable.New(
+                \'Add search paths for the vlctags and libclang parser', 1)
     call ctl.SetId(s:ID_WspSettingsIncludePaths)
     call ctl.SetIndent(4)
     call ctl.SetDispHeader(0)
@@ -3783,6 +3828,13 @@ function! s:CreateWspSettingsDialog() "{{{2
     endfor
     call ctl.ConnectBtnCallback(0, s:GetSFuncRef('s:AddSearchPathCbk'), '')
     call ctl.ConnectBtnCallback(2, s:GetSFuncRef('s:EditSearchPathCbk'), '')
+    call wspSettingsDlg.AddControl(ctl)
+    call wspSettingsDlg.AddBlankLine()
+
+    call wspSettingsDlg.AddBlankLine()
+    call wspSettingsDlg.AddSeparator()
+    let ctl = g:VCStaticText.New('The followings are only for vlctags parser')
+    call ctl.SetHighlight('WarningMsg')
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
@@ -5634,7 +5686,8 @@ class VimLiteWorkspace():
                     #vim.command('!"%s >%s 2>&1"' % (cmd, tempFile))
                     # 用 subprocess 模块代替
                     p = subprocess.Popen('"C:\\WINDOWS\\system32\\cmd.exe" /c '
-                        '"%s 2>&1 | tee %s && pause"' % (cmd, tempFile))
+                        '"%s 2>&1 | tee %s && pause || pause"'
+                        % (cmd, tempFile))
                     p.wait()
                 else:
                     # 强制设置成英语 locale 以便 quickfix 处理
@@ -5668,7 +5721,7 @@ class VimLiteWorkspace():
             if Globals.IsWindowsOS():
                 #vim.command('!"%s >%s 2>&1"' % (cmd, tempFile))
                 p = subprocess.Popen('"C:\\WINDOWS\\system32\\cmd.exe" /c '
-                    '"%s 2>&1 | tee %s && pause"' % (cmd, tempFile))
+                    '"%s 2>&1 | tee %s && pause || pause"' % (cmd, tempFile))
                 p.wait()
             else:
                 # 强制设置成英语 locale 以便 quickfix 处理
@@ -5732,7 +5785,7 @@ class VimLiteWorkspace():
                 d = os.environ.copy()
                 d.update(envsDict)
                 p = subprocess.Popen('C:\\WINDOWS\\system32\\cmd.exe /c '
-                    '"%s %s && pause"' % (prog, args), env=d)
+                    '"%s %s && pause || pause"' % (prog, args), env=d)
             else:
                 os.system('~/.vimlite/vimlite_run "%s" '\
                     '~/.vimlite/vimlite_exec %s %s %s &' % (prog, envs, prog,
@@ -6941,7 +6994,7 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:
 plugin/VIMClangCC.vim	[[[1
-494
+712
 " Vim Script
 " Author:   fanhe <fanhed@163.com>
 " License:  GPLv2
@@ -6965,6 +7018,11 @@ autocmd FileType c,cpp call g:InitVIMClangCodeCompletion()
 " 标识是否第一次初始化
 let s:bFirstInit = 1
 
+" 关联的文件，一般用于头文件关联源文件
+" 在头文件头部和尾部添加的额外的内容，用于修正在头文件时的头文件包含等等问题
+" {头文件: {'line': 在关联文件中对应的行(#include), 'filename': 关联文件}, ...}
+let g:dRelatedFile = {}
+
 let s:sPluginPath = substitute(expand('<sfile>:p:h'), '\\', '/', 'g')
 
 if has('win32') || has('win64')
@@ -6983,6 +7041,7 @@ function! s:InitVariable(varName, defaultVal) "{{{2
 endfunction
 "}}}
 
+command! -nargs=0 -bar VIMCCCInitForcibly call <SID>VIMCCCInitForcibly()
 
 " 临时启用选项函数 {{{2
 function! s:SetOpts()
@@ -7046,14 +7105,14 @@ function! s:ShouldComplete() "{{{2
         return 0
     else
         " 检测光标所在的位置，如果在注释、双引号、浮点数时，忽略
-        let nLine = line('.')
+        let nRow = line('.')
         let nCol = col('.') - 1 " 是前一列 eg. ->|
         if nCol < 1
             " TODO: 支持续行的补全
             return 0
         endif
         if g:VIMCCC_EnableSyntaxTest
-            let lStack = synstack(nLine, nCol)
+            let lStack = synstack(nRow, nCol)
             let lStack = empty(lStack) ? [] : lStack
             for nID in lStack
                 if synIDattr(nID, 'name') 
@@ -7093,6 +7152,14 @@ function! s:CompleteByChar(char) "{{{2
             return a:char . s:LaunchVIMClangCodeCompletion()
         endif
     endif
+endfunction
+"}}}
+" 强制启动
+function! s:VIMCCCInitForcibly() "{{{2
+    let bak = g:VIMCCC_Enable
+    let g:VIMCCC_Enable = 1
+    call g:InitVIMClangCodeCompletion()
+    let g:VIMCCC_Enable = bak
 endfunction
 "}}}
 " 可选参数存在且非零，不 '冷启动'(异步新建不存在的当前文件对应的翻译单元)
@@ -7140,6 +7207,12 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     " Ignore case in code completion
     call s:InitVariable('g:VIMCCC_IgnoreCase', &ignorecase)
 
+    " 跳转至符号声明处的默认快捷键
+    call s:InitVariable('g:VIMCCC_GotoDeclarationKey', '<C-p>')
+
+    " 跳转至符号实现处的默认快捷键
+    call s:InitVariable('g:VIMCCC_GotoImplementationKey', '<C-]>')
+
     " 用于外部控制
     call s:InitVariable('g:VIMCCC_Enable', 1)
     if !g:VIMCCC_Enable
@@ -7147,7 +7220,7 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     endif
 
     if s:bFirstInit
-        command! -nargs=0 -bar VIMCCCUpdateQuickFix 
+        command! -nargs=0 -bar VIMCCCQuickFix 
                     \call <SID>VIMCCCUpdateClangQuickFix(expand('%:p'))
 
         command! -nargs=+ VIMCCCSetArgs call <SID>VIMCCCSetArgsCmd(<f-args>)
@@ -7213,6 +7286,13 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
                     \"\<CR>"
     endif
 
+    exec 'nnoremap <silent> <buffer> ' . g:VIMCCC_GotoDeclarationKey 
+                \. ' :call <SID>VIMCCCGotoDeclaration()<CR>'
+
+    exec 'nnoremap <silent> <buffer> ' . g:VIMCCC_GotoImplementationKey 
+                \. ' :call <SID>VIMCCCSmartJump()<CR>'
+
+
     " 显示函数 calltips 的快捷键
     exec 'inoremap <silent> <buffer> ' . g:VLCalltips_DispCalltipsKey 
                 \. ' <C-r>=<SID>RequestCalltips()<CR>'
@@ -7237,7 +7317,7 @@ function! s:RequestCalltips(...) "{{{2
             let sFuncName = matchstr(sLine[: nCol-4], '\~\?\w\+$')
 
             py vim.command("let lCalltips = %s" 
-                        \% VIMCCCIndex.GetCalltipsFromCacheCCResults(
+                        \% VIMCCCIndex.GetCalltipsFromCacheFilteredResults(
                         \   vim.eval("sFuncName")))
             call g:DisplayVLCalltips(lCalltips, 0)
         endif
@@ -7263,6 +7343,8 @@ function! s:RequestCalltips(...) "{{{2
         let sFuncName = matchstr(sStartLine[: lStartPos[1]-1], '\~\?\w\+\ze\s*($')
         let nFuncStartIdx = match(sStartLine[: lStartPos[1]-1], '\~\?\w\+\ze\s*($')
 
+        let sFileName = expand('%:p')
+        " 补全时，行号要加上前置字符串所占的行数，否则位置就会错误
         let nRow = lStartPos[0]
         let nCol = nFuncStartIdx + 1
 
@@ -7270,8 +7352,9 @@ function! s:RequestCalltips(...) "{{{2
         if sFuncName !=# ''
             let calltips = []
             " 找到了函数名，开始全能补全
+            let sFileName = s:ToClangFileName(sFileName)
             py VIMCCCIndex.GetTUCodeCompleteResults(
-                        \vim.eval("expand('%:p')"), 
+                        \vim.eval("sFileName"), 
                         \int(vim.eval("nRow")),
                         \int(vim.eval("nCol")),
                         \[GetCurUnsavedFile()])
@@ -7287,6 +7370,19 @@ function! s:RequestCalltips(...) "{{{2
     return ''
 endfunction
 "}}}
+function! VIMCCCSetRelatedFile(sRelatedFile, ...) "{{{2
+    let sFileName = a:0 > 0 ? a:1 : expand('%:p')
+    if sFileName ==# ''
+        " 不允许空文件名，因为空字符串不能为字典的键值
+        return
+    endif
+    let g:dRelatedFile[sFileName] = {'line': 0, 'filename': a:sRelatedFile}
+    py import IncludeParser
+    py vim.command("let g:dRelatedFile[sFileName]['line'] = %d" 
+                \% IncludeParser.FillHeaderWithSource(vim.eval("sFileName"), '',
+                \                               vim.eval("a:sRelatedFile"))[0])
+endfunction
+"}}}
 " 设置 clang 命令参数，参数可以是字符串或者列表
 " 设置完毕后立即异步重建当前文件的翻译单元
 function! VIMCCCSetArgs(lArgs) "{{{2
@@ -7296,13 +7392,43 @@ function! VIMCCCSetArgs(lArgs) "{{{2
         let lArgs = a:lArgs
     endif
 
+    let sFileName = expand('%:p')
+    let sFileName = s:ToClangFileName(sFileName)
     py VIMCCCIndex.SetParseArgs(vim.eval("lArgs"))
-    py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("expand('%:p')"), 
+    py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("sFileName"), 
                 \[GetCurUnsavedFile()], True, True)
 endfunction
 "}}}
 function! s:VIMCCCSetArgsCmd(...) "{{{2
     call VIMCCCSetArgs(a:000)
+endfunction
+"}}}
+" 统一处理，主要处理 .h -> .hpp 的问题
+function! s:ToClangFileName(sFileName) "{{{2
+    let sFileName = a:sFileName
+    let sResult = sFileName
+    if fnamemodify(sFileName, ':e') ==? 'h'
+        " 把 c 的头文件转为 cpp 的头文件，即 .h -> .hpp
+        " 暂时简单的处理，前头加两个 '_'，后面加两个 'p'
+        let sDirName = fnamemodify(sFileName, ':h')
+        let sBaseName = fnamemodify(sFileName, ':t')
+        let sResult = sDirName . '/' . '__' . sBaseName . 'pp'
+    endif
+
+    return sResult
+endfunction
+"}}}
+function! s:FromClangFileName(sClangFileName) "{{{2
+    let sClangFileName = a:sClangFileName
+    let sResult = sClangFileName
+    if fnamemodify(sClangFileName, ':e') ==? 'hpp' 
+                \&& fnamemodify(sClangFileName, ':t')[:1] ==# '__'
+        let sDirName = fnamemodify(sClangFileName, ':h')
+        let sBaseName = fnamemodify(sClangFileName, ':t')
+        let sResult = sDirName . '/' . sBaseName[2:-3]
+    endif
+
+    return sResult
 endfunction
 "}}}
 function! VIMClangCodeCompletion(findstart, base) "{{{2
@@ -7340,11 +7466,13 @@ function! VIMClangCodeCompletion(findstart, base) "{{{2
     let b:base = a:base
     let sBase = a:base
 
-    let nRow = line('.') "行
+    let sFileName = expand('%:p')
+    let nRow = line('.')
     let nCol = col('.') "列
 
+    let sFileName = s:ToClangFileName(sFileName)
     py lResults = VIMCCCIndex.GetVimCodeCompleteResults(
-                \vim.current.buffer.name, 
+                \vim.eval("sFileName"), 
                 \int(vim.eval("nRow")),
                 \int(vim.eval("nCol")),
                 \[GetCurUnsavedFile()],
@@ -7366,21 +7494,139 @@ function! VIMClangCodeCompletion(findstart, base) "{{{2
     "===========================================================================
 endfunction
 " 更新本地当前窗口的 quickfix 列表
-function! s:VIMCCCUpdateClangQuickFix(sFile) "{{{2
-    let sFile = a:sFile
+function! s:VIMCCCUpdateClangQuickFix(sFileName) "{{{2
+    let sFileName = a:sFileName
 
-    "py t = UpdateQuickFixThread(vim.eval("sFile"), [GetCurUnsavedFile()], True)
+    "py t = UpdateQuickFixThread(vim.eval("sFileName"), [GetCurUnsavedFile()], True)
     "py t.start()
     "return
 
-    py VIMCCCIndex.UpdateTranslationUnit(vim.eval("sFile"), 
-                \[GetCurUnsavedFile()], True)
+    " quickfix 里面就不需要添加前置内容了，暂时的处理
+    py VIMCCCIndex.UpdateTranslationUnit(vim.eval("sFileName"), 
+                \[GetCurUnsavedFile(False)], True)
     py vim.command("let lQF = %s" 
                 \% VIMCCCIndex.GetVimQucikFixListFromRecentTU())
-    if !empty(lQF)
-        "call setqflist(lQF)
-        call setloclist(0, lQF)
-        silent! lopen
+
+    "call setqflist(lQF)
+    call setloclist(0, lQF)
+    silent! lopen
+endfunction
+"}}}
+function! s:VIMCCCGotoDeclaration() "{{{2
+    let sFileName = expand('%:p')
+    let nFileLineCount = line('$')
+
+    let dict = get(g:dRelatedFile, sFileName, {})
+    let nLineOffset = 0
+    if !empty(dict) && dict.line > 0
+        let nLineOffset = dict.line - 1
+    endif
+
+    let nRow = line('.')
+    let nRow += nLineOffset
+    let nCol = col('.')
+    let sFileName = s:ToClangFileName(sFileName)
+    py vim.command("let dLocation = %s" 
+                \% VIMCCCIndex.GetSymbolDeclarationLocation(vim.eval("sFileName"), 
+                \       int(vim.eval("nRow")), int(vim.eval("nCol")), 
+                \       [GetCurUnsavedFile(UF_Related)], True))
+
+    "echom string(dLocation)
+    if !empty(dLocation) && dLocation.filename ==# sFileName
+                \&& !empty(dict) && dict.line > 0
+        if dLocation.line < dict.line
+            " 在关联的文件中，前部
+            let dLocation.filename = dict.filename
+        elseif dLocation.line >= dict.line + nFileLineCount
+            " 在关联的文件中，后部
+            let dLocation.line -= (nFileLineCount - 1)
+            let dLocation.filename = dict.filename
+        else
+            " 在当前文件中
+            let dLocation.line -= nLineOffset
+        endif
+        "let dLocation.offset = 0 " 这个暂时无视
+    endif
+    "echom string(dLocation)
+
+    call s:GotoLocation(dLocation)
+endfunction
+"}}}
+function! s:VIMCCCGotoImplementation() "{{{2
+    let sFileName = expand('%:p')
+    let nFileLineCount = line('$')
+
+    let dict = get(g:dRelatedFile, sFileName, {})
+    let nLineOffset = 0
+    if !empty(dict) && dict.line > 0
+        let nLineOffset = dict.line - 1
+    endif
+
+    let nRow = line('.')
+    let nRow += nLineOffset
+    let nCol = col('.')
+    let sFileName = s:ToClangFileName(sFileName)
+    py vim.command("let dLocation = %s" 
+                \% VIMCCCIndex.GetSymbolDefinitionLocation(vim.eval("sFileName"), 
+                \       int(vim.eval("nRow")), int(vim.eval("nCol")), 
+                \       [GetCurUnsavedFile(UF_Related)], True))
+
+    "echom string(dLocation)
+    if !empty(dLocation) && dLocation.filename ==# sFileName 
+                \&& !empty(dict) && dict.line > 0
+        if dLocation.line < dict.line
+            " 在关联的文件中，前部
+            let dLocation.filename = dict.filename
+        elseif dLocation.line >= dict.line + nFileLineCount
+            " 在关联的文件中，后部
+            let dLocation.line -= (nFileLineCount - 1)
+            let dLocation.filename = dict.filename
+        else
+            " 在当前文件中
+            let dLocation.line -= nLineOffset
+        endif
+        "let dLocation.offset = 0 " 这个暂时无视
+    endif
+    "echom string(dLocation)
+
+    call s:GotoLocation(dLocation)
+endfunction
+"}}}
+" 智能跳转, 可跳转到包含的文件, 符号的实现处
+function! s:VIMCCCSmartJump() "{{{2
+    let sLine = getline('.')
+    if matchstr(sLine, '^\s*#\s*include') !=# ''
+        " 跳转到包含的文件
+        if exists(':VLWOpenIncludeFile') == 2
+            VLWOpenIncludeFile
+        endif
+    else
+        " 跳转到符号的实现处
+        call s:VIMCCCGotoImplementation()
+    endif
+endfunction
+"}}}
+function! s:GotoLocation(dLocation) "{{{2
+    let dLocation = a:dLocation
+    if empty(dLocation)
+        return
+    endif
+
+    let sFileName = dLocation.filename
+    let nRow = dLocation.line
+    let nCol = dLocation.column
+
+    " 仅在这里需要反转？
+    let sFileName = s:FromClangFileName(sFileName)
+
+    if bufnr(sFileName) == bufnr('%')
+        " 同一个缓冲区，仅跳至指定的行号和列号
+        normal! m'
+        call cursor(nRow, nCol)
+    else
+        let sCmd = printf("e +%d %s", nRow, sFileName)
+        exec sCmd
+        call cursor(nRow, nCol)
     endif
 endfunction
 "}}}
@@ -7399,22 +7645,47 @@ python << PYTHON_EOF
 
 #import threading
 #class UpdateQuickFixThread(threading.Thread):
-#    def __init__(self, sFile, lUnsavedFiles = [], bReparse = False):
+#    def __init__(self, sFileName, lUnsavedFiles = [], bReparse = False):
 #        threading.Thread.__init__(self)
-#        self.sFile = sFile
+#        self.sFileName = sFileName
 #        self.lUnsavedFiles = lUnsavedFiles
 #        self.bReparse = bReparse
 #
 #    def run(self):
 #        global VIMCCCIndex
-#        VIMCCCIndex.UpdateTranslationUnit(self.sFile, self.lUnsavedFiles,
+#        VIMCCCIndex.UpdateTranslationUnit(self.sFileName, self.lUnsavedFiles,
 #                                          self.bReparse)
 #        vim.command("call setqflist(%s)" 
 #                    % VIMCCCIndex.GetVimQucikFixListFromRecentTU())
 
-def GetCurUnsavedFile():
-    return (vim.current.buffer.name,
-            '\n'.join(vim.current.buffer[:]))
+UF_None = 0
+UF_Related = 1
+UF_RelatedPrepend = 2
+
+def GetCurUnsavedFile(nFlags = UF_None):
+    sFileName = vim.eval("expand('%:p')")
+    sClangFileName = vim.eval("s:ToClangFileName('%s')" % sFileName)
+
+    if nFlags == UF_None:
+        return (sClangFileName, '\n'.join(vim.current.buffer[:]))
+
+    if nFlags == UF_Related:
+        import IncludeParser
+        d = vim.eval("get(g:dRelatedFile, expand('%:p'), {})")
+        if d:
+            nOffsetRow = d['line']
+            sSourceFile = d['filename']
+            # 如果没有在关联文件找到要找的 #include 行，nOffsetRow 为 0
+            # 文本内容都是以 NL 结尾的
+            nOffsetRow, sResult = IncludeParser.FillHeaderWithSource(
+                sFileName, '\n'.join(vim.current.buffer[:]) + '\n', sSourceFile)
+            #print nOffsetRow
+            #print sResult
+            vim.command(
+                "let g:dRelatedFile[expand('%%:p')]['line'] = %d" % nOffsetRow)
+            return (sClangFileName, sResult)
+        else:
+            return GetCurUnsavedFile(UF_None)
 
 def GetCurCursorPos():
     return vim.current.window.cursor
@@ -10951,7 +11222,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-681
+708
 *VimLite.txt*           A C/C++ IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -11341,7 +11612,8 @@ in VLWorkspace buffer window, popup the menu, select "Parse Workspace (Quick)".
     VLWEnvVarSetttings                  Open 'Environment Variables Setting'
                                         dialog.
 
-    VLWTagsSetttings                    Open 'Tags Setting' dialog.
+    VLWTagsSetttings                    Open 'Tags Setting' dialog. This also
+                                        can set the search paths for clang.
 
     VLWCompilersSettings                Open 'Compilers Settings' dialog.
 
@@ -11388,11 +11660,14 @@ project is a custom build. VIMCCC currently work with libclang 3.0.
 
 There are only two commands of VIMCCC.
 
-    VIMCCCUpdateQuickFix                Retrieve clang diagnostics to quickfix,
+    VIMCCCQuickFix                      Retrieve clang diagnostics to quickfix,
                                         if the diagnostics are not empty, open
                                         the quickfix window.
 
     VIMCCCSetArgs {arg1} [arg2] ...     Set clang compiler options
+
+    VLWTagsSetttings                    Open 'Tags Setting' dialog. This also
+                                        can set the search paths for clang.
 
 ==============================================================================
 6. Debugger                             *VimLite-Debugger*
@@ -11585,12 +11860,32 @@ When completeopt does not contain longest option, this setting controls the
 behaviour of the popup menu selection.
   * 0 -> don't select first item.
   * 1 -> select first item (inserting it to the text).
-  * 2 -> select first item (without inserting it to the text). >
+  * 2 -> select first item (without inserting it to the text).
+>
     let g:VIMCCC_ItemSelectionMode = 2
 
 Map <CR> (return) key to auto trigger function calltips after select a
 function item in the code completion popup menu. >
     let g:VIMCCC_MapReturnToDispCalltips = 1
+
+Goto declaration of symbols key.
+NOTE: Currently, it does not work as mean of name as libclang limitation.
+ *  For a cursor that is a reference, retrieve a cursor representing the
+ *  entity that it references.
+>
+    let g:VIMCCC_GotoDeclarationKey = '<C-p>'
+
+Goto implementation of symbols key. It also jump to included file when locates
+the cursor in '#include' line.
+NOTE: Currently, it does not work as mean of name as libclang limitation.
+ *  For a cursor that is either a reference to or a declaration
+ *  of some entity, retrieve a cursor that describes the definition of
+ *  that entity.
+NOTE: Currently, it can goto implementation of symbols, but you need goto the
+declaration of symbols, and then goto the implementation, as liblang
+limitation.
+>
+    let g:VIMCCC_GotoImplementationKey = '<C-]>'
 
 ------------------------------------------------------------------------------
 7.5. Debugger Options                   *VimLite-Options-Debugger*
@@ -11609,12 +11904,17 @@ so you may want to disable this feature. >
 
 Configuration sample of VimLite >
     let g:VLWorkspaceSaveAllBeforeBuild = 1
-    let g:VIMCCC_ItemSelectionMode = 10
+    let g:VLOmniCpp_ItemSelectionMode = 10
     let g:VLWorkspaceParseFileAfterSave = 1
     let g:VLWorkspaceNotParseSourceAfterSave = 1
     let g:VLCalltips_IndicateArgument = 0
     let g:VLCalltips_EnableSyntaxTest = 0
     let g:VLWDbgSaveBreakpointsInfo = 0
+
+If use VIMCCC >
+    let g:VLWorkspaceUseVIMCCC = 1
+    let g:VIMCCC_ItemSelectionMode = 10
+    let g:VIMCCC_CompleteMacros = 1
 
 ------------------------------------------------------------------------------
 8.2. Use cl.exe On Windows              *VimLite-Windows*
@@ -11624,12 +11924,10 @@ to following (I have installed VS 2010 in D:\Program Files folder): >
     "D:\Program Files\Microsoft Visual Studio 10.0\Common7\Tools\vsvars32.bat" && make -j 2 -f
 
 This is all.
-NOTE: Currently, VimLite can not support code completion with headers of
-      Visual Studio.
-NOTE: Compiler the program with cl.exe, this imply that VimLite can not debug
-      the program with gdb.
-
-Using MinGW is highly recommended.
+NOTE: Currently, OmniCpp of VimLite can not support code completion with
+      headers of Visual Studio, use VIMCCC instead.
+NOTE: Compile the program with cl.exe, this implies that VimLite can not debug
+      the program with gdb, use windbg instead.
 
 ------------------------------------------------------------------------------
 vim:tw=78:ft=help:norl:et:ts=4:sw=4:sts=4
@@ -16552,7 +16850,7 @@ function! s:GotoTagPosition(lTags) "{{{2
 
     " 开始跳转
     if bufnr(sFileName) == bufnr('%')
-        " 跳转的是同一个缓冲区, 仅跳至制定的行号
+        " 跳转的是同一个缓冲区, 仅跳至指定的行号
         normal! m'
         exec sLineNr
     else

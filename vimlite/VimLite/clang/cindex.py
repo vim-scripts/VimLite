@@ -843,6 +843,9 @@ class Cursor(Structure):
         """
         return Cursor_is_def(self)
 
+    def get_referenced(self):
+        return Cursor_ref(self)
+
     def get_definition(self):
         """
         If the cursor is a reference to a declaration or a declaration of
@@ -852,6 +855,9 @@ class Cursor(Structure):
         # TODO: Should probably check that this is either a reference or
         # declaration prior to issuing the lookup.
         return Cursor_def(self)
+
+    def get_semantic_parent(self):
+        return Cursor_semantic_parent(self)
 
     def get_usr(self):
         """Return the Unified Symbol Resultion (USR) for the entity referenced
@@ -1529,6 +1535,19 @@ class TranslationUnit(ClangObject):
                                            options)
         return CodeCompletionResults(ptr) if ptr else None
 
+    def getLocation(self, file, line, column):
+        return TranslationUnit_getLocation(self, file, line, column)
+
+    def getLocationForOffset(self, file, offset):
+        return TranslationUnit_getLocationForOffset(self, file, offset)
+
+    def getFile(self, filename):
+        file =  TranslationUnit_getFile(self, filename)
+        return File(file)
+
+    def getCursor(self, sourceLocation):
+      return Cursor_get(self, sourceLocation)
+
 
 class File(ClangObject):
     """
@@ -1675,6 +1694,11 @@ Cursor_type.argtypes = [Cursor]
 Cursor_type.restype = Type
 Cursor_type.errcheck = Type.from_result
 
+Cursor_semantic_parent = lib.clang_getCursorSemanticParent
+Cursor_semantic_parent.argtypes = [Cursor]
+Cursor_semantic_parent.restype = Cursor
+Cursor_semantic_parent.errcheck = Cursor.from_result
+
 Cursor_visit_callback = CFUNCTYPE(c_int, Cursor, Cursor, py_object)
 Cursor_visit = lib.clang_visitChildren
 Cursor_visit.argtypes = [Cursor, Cursor_visit_callback, py_object]
@@ -1750,6 +1774,18 @@ TranslationUnit_spelling = lib.clang_getTranslationUnitSpelling
 TranslationUnit_spelling.argtypes = [TranslationUnit]
 TranslationUnit_spelling.restype = _CXString
 TranslationUnit_spelling.errcheck = _CXString.from_result
+
+TranslationUnit_getLocation = lib.clang_getLocation
+TranslationUnit_getLocation.argtypes = [TranslationUnit, File, c_uint, c_uint]
+TranslationUnit_getLocation.restype = SourceLocation
+
+TranslationUnit_getLocationForOffset = lib.clang_getLocationForOffset
+TranslationUnit_getLocationForOffset.argtypes = [TranslationUnit, File, c_uint]
+TranslationUnit_getLocationForOffset.restype = SourceLocation
+
+TranslationUnit_getFile = lib.clang_getFile
+TranslationUnit_getFile.argtypes = [TranslationUnit, c_char_p]
+TranslationUnit_getFile.restype = c_object_p
 
 TranslationUnit_dispose = lib.clang_disposeTranslationUnit
 TranslationUnit_dispose.argtypes = [TranslationUnit]
