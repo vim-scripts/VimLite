@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<CodeLite_Workspace Database="./ftCodeBase.tags" Name="ftCodeBase">
+  <Project Active="No" Name="DataTypes" Path="DataTypes/DataTypes.vlproject"/>
+  <Project Active="Yes" Name="UnitTest" Path="UnitTest/UnitTest.vlproject"/>
+  <BuildMatrix>
+    <WorkspaceConfiguration Name="Debug" Selected="yes">
+      <Project ConfigName="Debug_SL" Name="DataTypes"/>
+      <Project ConfigName="Debug" Name="UnitTest"/>
+    </WorkspaceConfiguration>
+    <WorkspaceConfiguration Name="Release" Selected="no">
+      <Project ConfigName="Release" Name="DataTypes"/>
+      <Project ConfigName="Release" Name="UnitTest"/>
+    </WorkspaceConfiguration>
+  </BuildMatrix>
+</CodeLite_Workspace>

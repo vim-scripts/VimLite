@@ -1,0 +1,272 @@
+<?xml version='1.0' encoding='utf-8'?>
+<CodeLite_Project InternalType="Console" Name="vlctags2">
+  <Description/>
+  <Dependencies/>
+  <VirtualDirectory Name="src">
+    <File Name="ant.c"/>
+    <File Name="args.c"/>
+    <File Name="asm.c"/>
+    <File Name="asp.c"/>
+    <File Name="awk.c"/>
+    <File Name="basic.c"/>
+    <File Name="beta.c"/>
+    <File Name="c.c"/>
+    <File Name="cobol.c"/>
+    <File Name="debug.c"/>
+    <File Name="dosbatch.c"/>
+    <File Name="eiffel.c"/>
+    <File Name="entry.c"/>
+    <File Name="erlang.c"/>
+    <File Name="flex.c"/>
+    <File Name="fortran.c"/>
+    <File Name="get.c"/>
+    <File Name="html.c"/>
+    <File Name="jscript.c"/>
+    <File Name="keyword.c"/>
+    <File Name="lisp.c"/>
+    <File Name="lregex.c"/>
+    <File Name="lua.c"/>
+    <File Name="main.c"/>
+    <File Name="make.c"/>
+    <File Name="matlab.c"/>
+    <File Name="ocaml.c"/>
+    <File Name="options.c"/>
+    <File Name="parse.c"/>
+    <File Name="pascal.c"/>
+    <File Name="perl.c"/>
+    <File Name="php.c"/>
+    <File Name="python.c"/>
+    <File Name="read.c"/>
+    <File Name="readtags.c"/>
+    <File Name="rexx.c"/>
+    <File Name="routines.c"/>
+    <File Name="ruby.c"/>
+    <File Name="scheme.c"/>
+    <File Name="sh.c"/>
+    <File Name="slang.c"/>
+    <File Name="sml.c"/>
+    <File Name="sort.c"/>
+    <File Name="sql.c"/>
+    <File Name="strlist.c"/>
+    <File Name="tcl.c"/>
+    <File Name="tex.c"/>
+    <File Name="verilog.c"/>
+    <File Name="vhdl.c"/>
+    <File Name="vim.c"/>
+    <File Name="vstring.c"/>
+    <File Name="yacc.c"/>
+    <File Name="macro.c"/>
+    <File Name="qaculator.cpp"/>
+  </VirtualDirectory>
+  <VirtualDirectory Name="include">
+    <File Name="args.h"/>
+    <File Name="config.h"/>
+    <File Name="ctags.h"/>
+    <File Name="debug.h"/>
+    <File Name="e_amiga.h"/>
+    <File Name="e_djgpp.h"/>
+    <File Name="e_mac.h"/>
+    <File Name="e_msoft.h"/>
+    <File Name="entry.h"/>
+    <File Name="e_os2.h"/>
+    <File Name="e_qdos.h"/>
+    <File Name="e_riscos.h"/>
+    <File Name="e_vms.h"/>
+    <File Name="general.h"/>
+    <File Name="get.h"/>
+    <File Name="keyword.h"/>
+    <File Name="main.h"/>
+    <File Name="options.h"/>
+    <File Name="parse.h"/>
+    <File Name="parsers.h"/>
+    <File Name="read.h"/>
+    <File Name="readtags.h"/>
+    <File Name="routines.h"/>
+    <File Name="sort.h"/>
+    <File Name="strlist.h"/>
+    <File Name="vstring.h"/>
+    <File Name="macro.h"/>
+  </VirtualDirectory>
+  <VirtualDirectory Name="other">
+    <File Name="gnu_regex/regex.c"/>
+    <File Name="gnu_regex/regex.h"/>
+  </VirtualDirectory>
+  <Settings Type="Executable">
+    <GlobalSettings>
+      <Compiler C_Options="" Options="">
+        <IncludePath Value="."/>
+      </Compiler>
+      <Linker Options="">
+        <LibraryPath Value="."/>
+      </Linker>
+      <ResourceCompiler Options=""/>
+    </GlobalSettings>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Debug" Type="Executable">
+      <Compiler C_Options="-g;-Wall" Options="-g;-Wall" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+        <IncludePath Value="ftcb/include"/>
+        <IncludePath Value="IntExpr"/>
+        <Preprocessor Value="HAVE_CONFIG_H"/>
+        <Preprocessor Value="_DEBUG"/>
+      </Compiler>
+      <Linker Options="" Required="yes">
+        <LibraryPath Value="ftcb/lib"/>
+        <LibraryPath Value="IntExpr/lib"/>
+        <Library Value="DataTypes"/>
+        <Library Value="stdc++"/>
+        <Library Value="IntExpr"/>
+      </Linker>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="./$(ProjectName)" CommandArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+px --C++-kinds=+px -f - bug.hpp" DebugArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+px --C++-kinds=+p vardecl.c" IntermediateDirectory="$(ConfigurationName)" OutputFile="$(IntermediateDirectory)/$(ProjectName)" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="yes" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory/>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand/>
+        <CleanCommand/>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles>
+        <IgnoredFile Name="other/regex.h"/>
+        <IgnoredFile Name="other/regex.c"/>
+        <IgnoredFile Name="src/qaculator.cpp"/>
+      </IgnoredFiles>
+    </Configuration>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Release" Type="Executable">
+      <Compiler C_Options="-g;-Wall;-O2" Options="-g;-Wall;$(shell pkg-config --cflags --libs libqalculate);-I/usr/include/libqalculate;-O2" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+        <IncludePath Value="ftcb/include"/>
+        <Preprocessor Value="HAVE_CONFIG_H"/>
+        <Preprocessor Value="HAVE_QACULATOR"/>
+      </Compiler>
+      <Linker Options="$(shell pkg-config --cflags --libs libqalculate)" Required="yes">
+        <LibraryPath Value="ftcb/lib"/>
+        <Library Value="DataTypes"/>
+        <Library Value="stdc++"/>
+      </Linker>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="./$(ProjectName)" CommandArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+px --C++-kinds=+px -f - x.h" DebugArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+p --C++-kinds=+p" IntermediateDirectory="$(ConfigurationName)" OutputFile="$(IntermediateDirectory)/$(ProjectName)" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="no" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory/>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand/>
+        <CleanCommand/>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles>
+        <IgnoredFile Name="other/regex.h"/>
+        <IgnoredFile Name="other/regex.c"/>
+      </IgnoredFiles>
+    </Configuration>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Release_Min" Type="Executable">
+      <Compiler C_Options="-g;-Wall;-O2" Options="-g;-Wall;-O2" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+        <IncludePath Value="ftcb/include"/>
+        <IncludePath Value="IntExpr"/>
+        <Preprocessor Value="HAVE_CONFIG_H"/>
+      </Compiler>
+      <Linker Options="" Required="yes">
+        <LibraryPath Value="ftcb/lib"/>
+        <LibraryPath Value="IntExpr/lib"/>
+        <Library Value="DataTypes"/>
+        <Library Value="IntExpr"/>
+      </Linker>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="./$(ProjectName)" CommandArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+px --C++-kinds=+px -f - m2.h" DebugArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+p --C++-kinds=+p" IntermediateDirectory="$(ConfigurationName)" OutputFile="$(IntermediateDirectory)/$(ProjectName)" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="no" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory/>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand/>
+        <CleanCommand/>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles>
+        <IgnoredFile Name="other/regex.h"/>
+        <IgnoredFile Name="other/regex.c"/>
+        <IgnoredFile Name="src/qaculator.cpp"/>
+      </IgnoredFiles>
+    </Configuration>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Release_Min_Win32" Type="Executable">
+      <Compiler C_Options="-g;-Wall;-O0;-DHAVE_REGCOMP -D__USE_GNU -Dbool=int -Dfalse=0 -Dtrue=1 -Dstrcasecmp=stricmp" Options="-g;-Wall;-O0" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+        <IncludePath Value="ftcb/include"/>
+        <IncludePath Value="gnu_regex"/>
+        <IncludePath Value="IntExpr"/>
+        <Preprocessor Value="WIN32"/>
+      </Compiler>
+      <Linker Options="" Required="yes">
+        <LibraryPath Value="ftcb/lib"/>
+        <LibraryPath Value="IntExpr/lib"/>
+        <Library Value="DataTypes"/>
+        <Library Value="IntExpr"/>
+      </Linker>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="./$(ProjectName)" CommandArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+px --C++-kinds=+px -f - m2.h" DebugArguments="--excmd=pattern --sort=no --fields=aKmSsnit --c-kinds=+p --C++-kinds=+p" IntermediateDirectory="$(ConfigurationName)" OutputFile="$(IntermediateDirectory)/$(ProjectName)" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="no" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory/>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand/>
+        <CleanCommand/>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles>
+        <IgnoredFile Name="src/qaculator.cpp"/>
+      </IgnoredFiles>
+    </Configuration>
+  </Settings>
+</CodeLite_Project>
