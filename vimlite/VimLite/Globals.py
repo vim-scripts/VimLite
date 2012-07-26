@@ -8,9 +8,10 @@ import time
 import re
 import getpass
 import subprocess
+import tempfile
 
 # 版本号 850 -> 0.8.5.0
-VIMLITE_VER = 870
+VIMLITE_VER = 903
 
 # VimLite 起始目录
 VIMLITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,6 +38,25 @@ def IsWindowsOS():
     import platform
     return platform.system() == 'Windows'
 
+def EscapeString(string, chars, escchar = '\\'):
+    '''转义字符串'''
+    charli = []
+    for char in string:
+        if char in chars:
+            charli.append(escchar)
+        charli.append(char)
+    return ''.join(charli)
+
+def EscStr4DQ(string):
+    '''转义 string，用于放到双引号里面'''
+    return EscapeString(string, '"\\')
+
+def EscStr4MkSh(string):
+    '''转义 string，用于在 Makefile 里面传给 shell，不是加引号的方式
+    bash 的元字符包括：|  & ; ( ) < > space tab
+    NOTE: 换行无法转义，应该把 \n 用 $$'\n'表示的'''
+    return EscapeString(string, "|&;()<> \t'\"\\")
+
 def Escape(string, chars):
     '''两个参数都是字符串'''
     result = ''
@@ -47,6 +67,17 @@ def Escape(string, chars):
         else:
             result += char
     return result
+
+def GetMTime(fn):
+    try:
+        return os.path.getmtime(fn)
+    except:
+        return 0.0
+
+def TempFile():
+    fd, fn = tempfile.mkstemp()
+    os.close(fd)
+    return fn
 
 def GetFileModificationTime(fileName):
     '''获取文件最后修改时间
@@ -69,6 +100,10 @@ def Touch(lFiles):
             open(sFile, "ab").close()
 
 def NormalizePath(string):
+    '''把路径分割符全部转换为 posix 标准的分割符'''
+    return string.replace('\\', '/')
+
+def PosixPath(p):
     '''把路径分割符全部转换为 posix 标准的分割符'''
     return string.replace('\\', '/')
 

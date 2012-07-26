@@ -1012,7 +1012,7 @@ class VLWorkspace:
             return ''
         
         xmlNode = datum['node']
-        file = xmlNode.getAttribute('Name')
+        file = xmlNode.getAttribute('Name').encode('utf-8')
         if absPath:
             ds = Globals.DirSaver()
             os.chdir(datum['project'].dirName)
@@ -1029,7 +1029,7 @@ class VLWorkspace:
             return ''
         
         xmlNode = datum['node']
-        dispName = xmlNode.getAttribute('Name')
+        dispName = xmlNode.getAttribute('Name').encode('utf-8')
         return os.path.basename(dispName)
 
     def RenameNodeByLineNum(self, lineNum, newName):
@@ -1041,7 +1041,7 @@ class VLWorkspace:
 
         xmlNode = datum['node']
         project = datum['project']
-        oldName = xmlNode.getAttribute('Name')
+        oldName = xmlNode.getAttribute('Name').encode('utf-8')
         if oldName == newName:
             return
         if self.DoCheckNameConflict(xmlNode.parentNode, newName):
@@ -1127,13 +1127,16 @@ class VLWorkspace:
                 self.fname2file[os.path.basename(key)].remove(key)
             except KeyError:
                 pass
-
         # 删除 xml 节点
         if type == TYPE_PROJECT:
             self.RemoveProject(project.name)
         else:
             delNode.parentNode.removeChild(delNode)
         
+        # 直接重建好了，因为删除多少个文件难定
+        if type == TYPE_VIRTUALDIRECTORY:
+            self.GenerateFilesIndex()
+
         # 删除 vimLineData 相应数据
         del self.vimLineData[ index : index + delLineCount ]
         
@@ -1142,7 +1145,7 @@ class VLWorkspace:
             self.Save()
         else:
             project.Save()
-        
+
         return delLineCount
 
     def AddVirtualDirNode(self, lineNum, name):

@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='utf-8'?>
+<CodeLite_Project Name="Empty Project">
+  <Description>An empty project</Description>
+  <Dependencies/>
+  <Settings Type="Dynamic Library">
+    <GlobalSettings>
+      <Compiler C_Options="" Options="">
+        <IncludePath Value="."/>
+      </Compiler>
+      <Linker Options="">
+        <LibraryPath Value="."/>
+      </Linker>
+      <ResourceCompiler Options=""/>
+    </GlobalSettings>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Debug" Type="Executable">
+      <Compiler C_Options="-g;-Wall" Options="-g;-Wall" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+      </Compiler>
+      <Linker Options="" Required="yes"/>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="" CommandArguments="" DebugArguments="" IntermediateDirectory="$(ConfigurationName)" OutputFile="" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="no" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory>$(WorkspacePath)</WorkingDirectory>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand>make</BuildCommand>
+        <CleanCommand>make clean</CleanCommand>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles/>
+    </Configuration>
+    <Configuration BuildCmpWithGlobalSettings="append" BuildLnkWithGlobalSettings="append" BuildResWithGlobalSettings="append" CompilerType="gnu gcc" DebuggerType="GNU gdb debugger" Name="Release" Type="Executable">
+      <Compiler C_Options="" Options="" PreCompiledHeader="" Required="yes">
+        <IncludePath Value="."/>
+      </Compiler>
+      <Linker Options="" Required="yes"/>
+      <ResourceCompiler Options="" Required="no"/>
+      <General Command="" CommandArguments="" DebugArguments="" IntermediateDirectory="$(ConfigurationName)" OutputFile="" PauseExecWhenProcTerminates="yes" UseSeparateDebugArgs="no" WorkingDirectory="$(IntermediateDirectory)"/>
+      <Environment DbgSetName="&lt;Use Defaults&gt;" EnvVarSetName="&lt;Use Defaults&gt;"/>
+      <Debugger DebuggerPath="" IsRemote="no" RemoteHostName="" RemoteHostPort="">
+        <StartupCommands/>
+        <PostConnectCommands/>
+      </Debugger>
+      <PreBuild/>
+      <PostBuild/>
+      <CustomBuild Enabled="no">
+        <WorkingDirectory>$(WorkspacePath)</WorkingDirectory>
+        <ThirdPartyToolName>None</ThirdPartyToolName>
+        <MakefileGenerationCommand/>
+        <SingleFileCommand/>
+        <PreprocessFileCommand/>
+        <BuildCommand>make</BuildCommand>
+        <CleanCommand>make clean</CleanCommand>
+        <RebuildCommand/>
+      </CustomBuild>
+      <AdditionalRules>
+        <CustomPreBuild/>
+        <CustomPostBuild/>
+      </AdditionalRules>
+      <IgnoredFiles/>
+    </Configuration>
+  </Settings>
+</CodeLite_Project>

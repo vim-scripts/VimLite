@@ -13,6 +13,8 @@ import Globals
 
 CONFIG_FILE = os.path.join(Globals.VIMLITE_DIR, 'config', 'BuildSettings.xml')
 
+# TODO: BuildSystem 应该改为 Builder
+
 class BuildSettingsCookie:
     '''用以确保可重入的结构，暂不需要'''
 
@@ -30,7 +32,7 @@ class BuildSettings:
 
         self.curCmpNode = None      # 用于迭代的，没有线程安全
 
-    def Load(self, version, xmlFile = ''):        
+    def Load(self, version, xmlFile = ''):
         if not xmlFile:
             fileName = 'build_settings.xml'
         else:
@@ -157,6 +159,36 @@ class BuildSettings:
                     break
 
         return self.GetBuilderSettingsByName(name)
+
+    def SetActiveBuilderSettings(self, builderName):
+        done = False
+        for i in XmlUtils.GetRoot(self.doc).childNodes:
+            if i.nodeName == 'BuildSystem':
+                name = i.getAttribute('Name')
+                if name == builderName:
+                    i.setAttribute('Active', 'yes')
+                    done = True
+                    break
+
+        if done:
+            for i in XmlUtils.GetRoot(self.doc).childNodes:
+                if i.nodeName == 'BuildSystem':
+                    name = i.getAttribute('Name')
+                    if name != builderName:
+                        i.setAttribute('Active', 'no')
+            self.Save()
+            return True
+        else:
+            return False
+
+    def GetBuilderList(self):
+        '''获取配置文件定义的 Builder 列表'''
+        bds = []
+        for i in XmlUtils.GetRoot(self.doc).childNodes:
+            if i.nodeName == 'BuildSystem':
+                bds.append(i.getAttribute('Name').encode('utf-8'))
+
+        return bds
 
 
 class BuildSettingsST:

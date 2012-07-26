@@ -1,5 +1,7 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3647
 
+ - Updated on 2012-07-28
+
 VimLite is a C/C++ IDE.
 VimLite consists mainly of the following three modules: 
 1.Project Manager:
@@ -7,7 +9,7 @@ VimLite consists mainly of the following three modules:
 2.Code Completion:
     An enhanced OmniCpp and a VIMCCC plugin.
         OmniCpp support the following completion: namespace, structure, class member, using, using namespace, class template, stl, etc.
-        VIMCCC - A Omni cpp code completion plugin which based on libclang.
+        VIMCCC - An Omni cpp code completion plugin which based on libclang.
 3.Debugger Integration. 
     Gdb integration, by pyclewn.
 
@@ -16,7 +18,7 @@ Such as taglist, tagbar, NERD_commenter, snipmate, etc.
 
 
 NOTE1: Currently, VimLite is not stable enough.
-NOTE2: Currently, VimLite need GVim.
+NOTE2: Currently, VimLite need Vim 7.3 or later.
 
 Please report bugs here http://code.google.com/p/vimlite/issues/list.
 

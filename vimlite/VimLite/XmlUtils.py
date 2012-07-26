@@ -78,20 +78,20 @@ def SetNodeContent(node, text):
         node.appendChild(contentNode)
 
 def ReadString(node, attrName, defaultValue = ''):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if not ret:
         ret = defaultValue
     return ret
 
 def ReadStringIfExists(node, attrName):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if ret:
         return True, ret
     else:
         return False, ret
 
 def ReadLong(node, attrName, defaultValue = -1):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if not ret:
         return defaultValue
     
@@ -107,7 +107,7 @@ def ReadLong(node, attrName, defaultValue = -1):
         return defaultValue
 
 def ReadLongIfExists(node, attrName):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if not ret:
         return False, defaultValue
     
@@ -123,7 +123,7 @@ def ReadLongIfExists(node, attrName):
         return False, int(ret)
 
 def ReadBool(node, attrName, defaultValue = False):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if not ret:
         return defaultValue
     
@@ -133,7 +133,7 @@ def ReadBool(node, attrName, defaultValue = False):
         return False
 
 def ReadBoolIfExists(node, attrName):
-    ret = node.getAttribute(attrName)
+    ret = node.getAttribute(attrName).encode('utf-8')
     if not ret:
         return False, False
     

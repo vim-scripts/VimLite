@@ -3,6 +3,7 @@
 
 from BuildSettings import BuildSettingsST
 import BuilderGnuMake
+import BuilderGnuMake2
 
 
 class BuilderManager(object):
@@ -36,8 +37,10 @@ class BuilderManagerST:
     def Get():
         if not BuilderManagerST.__ins:
             BuilderManagerST.__ins = BuilderManager()
-            # 注册可用的 Builder
+            # 注册可用的 Builder 抽象类
+            # 所有设置是默认值，需要从配置文件读取设置值
             BuilderManagerST.__ins.AddBuilder(BuilderGnuMake.BuilderGnuMake())
+            BuilderManagerST.__ins.AddBuilder(BuilderGnuMake2.BuilderGnuMake2())
         return BuilderManagerST.__ins
 
     @staticmethod

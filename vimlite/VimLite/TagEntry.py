@@ -125,33 +125,41 @@ class TagEntry():
 
         # Check if we can get full name (including path)
         # 添加 parentType 属性, 以保证不丢失信息
-        path = self.GetExtField('class')
-        if path:
+        scope = self.GetExtField('class')
+        if scope:
             self.SetParentType('class')
-            self.UpdatePath(path)
+            self.UpdatePath(scope)
         else:
-            path = self.GetExtField('struct')
-            if path:
+            scope = self.GetExtField('struct')
+            if scope:
                 self.SetParentType('struct')
-                self.UpdatePath(path)
+                self.UpdatePath(scope)
             else:
-                path = self.GetExtField('namespace')
-                if path:
+                scope = self.GetExtField('namespace')
+                if scope:
                     self.SetParentType('namespace')
-                    self.UpdatePath(path)
+                    self.UpdatePath(scope)
                 else:
-                    path = self.GetExtField('interface')
-                    if path:
+                    scope = self.GetExtField('interface')
+                    if scope:
                         self.SetParentType('interface')
-                        self.UpdatePath(path)
+                        self.UpdatePath(scope)
                     else:
-                        path = self.GetExtField('union')
-                        if path:
+                        scope = self.GetExtField('union')
+                        if scope:
                             self.SetParentType('union')
-                            self.UpdatePath(path)
+                            self.UpdatePath(scope)
+                        # added on 2012-05-17
+                        else:
+                            scope = self.GetExtField('enum')
+                            if scope:
+                                self.SetParentType('enum')
+                                # enumerator 的 scope 和 path 要退一级
+                                scope = '::'.join(scope.split('::')[:-1])
+                                self.UpdatePath(scope)
 
-        if path:
-            self.SetScope(path)
+        if scope:
+            self.SetScope(scope)
         else:
             self.SetScope('<global>')
 
@@ -276,12 +284,13 @@ class TagEntry():
             # watch out for anonymous enums -- leave their typeref field blank.
             if extFields.has_key('enum'):
                 typeref = extFields['enum']
-                extFields['enum'] = \
-                        extFields['enum'].rpartition(':')[0].rpartition(':')[0]
+                # comment on 2012-05-17
+                #extFields['enum'] = \
+                        #extFields['enum'].rpartition(':')[0].rpartition(':')[0]
                 if not typeref.rpartition(':')[2].startswith('__anon'):
                     # watch out for anonymous enums
                     # just leave their typeref field blank.
-                    extFields['typeref'] = typeref
+                    extFields['typeref'] = 'enum:%s' % typeref
 
         self.Create(name, fileName, lineNumber, text, kind, extFields, pattern)
 
@@ -540,7 +549,7 @@ class TagEntry():
         Return tag key'''
         # 键值为 [原型/宏:]path:signature
         key = ''
-        if self.GetKind == 'prototype' or self.GetKind() == 'macro':
+        if self.GetKind() == 'prototype' or self.GetKind() == 'macro':
             key += self.GetKind() + ': '
 
         key += self.GetPath() + self.GetSignature()
@@ -612,13 +621,16 @@ class TagEntry():
             print k + ':\t\t' + v
         print '======================================'
 
-    def UpdatePath(self, path):
+    def UpdatePath(self, scope):
         '''Update the path with full path (e.g. namespace::class)'''
-        if path:
-            name = path
-            name += '::'
-            name += self.GetName()
-            self.SetPath(name)
+        path = ''
+        if not scope or scope == '<global>':
+            path = ''
+        else:
+            path = scope
+            path += '::'
+        path += self.GetName()
+        self.SetPath(path)
 
     def TypedefFromPattern(self, tagPattern, typedefName, name, templateInit):
         '''从 tags 中的 pattern 字段提取 typedef'''
@@ -628,15 +640,26 @@ class TagEntry():
 
 
 if __name__ == '__main__':
+    import os.path
     FILE = 'tags2'
-    with open(FILE) as f:
-        for line in f:
-            if line.startswith('!'):
-                continue
-            print line,
-            entry = TagEntry()
-            entry.FromLine(line)
-            entry.Print()
+    FILE = '/tmp/tags'
+    if os.path.exists(FILE):
+        with open(FILE) as f:
+            for line in f:
+                if line.startswith('!'):
+                    continue
+                print line,
+                entry = TagEntry()
+                entry.FromLine(line)
+                entry.Print()
 
     print GetMacroSignature('#define MIN(x, y) x < y ? x : y')
+    entry = TagEntry()
+    lines = [
+        'ab\tmain.c\t/^  ab,$/;"\tenumerator\tline:12\tenum:abc\ttext:ab',
+        'xy\tmain.c\t/^  int xy;$/;"\tmember\tline:16\tstruct:xyz\taccess:public\ttext:int xy;'
+    ]
+    for line in lines:
+        entry.FromLine(line)
+        entry.Print()
 

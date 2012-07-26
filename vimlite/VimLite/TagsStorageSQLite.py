@@ -23,6 +23,14 @@ def Escape(string, chars):
             result += char
     return result
 
+def MakeQMarkString(count):
+    '''生成用于 sqlite3 语句的问号占位符，是包括括号的，一般用 IN 语法
+    count 表示需要的 ? 的数量'''
+    if count <= 1:
+        return "(?)"
+    else:
+        return "(%s)" % ", ".join(["?" for i in range(count)])
+
 class TagsStorageSQLiteCache:
     '''tags 缓存'''
     def __init__(self):
@@ -393,6 +401,21 @@ class TagsStorageSQLite(ITagsStorage):
                     # InsertTagEntry() 貌似是不会失败的?!
                     updateList.append(tagEntry)
 
+                # enumerator 要双份，因为在两个作用域内有效
+                # added on 2012-05-17
+                #if tagEntry.GetParentType() == 'enum':
+                #    tagEntryDup = tagEntry
+                #    # 需要修改 scope 和 path
+                #    scope = tagEntryDup.GetScope()
+                #    # 扔掉 scope 最后的部分
+                #    scope = '::'.join(scope.split('::')[:-1])
+                #    if not scope:
+                #        scope = '<global>'
+                #    tagEntryDup.SetScope(scope)
+                #    tagEntryDup.UpdatePath(scope)
+                #    if not self.InsertTagEntry(tagEntryDup):
+                #        updateList.append(tagEntryDup)
+
             if autoCommit:
                 self.Commit()
 
@@ -466,6 +489,22 @@ class TagsStorageSQLite(ITagsStorage):
             ret = False
             if autoCommit:
                 self.db.rollback()
+        return ret
+
+    def UpdateTagsFileColumnByFile(self, newFile, oldFile, autoCommit = True):
+        ret = False
+        try:
+            if autoCommit:
+                self.Begin()
+            self.db.execute("UPDATE TAGS set file=? WHERE file=?",
+                            (newFile, oldFile))
+            if autoCommit:
+                self.Commit()
+            ret = True
+        except:
+            ret = False
+            if autoCommit:
+                self.Rollback()
         return ret
 
     def Query(self, sql, dbFile = ''):
@@ -845,6 +884,16 @@ class TagsStorageSQLite(ITagsStorage):
             self.Commit()
         except:
             # TODO: 区分错误代码
+            return False
+        else:
+            return True
+
+    def DeleteFileEntries(self, files):
+        try:
+            self.db.execute("DELETE FROM FILES WHERE file IN %s" 
+                            % MakeQMarkString(len(files)), tuple(files))
+            self.Commit()
+        except:
             return False
         else:
             return True
@@ -1263,9 +1312,9 @@ VIMLITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CPPTAGSDB = os.path.expanduser('~/bin/cpptagsdb')
 if platform.architecture()[0] == '64bit':
     if platform.system() == 'Windows':
-        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags2_64.exe')
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags2.exe')
     else:
-        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags2_64')
+        CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags2')
 else:
     if platform.system() == 'Windows':
         CTAGS = os.path.join(VIMLITE_DIR, 'bin', 'vlctags2.exe')
@@ -1518,6 +1567,7 @@ def test():
     print storage.GetFilesMap(['/usr/include/stdio.h',
                                '/usr/include/unistd.h',
                                'xstring.hpp'])
+    print storage.DeleteFileEntries(files)
 
 
 if __name__ == '__main__':

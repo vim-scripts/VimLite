@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+import time
 import threading
 import TagsStorageSQLite as TagsStorage
 from TagEntry import ToFullKind, ToFullKinds
@@ -136,6 +137,24 @@ class VimTagsManager:
             pass
         TagsStorage.ParseFilesAndStore(self.storage, files, macrosFiles, 
                                        indicator = indicator)
+
+    def DeleteTagsByFile(self, fn):
+        return self.DeleteTagsByFiles([fn])
+
+    def DeleteTagsByFiles(self, files):
+        return self.storage.DeleteTagsByFiles(files)
+
+    def DeleteFileEntry(self, fn):
+        return self.DeleteFileEntries([fn])
+
+    def DeleteFileEntries(self, files):
+        return self.storage.DeleteFileEntries(files)
+
+    def InsertFileEntry(self, fn, retagTime = int(time.time())):
+        return self.storage.InsertFileEntry(fn, retagTime)
+
+    def UpdateTagsFileColumnByFile(self, newFile, oldFile):
+        return self.storage.UpdateTagsFileColumnByFile(newFile, oldFile)
 
     def GetTagsByScopeAndName(self, scope, name):
         tagEntries = self.storage.GetTagsByScopeAndName(scope, name, True)

@@ -57,7 +57,7 @@ class BuildConfigCommon:
             compilerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Compiler')
             if compilerNode:
                 self.compileOptions = XmlUtils.ReadString(compilerNode, 'Options')
-                self.cCompileOptions = compilerNode.getAttribute('C_Options')
+                self.cCompileOptions = compilerNode.getAttribute('C_Options').encode('utf-8')
                 #if not self.cCompileOptions:
                     # the attribute "C_Options" does not exist,
                     # copy the values from the "Options" attribute
@@ -399,7 +399,7 @@ class BuildConfig:
                     elif i.nodeName == 'MakefileGenerationCommand':
                         self.makeGenerationCommand = XmlUtils.GetNodeContent(i)
                     elif i.nodeName == 'Target':
-                        tgtName = i.getAttribute('Name')
+                        tgtName = i.getAttribute('Name').encode('utf-8')
                         tgtCmd = XmlUtils.GetNodeContent(i)
                         if tgtName:
                             self.customTargets[tgtName] = tgtCmd
@@ -441,7 +441,7 @@ class BuildConfig:
             if ignoredFilesNode:
                 for i in ignoredFilesNode.childNodes:
                     if i.nodeName == 'IgnoredFile':
-                        self.ignoredFiles.add(i.getAttribute('Name'))
+                        self.ignoredFiles.add(i.getAttribute('Name').encode('utf-8'))
             
         else:
             # create default project settings

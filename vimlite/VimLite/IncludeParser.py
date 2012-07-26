@@ -18,6 +18,12 @@ import re
     #'/usr/include', 
 #]
 
+def GetMTime(fn):
+    try:
+        return os.path.getmtime(fn)
+    except:
+        return 0.0
+
 def GetIncludeFiles(fileName, searchPaths = []):
     '''足够准确和高效了，直接替代老接口'''
     return GetIncludeFilesWithPathCache(fileName, searchPaths)
@@ -171,7 +177,7 @@ def GetIncludeList(file):
     if enableCache:
         # NOTE: 时间戳比较应该用 ==
         if CACHE_INCLUDELIST.has_key(file) and \
-           int(os.path.getmtime(file)) == CACHE_INCLUDELIST[file]['mtime']:
+           int(GetMTime(file)) == CACHE_INCLUDELIST[file]['mtime']:
             ret = CACHE_INCLUDELIST[file]['inclist']
             return ret
 
@@ -190,7 +196,7 @@ def GetIncludeList(file):
         if enableCache:
             CACHE_INCLUDELIST[file] = {}
             CACHE_INCLUDELIST[file]['inclist'] = ret
-            CACHE_INCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+            CACHE_INCLUDELIST[file]['mtime'] = int(GetMTime(file))
 
         return ret
 
@@ -206,7 +212,7 @@ def GetRawIncludeList(file):
     if enableCache:
         # NOTE: 时间戳比较应该用 ==
         if CACHE_RAWINCLUDELIST.has_key(file) and \
-           int(os.path.getmtime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
+           int(GetMTime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
             ret = CACHE_RAWINCLUDELIST[file]['inclist']
             return ret
 
@@ -225,7 +231,7 @@ def GetRawIncludeList(file):
         if enableCache:
             CACHE_RAWINCLUDELIST[file] = {}
             CACHE_RAWINCLUDELIST[file]['inclist'] = ret
-            CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+            CACHE_RAWINCLUDELIST[file]['mtime'] = int(GetMTime(file))
 
         return ret
 
@@ -258,7 +264,7 @@ def GetIncludeRelatedStmtList(file, excludeFile):
         #if enableCache:
             #CACHE_RAWINCLUDELIST[file] = {}
             #CACHE_RAWINCLUDELIST[file]['inclist'] = ret
-            #CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+            #CACHE_RAWINCLUDELIST[file]['mtime'] = int(GetMTime(file))
 
         return ret
 
@@ -273,7 +279,7 @@ def GetRawIncludeList2(file):
     if enableCache:
         # NOTE: 时间戳比较应该用 ==
         if CACHE_RAWINCLUDELIST.has_key(file) and \
-           int(os.path.getmtime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
+           int(GetMTime(file)) == CACHE_RAWINCLUDELIST[file]['mtime']:
             ret = CACHE_RAWINCLUDELIST[file]['inclist']
             return ret
 
@@ -290,7 +296,7 @@ def GetRawIncludeList2(file):
         try:
             CACHE_RAWINCLUDELIST[file] = {}
             CACHE_RAWINCLUDELIST[file]['inclist'] = ret
-            CACHE_RAWINCLUDELIST[file]['mtime'] = int(os.path.getmtime(file))
+            CACHE_RAWINCLUDELIST[file]['mtime'] = int(GetMTime(file))
         except:
             # 文件不存在的话, 走到这里
             del CACHE_RAWINCLUDELIST[file]
@@ -328,7 +334,7 @@ def DoGetIncludeFilesWithPathCache(file, guard, searchPaths):
 
     # 如果可能直接从缓存中获取结果
     if enablePathCache and CACHE_INCLUDEPATHLIST.has_key(file) \
-       and CACHE_INCLUDEPATHLIST[file]['mtime'] == int(os.path.getmtime(file)) \
+       and CACHE_INCLUDEPATHLIST[file]['mtime'] == int(GetMTime(file)) \
        and CACHE_INCLUDEPATHLIST[file]['paths'] == searchPaths:
         headers = CACHE_INCLUDEPATHLIST[file]['inclist']
     else:
@@ -351,7 +357,7 @@ def DoGetIncludeFilesWithPathCache(file, guard, searchPaths):
         if enablePathCache:
             CACHE_INCLUDEPATHLIST[file] = {}
             CACHE_INCLUDEPATHLIST[file]['inclist'] = headers
-            CACHE_INCLUDEPATHLIST[file]['mtime'] = int(os.path.getmtime(file))
+            CACHE_INCLUDEPATHLIST[file]['mtime'] = int(GetMTime(file))
             CACHE_INCLUDEPATHLIST[file]['paths'] = searchPaths[:]
 
     for header in headers:

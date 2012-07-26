@@ -29,13 +29,13 @@ class Builder:
             self.LoadFromXmlNode(node)
 
     def LoadFromXmlNode(self, node):
-        self.name = node.getAttribute('Name')
-        self.toolPath = node.getAttribute('ToolPath')
-        self.toolOptions = node.getAttribute('Options')
+        self.name = node.getAttribute('Name').encode('utf-8')
+        self.toolPath = node.getAttribute('ToolPath').encode('utf-8')
+        self.toolOptions = node.getAttribute('Options').encode('utf-8')
         self.toolJobs = XmlUtils.ReadString(node, 'Jobs', '1')
         self.isActive = XmlUtils.ReadBool(node, 'Active', self.isActive)
 
-        self.command = node.getAttribute('Command')
+        self.command = node.getAttribute('Command').encode('utf-8')
         if not self.command:
             self.command = "%s %s" % (self.toolPath, self.toolOptions)
 

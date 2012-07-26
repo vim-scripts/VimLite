@@ -235,6 +235,7 @@ def GenerateDefaultTagsSettings():
         '#define _GLIBCXX_BEGIN_NAMESPACE_CONTAINER',
         '#define _GLIBCXX_END_NAMESPACE_CONTAINER',
         '#define _GLIBCXX_VISIBILITY(x)',
+        '#define __cplusplus 1',
     ]
     defaultTagsTypes = [
         "std::vector<A>::reference=A",

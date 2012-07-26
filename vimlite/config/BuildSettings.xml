@@ -208,6 +208,9 @@
       <CompilerOption Name="-include-nil-checks">include chks on non nilable items (default=yes)</CompilerOption>
     </Compiler>
   </Compilers>
+  <!--
   <BuildSystem Active="no" Jobs="1" Name="GNU makefile onestep build" Options="-f" ToolPath="make"/>
+  -->
   <BuildSystem Active="yes" Command="make -j 1 -f" Jobs="1" Name="GNU makefile for g++/gcc" Options="-f" ToolPath="make"/>
+  <BuildSystem Active="no" Command="make -j 1 -f" Jobs="1" Name="Another GNU makefile for g++/gcc" Options="-f" ToolPath="make"/>
 </BuildSettings>

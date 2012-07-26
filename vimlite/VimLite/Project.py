@@ -61,7 +61,8 @@ class Project:
                 print 'Invalid fileName:', fileName
                 raise IOError
             self.rootNode = XmlUtils.GetRoot(self.doc)
-            self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')
+            self.name = XmlUtils.GetRoot(self.doc).getAttribute('Name')\
+                    .encode('utf-8')
             self.fileName = os.path.abspath(fileName) #绝对路径
             self.dirName, self.baseName = os.path.split(self.fileName) #绝对路径
             self.modifyTime = Globals.GetFileModificationTime(fileName)
@@ -181,7 +182,7 @@ class Project:
         files = []
         for i in node.childNodes:
             if i.nodeName == 'File':
-                fileName = i.getAttribute('Name')
+                fileName = i.getAttribute('Name').encode('utf-8')
                 if absPath:
                     fileName = os.path.abspath(fileName)
 
@@ -192,7 +193,7 @@ class Project:
                 else:
                     files.append(fileName)
             elif i.nodeName == 'VirtualDirectory':
-                pathName = i.getAttribute('Name')
+                pathName = i.getAttribute('Name').encode('utf-8')
                 # 递归遍历所有文件
                 if i.hasChildNodes():
                     files.extend(
