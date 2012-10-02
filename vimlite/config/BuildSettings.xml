@@ -1,0 +1,216 @@
+<?xml version='1.0' encoding='utf-8'?>
+<BuildSettings Version="2.1.0">
+  <Compilers>
+    <Compiler GenerateDependenciesFiles="yes" Name="gnu gcc" ReadObjectsListFromFile="no">
+      <Switch Name="Object" Value="-o "/>
+      <Switch Name="Library" Value="-l"/>
+      <Switch Name="ArchiveOutput" Value=" "/>
+      <Switch Name="Source" Value="-c "/>
+      <Switch Name="Preprocessor" Value="-D"/>
+      <Switch Name="Debug" Value="-g "/>
+      <Switch Name="Output" Value="-o "/>
+      <Switch Name="Include" Value="-I"/>
+      <Switch Name="PreprocessOnly" Value="-E "/>
+      <Switch Name="LibraryPath" Value="-L"/>
+      <Tool Name="ArchiveTool" Value="ar rcus"/>
+      <Tool Name="LinkerName" Value="gcc"/>
+      <Tool Name="SharedObjectLinkerName" Value="gcc -shared -fPIC"/>
+      <Tool Name="CompilerName" Value="gcc"/>
+      <Tool Name="ResourceCompiler" Value="windres"/>
+      <Tool Name="C_CompilerName" Value="gcc"/>
+      <File CompilationLine="$(C_CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(C_CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c" Kind="0"/>
+      <File CompilationLine="$(CompilerName) -x objective-c++ $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="mm" Kind="0"/>
+      <File CompilationLine="$(CompilerName) -x objective-c $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="m" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c++" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cc" Kind="0"/>
+      <File CompilationLine="$(RcCompilerName) -i &quot;$(FileFullPath)&quot; $(RcCmpOptions)   $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(RcIncludePath)" Extension="rc" Kind="1"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cpp" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cxx" Kind="0"/>
+      <Option Name="ObjectSuffix" Value=".o"/>
+      <Option Name="DependSuffix" Value=".o.d"/>
+      <Option Name="PreprocessSuffix" Value=".o.i"/>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]*)([:0-9]*)(: )((fatal error)|(error)|(undefined reference))</Pattern>
+      <Pattern FileNameIndex="3" LineNumberIndex="1" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)(\(\.text\+[0-9a-fx]*\))</Pattern>
+      <Pattern FileNameIndex="3" LineNumberIndex="1" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+)(:)</Pattern>
+      <Pattern FileNameIndex="-1" LineNumberIndex="-1" Name="Error">undefined reference to</Pattern>
+      <Pattern FileNameIndex="-1" LineNumberIndex="-1" Name="Error">\\*\\*\\* \\[[a-zA-Z\\-_0-9 ]+\\] (Error)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Warning">([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?( warning)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Warning">([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?( note)</Pattern>
+      <Pattern FileNameIndex="2" LineNumberIndex="4" Name="Warning">(In file included from *)([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?</Pattern>
+      <GlobalIncludePath/>
+      <GlobalLibPath/>
+      <PathVariable/>
+      <CompilerOption Name="-pg">Profile code when executed.</CompilerOption>
+      <CompilerOption Name="-g">Produce debugging information.</CompilerOption>
+      <CompilerOption Name="-pedantic">Enable warnings demanded by strict ISO C and ISO C++</CompilerOption>
+      <CompilerOption Name="-O3">Optimize fully (for speed)</CompilerOption>
+      <CompilerOption Name="-O2">Optimize even more (for speed)</CompilerOption>
+      <CompilerOption Name="-O">Optimize generated code (for speed)</CompilerOption>
+      <CompilerOption Name="-w">Inhibit all warning messages</CompilerOption>
+      <CompilerOption Name="-fexpensive-optimizations">Expensive optimizations</CompilerOption>
+      <CompilerOption Name="-Os">Optimize generated code (for size)</CompilerOption>
+      <CompilerOption Name="-W">Enable standard compiler warnings</CompilerOption>
+      <CompilerOption Name="-Wall">Enable all compiler warnings.</CompilerOption>
+      <CompilerOption Name="-pedantic-errors">Treat as errors the warnings demanded by strict ISO C and ISO C++</CompilerOption>
+      <CompilerOption Name="-Wmain">Warn if main() is not conformant</CompilerOption>
+      <CompilerOption Name="-ansi">In C mode, support all ISO C90 programs. In C++ mode, remove GNU extensions that conflict with ISO C++.</CompilerOption>
+      <CompilerOption Name="-Wfatal-errors">Stop compiling after first error</CompilerOption>
+      <CompilerOption Name="-O1">Optimize more (for speed)</CompilerOption>
+      <CompilerOption Name="-fopenmp">Enable OpenMP (compilation).</CompilerOption>
+      <LinkerOption Name="-s">Remove all symbol table and relocation information from the executable.</LinkerOption>
+      <LinkerOption Name="-fopenmp">Enable OpenMP (linkage).</LinkerOption>
+    </Compiler>
+    <Compiler GenerateDependenciesFiles="yes" Name="gnu g++" ReadObjectsListFromFile="no">
+      <Switch Name="Object" Value="-o "/>
+      <Switch Name="Library" Value="-l"/>
+      <Switch Name="ArchiveOutput" Value=" "/>
+      <Switch Name="Source" Value="-c "/>
+      <Switch Name="Preprocessor" Value="-D"/>
+      <Switch Name="Debug" Value="-gstab"/>
+      <Switch Name="Output" Value="-o "/>
+      <Switch Name="Include" Value="-I"/>
+      <Switch Name="PreprocessOnly" Value="-E "/>
+      <Switch Name="LibraryPath" Value="-L"/>
+      <Tool Name="ArchiveTool" Value="ar rcus"/>
+      <Tool Name="LinkerName" Value="g++"/>
+      <Tool Name="SharedObjectLinkerName" Value="g++ -shared -fPIC"/>
+      <Tool Name="CompilerName" Value="g++"/>
+      <Tool Name="ResourceCompiler" Value="windres"/>
+      <Tool Name="C_CompilerName" Value="gcc"/>
+      <File CompilationLine="$(CompilerName) -x objective-c++ $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="mm" Kind="0"/>
+      <File CompilationLine="$(C_CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(C_CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cc" Kind="0"/>
+      <File CompilationLine="$(CompilerName) -x objective-c $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="m" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c++" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cxx" Kind="0"/>
+      <File CompilationLine="$(RcCompilerName) -i &quot;$(FileFullPath)&quot; $(RcCmpOptions)   $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(RcIncludePath)" Extension="rc" Kind="1"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cpp" Kind="0"/>
+      <Option Name="ObjectSuffix" Value=".o"/>
+      <Option Name="DependSuffix" Value=".o.d"/>
+      <Option Name="PreprocessSuffix" Value=".o.i"/>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]*)([:0-9]*)(: )((fatal error)|(error)|(undefined reference))</Pattern>
+      <Pattern FileNameIndex="3" LineNumberIndex="1" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)(\(\.text\+[0-9a-fx]*\))</Pattern>
+      <Pattern FileNameIndex="3" LineNumberIndex="1" Name="Error">^([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([^ ][a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+)(:)</Pattern>
+      <Pattern FileNameIndex="-1" LineNumberIndex="-1" Name="Error">undefined reference to</Pattern>
+      <Pattern FileNameIndex="-1" LineNumberIndex="-1" Name="Error">\\*\\*\\* \\[[a-zA-Z\\-_0-9 ]+\\] (Error)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Warning">([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?( warning)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Warning">([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?( note)</Pattern>
+      <Pattern FileNameIndex="2" LineNumberIndex="4" Name="Warning">(In file included from *)([a-zA-Z:]{0,2}[ a-zA-Z\\.0-9_/\\+\\-]+ *)(:)([0-9]+ *)(:)([0-9:]*)?</Pattern>
+      <GlobalIncludePath/>
+      <GlobalLibPath/>
+      <PathVariable/>
+      <CompilerOption Name="-pg">Profile code when executed.</CompilerOption>
+      <CompilerOption Name="-g">Produce debugging information.</CompilerOption>
+      <CompilerOption Name="-pedantic">Enable warnings demanded by strict ISO C and ISO C++</CompilerOption>
+      <CompilerOption Name="-O3">Optimize fully (for speed)</CompilerOption>
+      <CompilerOption Name="-O2">Optimize even more (for speed)</CompilerOption>
+      <CompilerOption Name="-O">Optimize generated code (for speed)</CompilerOption>
+      <CompilerOption Name="-w">Inhibit all warning messages</CompilerOption>
+      <CompilerOption Name="-fexpensive-optimizations">Expensive optimizations</CompilerOption>
+      <CompilerOption Name="-Os">Optimize generated code (for size)</CompilerOption>
+      <CompilerOption Name="-W">Enable standard compiler warnings</CompilerOption>
+      <CompilerOption Name="-Wall">Enable all compiler warnings.</CompilerOption>
+      <CompilerOption Name="-pedantic-errors">Treat as errors the warnings demanded by strict ISO C and ISO C++</CompilerOption>
+      <CompilerOption Name="-Wmain">Warn if main() is not conformant</CompilerOption>
+      <CompilerOption Name="-ansi">In C mode, support all ISO C90 programs. In C++ mode, remove GNU extensions that conflict with ISO C++.</CompilerOption>
+      <CompilerOption Name="-Wfatal-errors">Stop compiling after first error</CompilerOption>
+      <CompilerOption Name="-O1">Optimize more (for speed)</CompilerOption>
+      <CompilerOption Name="-fopenmp">Enable OpenMP (compilation).</CompilerOption>
+      <LinkerOption Name="-s">Remove all symbol table and relocation information from the executable.</LinkerOption>
+      <LinkerOption Name="-fopenmp">Enable OpenMP (linkage).</LinkerOption>
+    </Compiler>
+    <Compiler GenerateDependenciesFiles="no" Name="VC++" ReadObjectsListFromFile="no">
+      <Switch Name="Object" Value="/Fo"/>
+      <Switch Name="Library" Value=" "/>
+      <Switch Name="ArchiveOutput" Value="/OUT:"/>
+      <Switch Name="Source" Value=""/>
+      <Switch Name="Preprocessor" Value="/D"/>
+      <Switch Name="Debug" Value="/Zi "/>
+      <Switch Name="Output" Value="/OUT:"/>
+      <Switch Name="Include" Value="/I"/>
+      <Switch Name="PreprocessOnly" Value=""/>
+      <Switch Name="LibraryPath" Value="/LIBPATH:"/>
+      <Tool Name="ArchiveTool" Value="lib.exe  /nologo"/>
+      <Tool Name="LinkerName" Value="link.exe  /nologo"/>
+      <Tool Name="SharedObjectLinkerName" Value="link.exe /DLL  /nologo"/>
+      <Tool Name="CompilerName" Value="cl.exe /nologo /c"/>
+      <Tool Name="ResourceCompiler" Value="windres"/>
+      <Tool Name="C_CompilerName" Value="cl.exe /nologo /c"/>
+      <File CompilationLine="$(C_CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(C_CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c" Kind="0"/>
+      <File CompilationLine="$(CompilerName) -x objective-c++ $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="mm" Kind="0"/>
+      <File CompilationLine="$(CompilerName) -x objective-c $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="m" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="c++" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cc" Kind="0"/>
+      <File CompilationLine="$(RcCompilerName) -i &quot;$(FileFullPath)&quot; $(RcCmpOptions)   $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(RcIncludePath)" Extension="rc" Kind="1"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cpp" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(IntermediateDirectory)/$(ObjectName)$(ObjectSuffix) $(IncludePath)" Extension="cxx" Kind="0"/>
+      <Option Name="ObjectSuffix" Value=".obj"/>
+      <Option Name="DependSuffix" Value=""/>
+      <Option Name="PreprocessSuffix" Value=""/>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Error">(^[a-zA-Z\\\.0-9 _/\:\+\-]+ *)(\()([0-9]+)(\))( \: )(error)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="1" Name="Error">(LINK : fatal error)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="1" Name="Error">(NMAKE : fatal error)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="3" Name="Warning">(^[a-zA-Z\\\.0-9 _/\:\+\-]+ *)(\()([0-9]+)(\))( \: )(warning)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="1" Name="Warning">([a-z_A-Z]*\.obj)( : warning)</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="1" Name="Warning">(cl : Command line warning)</Pattern>
+      <GlobalIncludePath>C:\Program Files\Microsoft Visual Studio 10.0\VC\include;.</GlobalIncludePath>
+      <GlobalLibPath>C:\Program Files\Microsoft Visual Studio 10.0\VC\lib;.</GlobalLibPath>
+      <PathVariable>C:\Program Files\Microsoft Visual Studio 10.0\VC\bin</PathVariable>
+    </Compiler>
+    <Compiler GenerateDependenciesFiles="no" Name="cobra" ReadObjectsListFromFile="no">
+      <Switch Name="Object" Value="-t:lib"/>
+      <Switch Name="Library" Value="-reference:"/>
+      <Switch Name="ArchiveOutput" Value="-ert"/>
+      <Switch Name="Source" Value="-c "/>
+      <Switch Name="Preprocessor" Value=""/>
+      <Switch Name="Debug" Value="-debug"/>
+      <Switch Name="Output" Value="-out:"/>
+      <Switch Name="Include" Value="-ref:"/>
+      <Switch Name="PreprocessOnly" Value=""/>
+      <Switch Name="LibraryPath" Value="-lib:"/>
+      <Tool Name="ArchiveTool" Value=""/>
+      <Tool Name="LinkerName" Value=""/>
+      <Tool Name="SharedObjectLinkerName" Value=""/>
+      <Tool Name="CompilerName" Value="cobra.exe"/>
+      <Tool Name="ResourceCompiler" Value=""/>
+      <Tool Name="C_CompilerName" Value="cobra.exe"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch) &quot;$(FileFullPath)&quot; $(CmpOptions) $(ObjectSwitch)$(FilePath)$(IntermediateDirectory)/$(FileName).cs " Extension="cs" Kind="0"/>
+      <File CompilationLine="$(CompilerName) $(SourceSwitch)  $(CmpOptions) $(FileFullName)" Extension="cobra" Kind="0"/>
+      <Option Name="ObjectSuffix" Value=".cobra.cs"/>
+      <Option Name="DependSuffix" Value=""/>
+      <Option Name="PreprocessSuffix" Value=""/>
+      <Pattern FileNameIndex="1" LineNumberIndex="2" Name="Error">^([a-zA-Z\.0-9_/\+\-]+)\(([0-9]+)\): error:</Pattern>
+      <Pattern FileNameIndex="1" LineNumberIndex="2" Name="Warning">^([a-zA-Z\.0-9_/\+\-]+)\(([0-9]+)\): warning:</Pattern>
+      <GlobalIncludePath/>
+      <GlobalLibPath/>
+      <PathVariable/>
+      <CompilerOption Name="-c -compile">compile Only</CompilerOption>
+      <CompilerOption Name="-version">Print just the version number</CompilerOption>
+      <CompilerOption Name="-cin  -compile-if-needed">Only compile if any src newer than output file</CompilerOption>
+      <CompilerOption Name="-out:Filename">specify output filename</CompilerOption>
+      <CompilerOption Name="-v -verbosity:[0-5]">enable extra compiler output</CompilerOption>
+      <CompilerOption Name="-o -optimize">Optimize</CompilerOption>
+      <CompilerOption Name="-include-traces">include trace stmts in output assembly (default=yes)</CompilerOption>
+      <CompilerOption Name="-lib:PATH">specify additional directories to search for references</CompilerOption>
+      <CompilerOption Name="-ns: -name-space:NAME">Sets Namespace for all src files as if specified in files</CompilerOption>
+      <CompilerOption Name="-main:TYPENAME">Specify type (class) containing the 'main' method</CompilerOption>
+      <CompilerOption Name="-help">print full option usage info</CompilerOption>
+      <CompilerOption Name="-ert">embed Cobra runtime in exe</CompilerOption>
+      <CompilerOption Name="-d -debug">compile debugging enabled</CompilerOption>
+      <CompilerOption Name="-number:decimal|float|float32|float64">Sets real nunmeric type for 'number' type and fractional literals</CompilerOption>
+      <CompilerOption Name="-kif">Keep Intermediate files</CompilerOption>
+      <CompilerOption Name="-turbo">set option switches to maximise Runtime perf</CompilerOption>
+      <CompilerOption Name="-timeit">gives runtime duration and other stats</CompilerOption>
+      <CompilerOption Name="-include-tests">include unit tests (default=yes)</CompilerOption>
+      <CompilerOption Name="-ref  -reference:Some.dll">Add ref to a dll</CompilerOption>
+      <CompilerOption Name="-include-asserts">include asserts in exe (default=yes)</CompilerOption>
+      <CompilerOption Name="-t -target:exe|winexe|lib|module">build specific target type</CompilerOption>
+      <CompilerOption Name="-include-nil-checks">include chks on non nilable items (default=yes)</CompilerOption>
+    </Compiler>
+  </Compilers>
+  <!--
+  <BuildSystem Active="no" Jobs="1" Name="GNU makefile onestep build" Options="-f" ToolPath="make"/>
+  -->
+  <BuildSystem Active="yes" Command="make -j 1 -f" Jobs="1" Name="GNU makefile for g++/gcc" Options="-f" ToolPath="make"/>
+  <BuildSystem Active="no" Command="make -j 1 -f" Jobs="1" Name="Another GNU makefile for g++/gcc" Options="-f" ToolPath="make"/>
+</BuildSettings>

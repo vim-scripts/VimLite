@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+
+import sys
+import os.path
+
+VIMLITE_DIR = os.path.dirname(os.path.dirname(
+    os.path.realpath(os.path.abspath(__file__))))
+sys.path.append(os.path.join(VIMLITE_DIR, 'pyclewn'))
+
+import clewn.vim as vim
+vim.main()

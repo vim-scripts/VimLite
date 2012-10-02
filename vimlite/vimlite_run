@@ -1,0 +1,30 @@
+#!/bin/bash 
+
+## A wrapper script around the gnome-terminal utility 
+## which allows VimLite to export LD_LIBRARY_PATH into the gnome-terminal
+## shell
+
+TERMPROG=""
+TITLESWITCH=""
+CMDSWITCH=""
+
+if [ -x "`which gnome-terminal 2>/dev/null`" ]; then
+	TERMPROG=gnome-terminal
+	TITLESWITCH="-t"
+	CMDSWITCH="-e"
+else
+	TERMPROG=xterm
+	TITLESWITCH="-T"
+	CMDSWITCH="-e"
+fi
+
+if [ $# -lt 2 ]; then
+	echo "usage: vimlite_term '<Title>' COMMAND [ARGS]"
+	exit 1
+fi
+
+TITLE="$1"
+shift
+
+$TERMPROG $TITLESWITCH "$TITLE" $CMDSWITCH "/bin/bash -c \"$*\"" 2>/dev/null
+
