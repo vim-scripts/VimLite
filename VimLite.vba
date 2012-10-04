@@ -7659,7 +7659,7 @@ endfunc
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/settings.vim	[[[1
-68
+73
 " Description:  Omnicpp completion init settings
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 15
@@ -7717,8 +7717,13 @@ function! omnicpp#settings#Init() "{{{1
     call s:InitVariable('g:VLOmniCpp_UseLibCxxParser', 0)
 
     " libCxxParser.so 所在的路径
-    call s:InitVariable('g:VLOmniCpp_LibCxxParserPath', 
-                \       $HOME . "/.vimlite/lib/libCxxParser.so")
+    if has('win32') || has('win64')
+        call s:InitVariable('g:VLOmniCpp_LibCxxParserPath', 
+                    \       $VIM . '\vimlite\lib\libCxxParser.dll')
+    else
+        call s:InitVariable('g:VLOmniCpp_LibCxxParserPath', 
+                    \       $HOME . "/.vimlite/lib/libCxxParser.so")
+    endif
 
     " 跳转至符号声明处的快捷键
     call s:InitVariable('g:VLOmniCpp_GotoDeclarationKey', '<C-p>')
@@ -8378,7 +8383,7 @@ function s:error(msg)
     echohl None
 endfunction
 autoload/videm/wsp.vim	[[[1
-7274
+7276
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -11087,7 +11092,7 @@ function! s:CreateEnvVarSettingsDialog() "{{{2
 
     "1.EnvVarSets
     "===========================================================================
-    let ctl = g:VCStaticText.New('Available Environment Sets')
+    let ctl = g:VCStaticText.New('Available Environment Sets:')
     call ctl.SetIndent(4)
     call dlg.AddControl(ctl)
 
@@ -11226,7 +11231,7 @@ function! s:CreateTagsSettingsDialog() "{{{2
 
     " 头文件搜索路径
     let ctl = g:VCMultiText.New(
-                \"Add search paths for the vlctags and libclang parser")
+                \"Add search paths for the vlctags and libclang parser:")
     call ctl.SetId(s:ID_TagsSettingsIncludePaths)
     call ctl.SetIndent(4)
     py vim.command("let includePaths = %s" % ToVimEval(ins.includePaths))
@@ -11236,13 +11241,14 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call dlg.AddBlankLine()
 
     call dlg.AddBlankLine()
-    call dlg.AddSeparator()
+    call dlg.AddSeparator(4)
     let ctl = g:VCStaticText.New('The followings are only for vlctags parser')
+    call ctl.SetIndent(4)
     call ctl.SetHighlight('WarningMsg')
     call dlg.AddControl(ctl)
     call dlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Macros")
+    let ctl = g:VCMultiText.New("Macros:")
     call ctl.SetId(s:ID_TagsSettingsTagsTokens)
     call ctl.SetIndent(4)
     py vim.command("let tagsTokens = %s" % ToVimEval(ins.tagsTokens))
@@ -11251,7 +11257,7 @@ function! s:CreateTagsSettingsDialog() "{{{2
     call dlg.AddControl(ctl)
     call dlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Types")
+    let ctl = g:VCMultiText.New("Types:")
     call ctl.SetId(s:ID_TagsSettingsTagsTypes)
     call ctl.SetIndent(4)
     py vim.command("let tagsTypes = %s" % ToVimEval(ins.tagsTypes))
@@ -12007,7 +12013,7 @@ endfunction
 function! s:CreateBatchBuildSettingsDialog() "{{{2
     let dlg = g:VimDialog.New("== Batch Build Settings ==")
 
-    let ctl = g:VCStaticText.New('Batch Build')
+    let ctl = g:VCStaticText.New('Batch Build:')
     call ctl.SetIndent(4)
     call dlg.AddControl(ctl)
 
@@ -12724,7 +12730,8 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Editor Options (Run as vim script):")
+    let ctl = g:VCMultiText.New("Editor Options (Run as vim script, "
+                \."single line will be faster):")
     call ctl.SetId(s:ID_WspSettingsEditorOptions)
     call ctl.SetIndent(4)
     py vim.command("let editorOptions = %s" 
@@ -12781,14 +12788,14 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddBlankLine()
 
     call wspSettingsDlg.AddBlankLine()
-    call wspSettingsDlg.AddSeparator() " 分割线
-    let ctl = g:VCStaticText.New(
-                \'The followings are only for OmniCpp and vlctags parser')
+    call wspSettingsDlg.AddSeparator(4) " 分割线
+    let ctl = g:VCStaticText.New('The followings are only for vlctags parser')
+    call ctl.SetIndent(4)
     call ctl.SetHighlight('WarningMsg')
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Prepend Search Scopes (For OmniCpp)")
+    let ctl = g:VCMultiText.New("Prepend Search Scopes (For OmniCpp):")
     call ctl.SetId(s:ID_WspSettingsPrependNSInfo)
     call ctl.SetIndent(4)
     py vim.command("let prependNSInfo = %s" % ws.VLWSettings.GetUsingNamespace())
@@ -12797,7 +12804,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Macro Files")
+    let ctl = g:VCMultiText.New("Macro Files:")
     call ctl.SetId(s:ID_WspSettingsMacroFiles)
     call ctl.SetIndent(4)
     py vim.command("let macroFiles = %s" % ws.VLWSettings.GetMacroFiles())
@@ -12806,7 +12813,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Macros")
+    let ctl = g:VCMultiText.New("Macros:")
     call ctl.SetId(s:ID_WspSettingsTagsTokens)
     call ctl.SetIndent(4)
     py vim.command("let tagsTokens = %s" % ws.VLWSettings.tagsTokens)
@@ -12815,7 +12822,7 @@ function! s:CreateWspSettingsDialog() "{{{2
     call wspSettingsDlg.AddControl(ctl)
     call wspSettingsDlg.AddBlankLine()
 
-    let ctl = g:VCMultiText.New("Types")
+    let ctl = g:VCMultiText.New("Types:")
     call ctl.SetId(s:ID_WspSettingsTagsTypes)
     call ctl.SetIndent(4)
     py vim.command("let tagsTypes = %s" % ws.VLWSettings.tagsTypes)
@@ -15361,7 +15368,7 @@ class VimLiteWorkspace():
                     self.OpenWorkspace(fileName)
                     self.RefreshBuffer()
                     if vim.eval('g:VLWorkspaceEnableCscope') != '0':
-                        vim.command('call s:InitVLWCscopeDatabase()')
+                        vim.command('call s:ConnectCscopeDatabase()')
             elif choice == 'Close Workspace':
                 self.CloseWorkspace()
                 self.RefreshBuffer()
@@ -15654,7 +15661,7 @@ endfunction
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/vimdialog.vim	[[[1
-3210
+3230
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -15886,7 +15893,7 @@ function! g:VCSeparator.New(...)
 	let newVCSeparator.editable = 0
 	let newVCSeparator.hiGroup = 'PreProc'
 
-	if exists('a:1')
+	if exists('a:1') && a:1 !=# ''
 		let newVCSeparator.sepChar = a:1
 	else
 		let newVCSeparator.sepChar = '='
@@ -18180,8 +18187,28 @@ function! g:VimDialog._ClearCtlActivatedHl()
 	call filter(self._inactiveCtlMatchId, 0)
 endfunction
 
-function! g:VimDialog.AddSeparator()
-	call self.AddControl(g:VCSeparator.New())
+" 可选参数为 {分隔符字符}, {缩进长度}
+function! g:VimDialog.AddSeparator(...)
+	let sLabel = ''
+	let nIndent = 0
+	if a:0 == 0
+		" nothing
+	elseif a:0 == 1
+		if type(a:1) == type('')
+			let sLabel = a:1
+		elseif type(a:1) == type(0)
+			let nIndent = a:1
+		endif
+	elseif a:0 == 2
+		let sLabel = a:1
+		let nIndent = a:1
+	else
+		" 忽略
+	endif
+
+	let sep = g:VCSeparator.New(sLabel)
+	call sep.SetIndent(nIndent)
+	call self.AddControl(sep)
 endfunction
 
 function! g:VimDialog.AddBlankLine()
