@@ -25,12 +25,8 @@ from EnvVarSettings import EnvVarSettingsST
 
 BUILDER_NAME = 'GNU makefile for g++/gcc'
 
-from Globals import EscapeString, EscStr4MkSh, PosixPath
+from Globals import EscapeString, EscStr4MkSh, PosixPath, SplitSmclStr
 EscStr = EscapeString
-
-def ToDQStr(s):
-    '''返回用双引号引用的字符串'''
-    return '"%s"' % EscStr(s, '"\\')
 
 # DEPRECATED
 def __SplitStrBySemicolon(string):
@@ -54,6 +50,7 @@ def __SplitStrBySemicolon(string):
         del charli[:]
     return result
 
+# 用 Globals.SplitSmclStr() 代替了
 def SplitStrBySemicolon(string):
     '''把 ';' 作为分隔符字符串分割，如果想输入 ';'本身，用加倍之即可 ";;"'''
     charli = []
@@ -85,23 +82,34 @@ def SplitStrBySemicolon(string):
         del charli[:]
     return result
 
-def SemicolonStr2MkStr(string):
+def SmclStr2MkStr(string):
     '''分号分割的字符串安全转为 Makefile 的字符串
     NOTE: 分号分割的字符串是作为原始的命令行参数传过去的，无须作特殊的转义'''
-    li = SplitStrBySemicolon(string)
+    li = SplitSmclStr(string)
     return " ".join(li)
 
 def IsCxxSource(fileName):
-    ext = os.path.splitext(fileName)[1][1:]
-    return ext in set(['cpp', 'cxx', 'c++', 'cc'])
+    #ext = os.path.splitext(fileName)[1][1:]
+    #return ext in set(['cpp', 'cxx', 'c++', 'cc'])
+    return Globals.IsCppSourceFile(fileName)
 
 def IsCSource(fileName):
-    ext = os.path.splitext(fileName)[1][1:]
-    return ext in set(['c'])
+    #ext = os.path.splitext(fileName)[1][1:]
+    #return ext in set(['c'])
+    return Globals.IsCSourceFile(fileName)
 
 
 class BuilderGnuMake(Builder):
     '''GNU make'''
+    '''需要先处理的字符串包括：
+        路径名，文件名，其他自动生成的可能用在命令行上的字符串。
+       这样会存在一个问题，例如 s := a b
+       会被改为 s := "a b"，但这样在字符串比较是 ifeq $(s,a b) 会失败，
+       这个情况无法解决，根本原因是 GNU make 和 shell 处理的不一致造成的，
+       一般只要确保需要比较的字符串是常规字符串即可，其他就直接引用好了
+       
+       使用 GNU make 的内置函数的话，是没法处理文件带空白的情况的。所以无法支持
+       带空白的源文件名。'''
     def __init__(self, d = {}):
         Builder.__init__(self, d)
         #self.name = BUILDER_NAME
@@ -281,10 +289,14 @@ class BuilderGnuMake(Builder):
         text += '## User defined environment variables\n'
         text += '##\n'
         for envVar in EnvVarSettingsST.Get().GetActiveEnvVars():
-            text += '%s := %s\n' % (envVar.GetKey(), envVar.GetValue())
+            #text += '%s := %s\n' % (envVar.GetKey(), envVar.GetValue())
+            text += '%s\n' % (envVar.GetString().replace('=', ':=', 1))
         text += '\n'
 
         if isCustomBuild: # 自定义构建的处理
+            text += '## ===== Available Macros =====\n'
+            text += self.CreateAvailableMacros(projInst, projBldConfIns)
+            text += '\n'
             buildCmds = projBldConfIns.GetCustomBuildCmd()
             cleanCmds = projBldConfIns.GetCustomCleanCmd()
             workDir = projBldConfIns.GetCustomBuildWorkingDir()
@@ -339,6 +351,9 @@ Rebuild: DirSanity
 
             # 如此实现批量添加包含路径即可
             text += '# auto\n'
+            # 添加 CCXXFLAGS
+            #text += 'CFLAGS    += $(CCXXFLAGS)\n'
+            #text += 'CXXFLAGS  += $(CCXXFLAGS)\n'
             # CPPFLAGS 为 C 和 C++ 编译器共享
             text += 'CPPFLAGS  += $(foreach Dir,$(CmpIncPaths) $(IncPaths),$(IncPat))\n'
             # 预定义的宏
@@ -466,8 +481,8 @@ endif
         blderCmd = self.command
         blderCmd = EnvVarSettingsST.Get().ExpandVariables(blderCmd)
         wspMakefile = '%s_wsp.mk' % wspIns.GetName()
-        return 'cd %s && %s %s' % (ToDQStr(wspIns.dirName), blderCmd,
-                                   ToDQStr(wspMakefile))
+        return 'cd %s && %s %s' % (EscStr4MkSh(wspIns.dirName), blderCmd,
+                                   EscStr4MkSh(wspMakefile))
 
     def __GetPrpOrObjCmd(self, projName, fileName, wspConfName = '', t = 'prp'):
         wspIns = VLWorkspaceST.Get()
@@ -495,8 +510,8 @@ endif
         else: # 对象目标，用于编译文件
             fn = os.path.splitext(fileName)[0] + cmpl.objExt
         tgt = '%s/%s' % (bwd, fn)
-        cmd = 'cd %s && make -f %s %s ' % (ToDQStr(projInst.dirName),
-                                           ToDQStr(mkFile), ToDQStr(tgt))
+        cmd = 'cd %s && make -f %s %s ' % (EscStr4MkSh(projInst.dirName),
+                                           EscStr4MkSh(mkFile), EscStr4MkSh(tgt))
         return cmd
 
     def GetProjectBuildConfig(self, projName, wspConfName = ''):
@@ -568,6 +583,28 @@ endif
 
         return text, rulesText
 
+    def CreateAvailableMacros(self, projInst, projBldConfIns):
+        '''内部定义的宏（变量），导出为 gnu make 的形式'''
+        ws = VLWorkspaceST.Get()
+        text = ''
+        text += 'WorkspaceName          := %s\n' \
+                % EscStr4MkSh(ws.GetName()) # 因为可能用在命令行中，所以需要转义
+        text += 'WorkspacePath          := $(CURDIR)/%s\n' \
+                % EscStr4MkSh(os.path.relpath(ws.dirName, projInst.dirName))
+        text += 'ProjectName            := %s\n' \
+                % EscStr4MkSh(projInst.GetName())
+        text += 'ProjectPath            := $(CURDIR)\n'
+        text += 'ConfigurationName      := %s\n' \
+                % EscStr4MkSh(projBldConfIns.GetName())
+        text += 'IntermediateDirectory  := %s\n' \
+                % EscStr4MkSh(projBldConfIns.GetOutDir()) or '.'
+        text += 'OutDir                 := %s\n' % '$(IntermediateDirectory)'
+        text += 'User                   := %s\n' \
+                % EscStr4MkSh(getpass.getuser())
+        text += 'Date                   := %s\n' \
+                % time.strftime('%Y-%m-%d', time.localtime())
+        return text
+
     def CreateConfigsVariables(self, projInst, projBldConfIns):
         cmplName = projBldConfIns.GetCompilerType()
         cmpl = BuildSettingsST.Get().GetCompilerByName(cmplName)
@@ -594,8 +631,8 @@ endif
         text += 'PrpExt := %s\n' % cmpl.prpExt
         text += '\n'
 
-        text += 'CmpIncPaths := %s\n' % SemicolonStr2MkStr(cmpl.includePaths)
-        text += 'CmpLibPaths := %s\n' % SemicolonStr2MkStr(cmpl.libraryPaths)
+        text += 'CmpIncPaths := %s\n' % SmclStr2MkStr(cmpl.includePaths)
+        text += 'CmpLibPaths := %s\n' % SmclStr2MkStr(cmpl.libraryPaths)
         text += '\n'
 
         text += 'IncPat = %s\n' % cmpl.incPat
@@ -608,6 +645,7 @@ endif
         # 项目特定的变量
         cmplOpts = projBldConfIns.GetCCompileOptions()
         cxxCmplOpts = projBldConfIns.GetCompileOptions()
+        cCxxCmplOpts = projBldConfIns.GetCCxxCompileOptions()
         linkOpts = projBldConfIns.GetLinkOptions()
         incPaths = projBldConfIns.GetIncludePath()
         libPaths = projBldConfIns.GetLibPath()
@@ -618,23 +656,22 @@ endif
             projType = 'so'
         elif projBldConfIns.GetProjectType() == Project.STATIC_LIBRARY:
             projType = 'ar'
-        text += '# ===== Project Variables =====\n'
-        text += 'ProjectName            := %s\n' % projInst.GetName()
-        text += 'ProjectPath            := $(CURDIR)\n'
-        text += 'ConfigurationName      := %s\n' % projBldConfIns.GetName()
-        text += 'IntermediateDirectory  := %s\n' % projBldConfIns.GetIntermediateDirectory() or '.'
-        text += 'OutDir                 := %s\n' % '$(IntermediateDirectory)'
-        text += 'User                   := %s\n' % getpass.getuser()
-        text += 'Date                   := %s\n' % time.strftime('%Y-%m-%d', time.localtime())
-        text += 'OutputFile             := %s\n' % projBldConfIns.GetOutputFileName() or 'null'
+        text += '## ===== Project Variables =====\n'
+        text += self.CreateAvailableMacros(projInst, projBldConfIns)
+        text += 'OutputFile             := %s\n' \
+                % EscStr4MkSh(projBldConfIns.GetOutputFileName()) or 'null'
+        # 下面几个变量是由用户输入的，不是自动生成的，转义责任交给用户
         text += 'CPPFLAGS               := %s\n' % ''
-        text += 'CFLAGS                 := %s\n' % SemicolonStr2MkStr(cmplOpts)
-        text += 'CXXFLAGS               := %s\n' % SemicolonStr2MkStr(cxxCmplOpts)
-        text += 'IncPaths               := %s\n' % SemicolonStr2MkStr(incPaths)
-        text += 'Macros                 := %s\n' % SemicolonStr2MkStr(macros)
-        text += 'LDFLAGS                := %s\n' % SemicolonStr2MkStr(linkOpts)
-        text += 'LibPaths               := %s\n' % SemicolonStr2MkStr(libPaths)
-        text += 'Libraries              := %s\n' % SemicolonStr2MkStr(libraries)
+        text += 'CCXXFLAGS              := %s\n' % SmclStr2MkStr(cCxxCmplOpts)
+        text += 'CFLAGS                 := $(CCXXFLAGS)\n'
+        text += 'CFLAGS                 += %s\n' % SmclStr2MkStr(cmplOpts)
+        text += 'CXXFLAGS               := $(CCXXFLAGS)\n'
+        text += 'CXXFLAGS               += %s\n' % SmclStr2MkStr(cxxCmplOpts)
+        text += 'IncPaths               := %s\n' % SmclStr2MkStr(incPaths)
+        text += 'Macros                 := %s\n' % SmclStr2MkStr(macros)
+        text += 'LDFLAGS                := %s\n' % SmclStr2MkStr(linkOpts)
+        text += 'LibPaths               := %s\n' % SmclStr2MkStr(libPaths)
+        text += 'Libraries              := %s\n' % SmclStr2MkStr(libraries)
         text += 'ProjectType            := %s\n' % projType
         text += '\n'
 
@@ -649,16 +686,18 @@ def test():
 
     from BuilderManager import BuilderManagerST
     import json
-    assert SplitStrBySemicolon("snke\;;snekg;") == ['snke;', 'snekg']
-    print SemicolonStr2MkStr("s n'\"\"'ke\;;snekg;")
+    assert SplitStrBySemicolon("snke;;;snekg;") == ['snke;', 'snekg']
+    print SmclStr2MkStr("s n'\"\"'ke;;;snekg;")
     ins = VLWorkspaceST.Get()
     ins.OpenWorkspace("CxxParser/CxxParser.vlworkspace")
     print ins.projects
+
+    return
     bm = BuilderManagerST.Get()
     #blder = BuilderGnuMake(
         #BuildSettingsST.Get().GetBuilderByName(
             #"GNU makefile for g++/gcc").ToDict())
-    blder = bm.GetActiveBuilder()
+    blder = bm.GetActiveBuilderInstance()
     bs = BuildSettingsST.Get()
     #print bs.ToDict()
     #print bs.GetCompilerByName('gnu g++')

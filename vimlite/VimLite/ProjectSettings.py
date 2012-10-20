@@ -73,11 +73,17 @@ class ProjectSettings:
         if buildConfMerged.GetBuildCmpWithGlobalSettings() == BuildConfig.BuildConfig.PREPEND_GLOBAL_SETTINGS:
             buildConfMerged.SetCompileOptions(buildConf.GetCompileOptions() + ';' + self.globalSettings.GetCompileOptions() )
             buildConfMerged.SetCCompileOptions(buildConf.GetCCompileOptions() + ';' + self.globalSettings.GetCCompileOptions() )
+            buildConfMerged.SetCCxxCompileOptions(
+                buildConf.GetCCxxCompileOptions() + ';' \
+                + self.globalSettings.GetCCxxCompileOptions() )
             buildConfMerged.SetPreprocessor(buildConf.GetPreprocessor() + ';' + self.globalSettings.GetPreprocessor() )
             buildConfMerged.SetIncludePath(buildConf.GetIncludePath() + ';' + self.globalSettings.GetIncludePath() )
         elif buildConfMerged.GetBuildCmpWithGlobalSettings() == BuildConfig.BuildConfig.APPEND_TO_GLOBAL_SETTINGS:
             buildConfMerged.SetCompileOptions(self.globalSettings.GetCompileOptions() + ";" + buildConf.GetCompileOptions());
             buildConfMerged.SetCCompileOptions(self.globalSettings.GetCCompileOptions() + ";" + buildConf.GetCCompileOptions());
+            buildConfMerged.SetCCxxCompileOptions(
+                self.globalSettings.GetCCxxCompileOptions() + ";" \
+                + buildConf.GetCCxxCompileOptions());
             buildConfMerged.SetPreprocessor(self.globalSettings.GetPreprocessor() + ";" + buildConf.GetPreprocessor());
             buildConfMerged.SetIncludePath(self.globalSettings.GetIncludePath() + ";" + buildConf.GetIncludePath());
         

@@ -817,9 +817,12 @@ class TagsStorageSQLite(ITagsStorage):
             sql = sql[:-1] + ") "
             return self.DoFetchTags(sql)
         else:
+            # FIXME: 为什么要 LIMIT 1 ？
             #sql = "select * from tags where path ='" + path + "' LIMIT 1"
-            sql = "select * from tags where path ='%s' and kind != 'externvar' "\
-                    "LIMIT 1" % (path, )
+            sql = "select * from tags where path ='%s'" % path
+            # NOTE: 为什么？按照函数语义，不应该这么做，应该交给外层过滤
+            #sql = "select * from tags where path ='%s' and kind != 'externvar' "\
+                    #"LIMIT 1" % (path, )
             return self.DoFetchTags(sql)
 
     def GetTagsByPaths(self, paths):

@@ -51,6 +51,10 @@ class VLWorkspaceSettings:
         # 每个项目是一个 vim Ex 命令
         self.editorOptions = []
 
+        # 2012-10-06: 源文件扩展名设置，约定扩展名是包括 '.' 的，例如 .c, .cpp
+        self.cSrcExts = []
+        self.cppSrcExts = []
+
         # 如果指定了 fileName, 从文件载入, 不论成功与否
         self.Load()
 
@@ -175,6 +179,8 @@ class VLWorkspaceSettings:
                 self.macroFiles = obj.macroFiles
                 self.incPathFlag = obj.incPathFlag
                 self.editorOptions = obj.editorOptions
+                self.cSrcExts = obj.cSrcExts
+                self.cppSrcExts = obj.cppSrcExts
             except:
                 pass
             del obj

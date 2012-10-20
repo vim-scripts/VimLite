@@ -15,7 +15,7 @@ class EnvVar:
         self.value = ''
         self.string = string
         if string:
-            self.key, op, self.value = string.partition('=')
+            self.key, self.value = Globals.SplitVarDef(string)
 
     def GetKey(self):
         return self.key
@@ -25,6 +25,13 @@ class EnvVar:
 
     def GetString(self):
         return self.string
+
+    def SetValue(self, val):
+        self.value = val
+
+    def SetKeyValue(self, key, val):
+        self.key = key
+        self.value = val
 
 '''\
 环境变量的选择机制是：
@@ -43,7 +50,7 @@ class EnvVarSettings:
         self.mtime = 0 # 最后修改时间
 
         # 当前激活项, 这个在外部需要时修改，理论上这个值不需要保存的
-        self.activeSetName = ''
+        self.activeSetName = 'Default'
 
         if fileName:
             self.Load(fileName)
@@ -91,14 +98,14 @@ class EnvVarSettings:
         if self.envVarSets.has_key(setName):
             del self.envVarSets[setName][:]
 
-    def ExpandVariables(self, expr):
-        if not '$' in expr:
-            return expr
-
+    def ExpandVariables(self, expr, trim = False):
         result = expr
+        d = {}
         for envVar in self.GetActiveEnvVars()[::-1]:
-            result = result.replace('$(%s)' % envVar.GetKey(),
-                                    envVar.GetValue())
+            d[envVar.GetKey()] = envVar.GetValue()
+            #result = result.replace('$(%s)' % envVar.GetKey(),
+                                    #envVar.GetValue())
+        result = Globals.ExpandVariables(result, d, trim)
 
         return result
 
@@ -109,7 +116,24 @@ class EnvVarSettings:
         for k, v in self.envVarSets.iteritems():
             print k + ':'
             for i in v:
-                print '\t' + i.GetKey(), '=', i.GetValue()
+                #print ' ' * 4 + i.GetKey(), '=', i.GetValue()
+                print ' ' * 4 + i.string
+        print '=== after expanded ==='
+        for k, v in self.envVarSets.iteritems():
+            print k + ':'
+            for i in v:
+                print ' ' * 4 + i.GetKey(), '=', i.GetValue()
+
+    def ExpandSelf(self):
+        '''展开自身'''
+        for envVarName, envVarSet in self.envVarSets.iteritems():
+            d = os.environ.copy() # 支持系统的环境变量的
+            for envVar in envVarSet:
+                key = envVar.GetKey()
+                val = envVar.GetValue()
+                val = Globals.ExpandVariables(val, d, True) # 清除变量
+                envVar.SetValue(val)
+                d[key] = val
 
     def Load(self, fileName = ''):
         if not fileName and not self.fileName:
@@ -134,6 +158,9 @@ class EnvVarSettings:
             self.mtime = Globals.GetFileModificationTime(fileName)
             del obj
             ret = True
+
+        if ret:
+            self.ExpandSelf()
 
         return ret
 
@@ -195,8 +222,10 @@ if __name__ == '__main__':
     ins.DeleteAllEnvVarSets()
     ins.NewEnvVarSet('Default')
     ins.AddEnvVar('Default', 'CodeLiteDir=/usr/share/codelite')
-    ins.AddEnvVar('Default', 'VimLiteDir=~/.vimlite$(abc)')
+    ins.AddEnvVar('Default', 'VimLiteDir=$(CodeLiteDir)')
     ins.AddEnvVar('Default', 'abc=ABC')
+    ins.Print()
+    ins.ExpandSelf()
     ins.Print()
     print ins.GetModificationTime()
     print ins.ExpandVariables("$(CodeLiteDir) + $(VimLiteDir) = $(abc)")

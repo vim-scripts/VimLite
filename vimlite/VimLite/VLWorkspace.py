@@ -65,7 +65,7 @@ def Glob(sDir, filters):
     lFiles = []
     lFilters = filters
     if isinstance(filters, str):
-        lFilters = [i.strip() for i in filters.split(';')]
+        lFilters = [i for i in Globals.SplitSmclStr(filters)]
     for sFilter in lFilters:
         if sFilter != '.':
             lFiles.extend(glob.glob(os.path.join(sDir, sFilter)))
@@ -107,6 +107,10 @@ def DirectoryToXmlNode(sDir, filters,
                 bHasChild = True
 
     lFiles = Glob(sDir, filters)
+    # 防止重复文件
+    filesSet = set(lFiles)
+    lFiles = list(filesSet)
+    lFiles.sort(Cmp) # 排序不分大小写
     for sFile in lFiles:
         if not os.path.isfile(sFile):
             continue
@@ -1349,6 +1353,11 @@ class VLWorkspace:
         '''更新本工作区包含的所有项目的项目文件，
         主要目的是另它们重建 Makefile'''
         for project in self.projects.itervalues():
+            Globals.Touch(project.fileName)
+
+    def TouchProject(self, projName):
+        project = self.FindProjectByName(projName)
+        if project:
             Globals.Touch(project.fileName)
 
 #=====

@@ -51,9 +51,9 @@ class BuildConfigCommon:
     '''通用构建配置'''
 
     def __init__(self, xmlNode = None, confType = 'Configuration'):
-        '''多数变量为分号分割的字符串'''
+        '''字符串类型的变量都是以分号分割的字符串'''
         self.includePath = ''   # 分号分割的字符串
-        self.compileOptions = ''
+        self.compileOptions = '' # 这是 C++ 的编译选项
         self.linkOptions = ''
         self.libs = ''  # 分号分割的字符串
         self.libPath = ''   # 分号分割的字符
@@ -62,57 +62,74 @@ class BuildConfigCommon:
         self.resCompileIncludePath = ''
         self.cCompileOptions = ''
         self.confType = confType  # xml node name
+        # added on 2012-10-06
+        self.cCxxCmplOpts = '' # 同时用于 C 和 C++ 的编译选项
         
         if xmlNode:
-            # 读取编辑器设置
+            # 读取编译器设置
             compilerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Compiler')
             if compilerNode:
-                self.compileOptions = XmlUtils.ReadString(compilerNode, 'Options')
-                self.cCompileOptions = compilerNode.getAttribute('C_Options').encode('utf-8')
+                self.compileOptions = compilerNode.getAttribute('Options')\
+                        .encode('utf-8')
+                self.cCompileOptions = compilerNode.getAttribute('C_Options')\
+                        .encode('utf-8')
+                if compilerNode.hasAttribute('C_Cpp_Options'): # 同时用于 C/C++
+                    self.cCxxCmplOpts = compilerNode.getAttribute('C_Cpp_Options')\
+                            .encode('utf-8')
                 #if not self.cCompileOptions:
                     # the attribute "C_Options" does not exist,
                     # copy the values from the "Options" attribute
                     # 只有这个属性不存在时才复制值, python 的实现不需要如此处理
                     #self.cCompileOptions = self.compileOptions
                 
+                li1 = []
+                li2 = []
                 for i in compilerNode.childNodes:
                     if i.nodeName == 'IncludePath':
-                        self.includePath += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
+                        li1.append(XmlUtils.ReadString(i, 'Value'))
                     elif i.nodeName == 'Preprocessor':
-                        self.preprocessor += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
-                self.includePath = self.includePath.strip(';')
-                self.preprocessor = self.preprocessor.strip(';')
-                    
+                        li2.append(XmlUtils.ReadString(i, 'Value'))
+                self.includePath = Globals.JoinToSmclStr(li1)
+                self.preprocessor = Globals.JoinToSmclStr(li2)
+
             # 读取链接器设置
             linkerNode = XmlUtils.FindFirstByTagName(xmlNode, 'Linker')
             if linkerNode:
                 self.linkOptions = XmlUtils.ReadString(linkerNode, 'Options')
+                li1 = []
+                li2 = []
                 for i in linkerNode.childNodes:
                     if i.nodeName == 'Library':
-                        self.libs += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
+                        li1.append(XmlUtils.ReadString(i, 'Value'))
                     elif i.nodeName == 'LibraryPath':
-                        self.libPath += ';%s' % (XmlUtils.ReadString(i, 'Value'),)
-                self.libs = self.libs.strip(';')
-                self.libPath = self.libPath.strip(';')
-            
+                        li2.append(XmlUtils.ReadString(i, 'Value'))
+                self.libs = Globals.JoinToSmclStr(li1)
+                self.libPath = Globals.JoinToSmclStr(li2)
+
             # 读取资源编译器设置
             resCmpNode = XmlUtils.FindFirstByTagName(xmlNode, 'ResourceCompiler')
             if resCmpNode:
                 self.resCompileOptions = XmlUtils.ReadString(resCmpNode, 'Options')
+                li1 = []
                 for i in resCmpNode.childNodes:
                     if i.nodeName == 'IncludePath':
-                        self.resCompileIncludePath \
-                                += XmlUtils.ReadString(i, 'Value') + ';'
-                self.resCompileIncludePath \
-                        = self.resCompileIncludePath.strip(';')
+                        li1.append(XmlUtils.ReadString(i, 'Value'))
+                self.resCompileIncludePath = Globals.JoinToSmclStr(li1)
         else:
-            self.includePath += '.;'
-            self.libPath += '.;'
+            if self.includePath:
+                self.includePath += ';.'
+            else:
+                self.includePath += '.'
+            if self.libPath:
+                self.libPath += ';.'
+            else:
+                self.libPath += '.'
 
     def ToDict(self):
         d = {}
         d['cCmplOpts'] = self.cCompileOptions
         d['cxxCmplOpts'] = self.compileOptions
+        d['cCxxCmplOpts'] = self.cCxxCmplOpts
         d['incPaths'] = self.includePath
         d['preprocs'] = self.preprocessor
 
@@ -127,6 +144,7 @@ class BuildConfigCommon:
     def FromDict(self, d):
         self.cCompileOptions = d['cCmplOpts']
         self.compileOptions = d['cxxCmplOpts']
+        self.cCxxCmplOpts = d['cCxxCmplOpts']
         self.includePath = d['incPaths']
         self.preprocessor = d['preprocs']
 
@@ -145,16 +163,17 @@ class BuildConfigCommon:
         compileNode = doc.createElement('Compiler')
         compileNode.setAttribute('Options', self.compileOptions)
         compileNode.setAttribute('C_Options', self.cCompileOptions)
+        compileNode.setAttribute('C_Cpp_Options', self.cCxxCmplOpts)
         newNode.appendChild(compileNode)
 
-        includePathList = self.includePath.split(';')
+        includePathList = Globals.SplitSmclStr(self.includePath)
         for i in includePathList:
             if i:
                 optionNode = doc.createElement('IncludePath')
                 optionNode.setAttribute('Value', i)
                 compileNode.appendChild(optionNode)
         
-        preprocessorList = self.preprocessor.split(';')
+        preprocessorList = Globals.SplitSmclStr(self.preprocessor)
         for i in preprocessorList:
             if i:
                 prepNode = doc.createElement('Preprocessor')
@@ -167,14 +186,14 @@ class BuildConfigCommon:
         linkNode.setAttribute('Options', self.linkOptions)
         newNode.appendChild(linkNode)
         
-        libPathList = self.libPath.split(';')
+        libPathList = Globals.SplitSmclStr(self.libPath)
         for i in libPathList:
             if i:
                 optionNode = doc.createElement('LibraryPath')
                 optionNode.setAttribute('Value', i)
                 linkNode.appendChild(optionNode)
         
-        libsList = self.libs.split(';')
+        libsList = Globals.SplitSmclStr(self.libs)
         for i in libsList:
             if i:
                 optionNode = doc.createElement('Library')
@@ -186,7 +205,7 @@ class BuildConfigCommon:
         resCmpNode.setAttribute('Options', self.resCompileOptions)
         newNode.appendChild(resCmpNode)
         
-        resCompileIncludePathList = self.resCompileIncludePath.split(';')
+        resCompileIncludePathList = Globals.SplitSmclStr(self.resCompileIncludePath)
         for i in resCompileIncludePathList:
             if i:
                 optionNode = doc.createElement('IncludePath')
@@ -200,7 +219,7 @@ class BuildConfigCommon:
     
     def SetPreprocessor(self, prepr):
         if type(prepr) == type([]):
-            self.preprocessor = ';'.join(prepr)
+            self.preprocessor = Globals.JoinToSmclStr(prepr)
         else:
             self.preprocessor = prepr
     
@@ -212,10 +231,16 @@ class BuildConfigCommon:
     
     def GetCCompileOptions(self):
         return self.cCompileOptions
-    
+
+    def GetCCxxCompileOptions(self):
+        return self.cCxxCmplOpts
+
     def SetCCompileOptions(self, options):
         self.cCompileOptions = options
-    
+
+    def SetCCxxCompileOptions(self, opts):
+        self.cCxxCmplOpts = opts
+
     def GetLinkOptions(self):
         return self.linkOptions
     
@@ -227,7 +252,7 @@ class BuildConfigCommon:
     
     def SetIncludePath(self, paths):
         if type(paths) == type([]):
-            self.includePath = ';'.join(paths)
+            self.includePath = Globals.JoinToSmclStr(paths)
         else:
             self.includePath = paths
     
@@ -236,7 +261,7 @@ class BuildConfigCommon:
     
     def SetLibraries(self, libs):
         if type(libs) == type([]):
-            self.libs = ';'.join(libs)
+            self.libs = Globals.JoinToSmclStr(libs)
         else:
             self.libs = libs
     
@@ -245,7 +270,7 @@ class BuildConfigCommon:
     
     def SetLibPath(self, paths):
         if type(paths) == type([]):
-            self.libPath == ';'.join(paths)
+            self.libPath == Globals.JoinToSmclStr(paths)
         else:
             self.libPath = paths
     
@@ -257,13 +282,13 @@ class BuildConfigCommon:
 
     def SetResCompileIncludePath(self, paths):
         if type(paths) == type([]):
-            self.resCompileIncludePath = ';'.join(paths)
+            self.resCompileIncludePath = Globals.JoinToSmclStr(paths)
         else:
             self.resCompileIncludePath = paths
 
     def SetResCmpIncludePath(self, paths):
         if type(paths) == type([]):
-            self.resCompileIncludePath = ';'.join(paths)
+            self.resCompileIncludePath = Globals.JoinToSmclStr(paths)
         else:
             self.resCompileIncludePath = paths
 
@@ -778,6 +803,9 @@ class BuildConfig:
     
     def GetCCompileOptions(self):
         return self.commonConfig.GetCCompileOptions()
+
+    def GetCCxxCompileOptions(self):
+        return self.commonConfig.GetCCxxCompileOptions()
     
     def GetLinkOptions(self):
         return self.commonConfig.GetLinkOptions()
@@ -807,6 +835,9 @@ class BuildConfig:
         return Globals.NormalizePath(self.outputFile)
     
     def GetIntermediateDirectory(self):
+        return Globals.NormalizePath(self.intermediateDirectory)
+
+    def GetOutDir(self):
         return Globals.NormalizePath(self.intermediateDirectory)
     
     def GetCommand(self):
@@ -844,6 +875,9 @@ class BuildConfig:
     
     def SetCCompileOptions(self, opts):
         self.commonConfig.SetCCompileOptions(opts)
+    
+    def SetCCxxCompileOptions(self, opts):
+        self.commonConfig.SetCCxxCompileOptions(opts)
     
     def SetLinkOptions(self, opts):
         self.commonConfig.SetLinkOptions(opts)

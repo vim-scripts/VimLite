@@ -1,0 +1,28 @@
+#!/bin/bash 
+
+# A wrapper script around the gnome-terminal utility 
+
+CURDIR=`dirname "$0"`
+
+TERMPROG=""
+TITLESWITCH=""
+CMDSWITCH=""
+
+EXECPROG="$CURDIR/vlexec"
+
+if [ -x "`which gnome-terminal 2>/dev/null`" ]; then
+	TERMPROG=gnome-terminal
+	TITLESWITCH="-t"
+	CMDSWITCH="-x"
+else
+	TERMPROG=xterm
+	TITLESWITCH="-T"
+	CMDSWITCH="-e"
+fi
+
+TITLE="$1"
+
+#echo "$@"
+#"$TERMPROG" "$TITLESWITCH" "$TITLE" "$CMDSWITCH" /bin/bash -c "$@" 2>/dev/null
+"$TERMPROG" "$TITLESWITCH" "$TITLE" "$CMDSWITCH" "$EXECPROG" "$@" &
+
