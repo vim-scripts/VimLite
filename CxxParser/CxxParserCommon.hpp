@@ -139,7 +139,7 @@ public:
         char buf[32] = {'\0'};
         std::string s;
         s += "{";
-        sprintf(buf, "%u", line);
+        sprintf(buf, "%lu", (unsigned long)line);
         s += "\"line\": ";
         s += buf;
         s += ", ";

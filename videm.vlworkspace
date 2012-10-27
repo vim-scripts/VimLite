@@ -5,13 +5,13 @@
   <Project Active="No" Name="IntExpr" Path="IntExpr/IntExpr.vlproject"/>
   <Project Active="No" Name="CxxParser" Path="CxxParser/CxxParser.vlproject"/>
   <BuildMatrix>
-    <WorkspaceConfiguration Name="Debug_Unix" Selected="yes">
+    <WorkspaceConfiguration Name="Debug_Unix" Selected="no">
       <Project ConfigName="Debug" Name="vlctags2"/>
       <Project ConfigName="Debug_SL" Name="DataTypes"/>
       <Project ConfigName="lib_release" Name="IntExpr"/>
       <Project ConfigName="Debug" Name="CxxParser"/>
     </WorkspaceConfiguration>
-    <WorkspaceConfiguration Name="Release_Unix" Selected="no">
+    <WorkspaceConfiguration Name="Release_Unix" Selected="yes">
       <Project ConfigName="Release_Unix" Name="vlctags2"/>
       <Project ConfigName="Release_SL" Name="DataTypes"/>
       <Project ConfigName="lib_release" Name="IntExpr"/>

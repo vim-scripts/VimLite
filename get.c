@@ -1305,7 +1305,7 @@ static boolean evalPPCondition(Stack *pCondStack)
 	Stack_IterInit(&iter, pCondStack);
 	while ( Stack_IterNext(&iter, &pData) )
 	{
-		result = result && (int)pData;
+		result = result && (long)pData;	/* 这种数据结构就是搓，统一用 long */
 	}
 	return result ? TRUE : FALSE;
 }
