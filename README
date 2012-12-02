@@ -1,6 +1,6 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3647
 
- - Updated on 2012-10-02
+ - Updated on 2013-01-26
 
 VimLite is a C/C++ IDE.
 VimLite consists mainly of the following three modules: 
@@ -16,6 +16,14 @@ VimLite consists mainly of the following three modules:
 If you need more features, you can search other plugins.
 Such as taglist, tagbar, NERD_commenter, snipmate, etc.
 
+ - 2013-01-26
+I have implemented auto code completing with c/c++ by libclang, which such as assist plugin of visual studio.
+But it requires vim compiled with +clientserver. Unfortunately this feature needs X server, so vim-nox does not support auto code completing.
+And updating vim to 7.3.196 or later is strongly recommended. Because patch196 for vim7.3 implement InsertCharPre autocmd.
+Run ':h VimLite-CodeCompletion-VIMCCC' for help about VIMCCC.
+
+I just make a patch for vim 7.3 to add a 'noexpand' argument for 'completeopt' option which can work perfect with auto code completing.
+Just downloads it in http://code.google.com/p/vimlite/downloads/list.
 
 NOTE1: Currently, VimLite is not stable enough.
 NOTE2: Currently, VimLite need Vim 7.3 or later.
