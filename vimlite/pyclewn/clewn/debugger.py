@@ -151,7 +151,11 @@ function s:split(bufname, location)
     let ei = &eventignore
     set nosplitright
     set nosplitbelow
-    set eventignore+=WinEnter,WinLeave
+    if a:bufname =~# '_console$'
+        set eventignore=all
+    else
+        set eventignore+=WinEnter,WinLeave
+    endif
     let prevbuf_winnr = bufwinnr(bufname("%"))
     if winnr("$") == 1 && (a:location == "right" || a:location == "left")
         let split = "vsplit"

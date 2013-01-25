@@ -6,7 +6,9 @@
 import json
 
 def ToVimEval(o):
-    '''把 python 字符串列表和字典转为健全的能被 vim 解析的数据结构'''
+    '''把 python 字符串列表和字典转为健全的能被 vim 解析的数据结构
+    对于整个字符串的引用必须使用双引号，例如:
+        vim.command("echo %s" % ToVimEval(expr))'''
     if isinstance(o, str):
         return "'%s'" % o.replace("'", "''")
     elif isinstance(o, unicode):

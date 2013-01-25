@@ -265,7 +265,7 @@ class VIMClangCCIndex(object):
 
         # 如果要求匹配部分字符串，先过滤一次
         if sBase:
-            print sBase
+            #print sBase
             if bIgnoreCase:
                 patBase = re.compile('^' + sBase, re.IGNORECASE)
             else:

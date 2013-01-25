@@ -63,7 +63,8 @@ class ParseFilesThread(threading.Thread):
     lock = threading.Lock()
 
     def __init__(self, dbFile, files, macrosFiles = [],
-                 PostCallback = None, callbackPara = None):
+                 PostCallback = None, callbackPara = None,
+                 filterNotNeed = True):
         '''
         异步 parse 文件线程
         NOTE: sqlite3 是线程安全的
@@ -77,6 +78,7 @@ class ParseFilesThread(threading.Thread):
 
         self.PostCallback = PostCallback
         self.callbackPara = callbackPara
+        self.filterNotNeed = filterNotNeed
 
     def run(self):
         ParseFilesThread.lock.acquire()
@@ -85,7 +87,7 @@ class ParseFilesThread(threading.Thread):
             storage = TagsStorage.TagsStorageSQLite()
             storage.OpenDatabase(self.dbFile)
             TagsStorage.ParseFilesAndStore(storage, self.files,
-                                           self.macrosFiles)
+                                           self.macrosFiles, self.filterNotNeed)
             del storage
         except:
             print 'ParseFilesThread() failed'
@@ -118,7 +120,8 @@ class VimTagsManager:
         self.storage.RecreateDatabase()
 
     def AsyncParseFiles(self, files, macrosFiles = [],
-                        PostCallback = None, callbackPara = None):
+                        PostCallback = None, callbackPara = None,
+                        filterNotNeed = True):
         # 暂时只允许单个异步 parse
         try:
             self.parseThread.join()
@@ -127,7 +130,8 @@ class VimTagsManager:
 
         self.parseThread = ParseFilesThread(self.storage.GetDatabaseFileName(),
                                             files, macrosFiles,
-                                            PostCallback, callbackPara)
+                                            PostCallback, callbackPara,
+                                            filterNotNeed)
         self.parseThread.start()
 
     def ParseFiles(self, files, macrosFiles = [], indicator = None):

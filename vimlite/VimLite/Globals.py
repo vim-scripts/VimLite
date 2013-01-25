@@ -16,7 +16,7 @@ import platform
 # TODO: 现在的变量展开是不支持递归的，例如 $(a$(b))
 
 # 版本号 850 -> 0.8.5.0
-VIMLITE_VER = 960
+VIMLITE_VER = 970
 
 # VimLite 起始目录
 VIMLITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -85,7 +85,9 @@ def EscStr4MkSh(string):
     参考 vim 的 shellescape() 函数'''
     global patMkShStr
     if IsWindowsOS():
-        return '"%s"' % string.replace('"', '""')
+        #return '"%s"' % string.replace('"', '""')
+        # 在 Windows 下直接不支持带空格的路径好了，因为用双引号也有各种问题
+        return '%s' % string
     else:
         #return EscapeString(string, "|&;()<> \t'\"\\")
         # 有必要才转义，主要是为了好看
@@ -561,7 +563,8 @@ class SimpleThread(threading.Thread):
 
 def RunSimpleThread(callback, prvtData):
     thrd = SimpleThread(callback, prvtData)
-    return thrd.start()
+    thrd.start()
+    return thrd
 
 def GetBgThdCnt():
     return threading.active_count() - 1

@@ -703,16 +703,17 @@ endfunction
 
 " vim:fdm=marker:fen:fdl=1:et:
 plugin/VIMClangCC.vim	[[[1
-734
-" Vim Script
+1398
+" Vim clang code completion plugin
 " Author:   fanhe <fanhed@163.com>
 " License:  GPLv2
 " Create:   2011-12-16
-" Change:   2011-12-16
+" Change:   2013-01-23
 
 if !has('python')
     echohl ErrorMsg
-    echom "Error: ".expand('<sfile>:p')." required vim compiled with +python"
+    echom printf("[%s]: Required vim compiled with +python",
+            \    expand('<sfile>:p'))
     echohl None
     finish
 endif
@@ -722,13 +723,36 @@ if exists("g:loaded_VIMClangCC")
 endif
 let g:loaded_VIMClangCC = 1
 
-autocmd FileType c,cpp call g:InitVIMClangCodeCompletion()
+" 在 console 跑的 vim 没法拥有这个特性...
+let s:has_clientserver = 0
+if has('clientserver')
+    let s:has_clientserver = 1
+endif
+
+autocmd FileType c,cpp call VIMClangCodeCompletionInit()
 
 " 标识是否第一次初始化
 let s:bFirstInit = 1
 
 let s:dCalltipsData = {}
 let s:dCalltipsData.usePrevTags = 0 " 是否使用最近一次的 tags 缓存
+
+" 检查是否支持 noexpand 选项
+let s:__temp = &completeopt
+let s:has_noexpand = 1
+try
+    set completeopt+=noexpand
+catch /.*/
+    let s:has_noexpand = 0
+endtry
+let &completeopt = s:__temp
+unlet s:__temp
+"let g:has_noexpand = s:has_noexpand
+
+let s:has_InsertCharPre = 0
+if v:version >= 703 && has('patch196')
+    let s:has_InsertCharPre = 1
+endif
 
 " 关联的文件，一般用于头文件关联源文件
 " 在头文件头部和尾部添加的额外的内容，用于修正在头文件时的头文件包含等等问题
@@ -766,8 +790,14 @@ function! s:SetOpts()
         set completeopt-=menuone,longest
         set completeopt+=menu
     elseif g:VIMCCC_ItemSelectionMode == 2 " 选择但不插入文本
-        set completeopt-=menu,longest
-        set completeopt+=menuone
+        if s:has_noexpand
+            " 支持 noexpand 就最好了
+            set completeopt+=noexpand
+            set completeopt-=longest
+        else
+            set completeopt-=menu,longest
+            set completeopt+=menuone
+        endif
     else
         set completeopt-=menu
         set completeopt+=menuone,longest
@@ -791,7 +821,9 @@ function! s:RestoreOpts()
         elseif g:VIMCCC_ItemSelectionMode == 1 " 选择并插入文本
             let sRet = ""
         elseif g:VIMCCC_ItemSelectionMode == 2 " 选择但不插入文本
-            let sRet = "\<C-p>\<Down>"
+            if !s:has_noexpand
+                let sRet = "\<C-p>\<Down>"
+            endif
         else
             let sRet = "\<Down>"
         endif
@@ -855,7 +887,7 @@ function! s:ShouldComplete() "{{{2
     endif
 endfunction
 "}}}
-function! s:LaunchVIMClangCodeCompletion() "{{{2
+function! s:LaunchCodeCompletion() "{{{2
     if s:ShouldComplete()
         return "\<C-x>\<C-o>"
     else
@@ -863,34 +895,452 @@ function! s:LaunchVIMClangCodeCompletion() "{{{2
     endif
 endfunction
 "}}}
+" 触发条件
+"
+" 触发的情形:
+"   abcdefg
+"          ^    并且离单词起始位置的长度大于或等于触发字符数
+"
+" 不触发的情形:
+"   abcdefg
+"         ^
+" 插入模式光标自动命令的上一个状态
+" ccrow: 代码完成的行号
+" cccol: 代码完成的列号
+" base: base
+" pumvisible : 0|1
+" init: 0|1 起始状态，暂时只有在进入插入模式时初始化
+"
+" FIXME: 这些状态，连我自己都分不清了...
+"        等 7.3.196 使用 InsertCharPre 事件就好了
+" InsertCharPre   When a character is typed in Insert mode,
+"     before inserting the char.
+"     The |v:char| variable indicates the char typed
+"     and can be changed during the event to insert
+"     a different character.  When |v:char| is set
+"     to more than one character this text is
+"     inserted literally.
+"     It is not allowed to change the text |textlock|.
+"     The event is not triggered when 'paste' is
+"     set.
+let s:aucm_prev_stat = {}
+function! VIMCCCAsyncComplete(charPre) "{{{2
+    if pumvisible() " 不重复触发
+        return ''
+    endif
+
+    " InsertCharPre 自动命令用
+    let sChar = ''
+    if a:charPre
+        let sChar = v:char
+        if sChar !~# '[A-Za-z_0-9]'
+            return ''
+        endif
+    endif
+
+    let nTriggerCharCount = g:VIMCCC_TriggerCharCount
+    let nCol = col('.')
+    let sLine = getline('.')
+    let sPrevChar = sLine[nCol-2]
+    let sCurrChar = sLine[nCol-1]
+    " 光标在单词之间，不需要启动 {for CursorMovedI}
+    if !a:charPre &&
+            \ (sPrevChar !~# '[A-Za-z_0-9]' || sCurrChar =~# '[A-Za-z_0-9]')
+        return ''
+    endif
+
+" ==============================================================================
+" 利用前状态和当前状态优化
+    " 前状态
+    let dPrevStat = s:aucm_prev_stat
+
+    " 刚进入插入模式
+    if !a:charPre && get(dPrevStat, 'init', 0)
+        call s:ResetAucmPrevStat()
+        return ''
+    endif
+
+    let sPrevWord = matchstr(sLine[: nCol-2], '[A-Za-z_]\w*$')
+    if a:charPre
+        let sPrevWord .= sChar
+    endif
+    if len(sPrevWord) < nTriggerCharCount
+        " 如果之前补全过就重置状态
+        if get(dPrevStat, 'cccol', 0) > 0
+            call s:ResetAucmPrevStat()
+        endif
+        return ''
+    endif
+
+    " 获取当前状态
+    let nRow = line('.')
+    let nCol = VIMCCCSearchStartColumn(0)
+    let sBase = getline('.')[nCol-1 : col('.')-2]
+    if a:charPre
+        let sBase .= sChar
+    endif
+
+    " 补全起始位置一样就不需要再次启动了
+    " 貌似是有条件的，要判断 sPrevWord 的长度
+    " case: 如果前面的单词的长度 < nTriggerCharCount，那么就需要启动了
+    "       例如一直删除字符
+    " 1. 起始行和上次相同
+    " 2. 起始列和上次相同
+    " 3. 光标前的字符串长度大于等于触发长度
+    " 4. 上次的 base 是光标前的字符串的前缀(InsertCharPre 专用)
+    " 1 && 2 && 3 && 4 则忽略请求
+    let save_ic = &ignorecase
+    let &ignorecase = g:VIMCCC_IgnoreCase
+    if get(dPrevStat, 'ccrow', 0) == nRow && get(dPrevStat, 'cccol', 0) == nCol
+            \ && len(sPrevWord) >= nTriggerCharCount
+            \ && (!a:charPre || sBase =~ '^'.get(dPrevStat, 'base', ''))
+        call s:UpdateAucmPrevStat(nRow, nCol, sBase, pumvisible())
+        let &ignorecase = save_ic
+        return ''
+    endif
+    let &ignorecase = save_ic
+    " 关于补全菜单和 CursorMovedI 自动命令
+    " 不触发:
+    "   弹出补全菜单(eg. <C-x><C-n>)
+    " 触发:
+    "   取消补全菜单(eg. <C-e>)
+    "   接受补全结果(eg. <C-y>)
+    " 所以这里的条件是，只要前状态的 'pumvisible' 为真，本次就不启动
+    " 并且需要重置状态
+    if !a:charPre && get(dPrevStat, 'pumvisible', 0)
+        call s:ResetAucmPrevStat()
+        return ''
+    endif
+" ==============================================================================
+    " NOTE: 无法处理的情况: 光标随意移动到单词的末尾
+    "       因为无法分辨到底是输入字符到达末尾还是移动过去 {for CursorMovedI}
+
+    " ok，启动
+    call VIMCCCLaunchCCThread(nRow, nCol, sBase)
+
+    " 更新状态
+    call s:UpdateAucmPrevStat(nRow, nCol, sBase, pumvisible())
+endfunction
+"}}}
+" 重置状态
+function! s:ResetAucmPrevStat() "{{{2
+    call s:UpdateAucmPrevStat(0, 0, '', 0)
+    let s:aucm_prev_stat['init'] = 0
+endfunction
+"}}}
+function! s:InitAucmPrevStat() "{{{2
+    call s:UpdateAucmPrevStat(0, 0, '', 0)
+    let s:aucm_prev_stat['init'] = 1
+endfunction
+"}}}
+function! s:UpdateAucmPrevStat(nRow, nCol, sBase, pumv) "{{{2
+    let s:aucm_prev_stat['ccrow'] = a:nRow
+    let s:aucm_prev_stat['cccol'] = a:nCol
+    let s:aucm_prev_stat['base'] = a:sBase
+    let s:aucm_prev_stat['pumvisible'] = a:pumv
+endfunction
+"}}}
+" NOTE: a:char 必须是已经输入完成的，否则补全会失效，
+"       因为补全线程需要获取这个字符
+function! s:CompleteByCharAsync(char) "{{{2
+    let nRow = line('.')
+    let nCol = col('.')
+    let sBase = ''
+    if a:char ==# '.'
+        call s:UpdateAucmPrevStat(nRow, nCol, sBase, pumvisible())
+        return VIMCCCLaunchCCThread(nRow, nCol, sBase)
+    elseif a:char ==# '>'
+        if getline('.')[col('.') - 3] != '-'
+            return ''
+        else
+            call s:UpdateAucmPrevStat(nRow, nCol, sBase, pumvisible())
+            return VIMCCCLaunchCCThread(nRow, nCol, sBase)
+        endif
+    elseif a:char ==# ':'
+        if getline('.')[col('.') - 3] != ':'
+            return ''
+        else
+            call s:UpdateAucmPrevStat(nRow, nCol, sBase, pumvisible())
+            return VIMCCCLaunchCCThread(nRow, nCol, sBase)
+        endif
+    else
+        " TODO: A-Za-Z_0-9
+    endif
+endfunction
+"}}}
 function! s:CompleteByChar(char) "{{{2
     if a:char ==# '.'
-        return a:char . s:LaunchVIMClangCodeCompletion()
+        return a:char . s:LaunchCodeCompletion()
     elseif a:char ==# '>'
         if getline('.')[col('.') - 2] != '-'
             return a:char
         else
-            return a:char . s:LaunchVIMClangCodeCompletion()
+            return a:char . s:LaunchCodeCompletion()
         endif
     elseif a:char ==# ':'
         if getline('.')[col('.') - 2] != ':'
             return a:char
         else
-            return a:char . s:LaunchVIMClangCodeCompletion()
+            return a:char . s:LaunchCodeCompletion()
         endif
     endif
+endfunction
+"}}}
+function! s:InitPyIf() "{{{2
+python << PYTHON_EOF
+import threading
+import subprocess
+import StringIO
+import traceback
+import vim
+
+# FIXME: 应该引用
+import json
+
+def ToVimEval(o):
+    '''把 python 字符串列表和字典转为健全的能被 vim 解析的数据结构
+    对于整个字符串的引用必须使用双引号，例如:
+        vim.command("echo %s" % ToVimEval(expr))'''
+    if isinstance(o, str):
+        return "'%s'" % o.replace("'", "''")
+    elif isinstance(o, unicode):
+        return "'%s'" % o.encode('utf-8').replace("'", "''")
+    elif isinstance(o, (list, dict)):
+        return json.dumps(o, ensure_ascii=False)
+    else:
+        return repr(o)
+
+
+def vimcs_eval_expr(servername, expr, prog='vim'):
+    '''在vim服务器上执行表达式expr，返回输出——字符串
+    FIXME: 这个函数不能对自身的服务器调用，否则死锁！'''
+    if not expr:
+        return ''
+    cmd = [prog, '--servername', servername, '--remote-expr', expr]
+    p = subprocess.Popen(cmd, shell=False,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+
+    # 最后的换行干掉
+    if out.endswith('\r\n'):
+        return out[:-2]
+    elif out.endswith('\n'):
+        return out[:-1]
+    elif out.endswith('\r'):
+        return out[:-1]
+    else:
+        return out
+
+def vimcs_send_keys(servername, keys, prog='vim'):
+    '''发送按键到vim服务器'''
+    if not servername:
+        return -1
+    cmd = [prog, '--servername', servername, '--remote-send', keys]
+    p = subprocess.Popen(cmd, shell=False,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    return p.returncode
+
+class cc_sync_data:
+    '''保存同步的补全的同步数据'''
+    def __init__(self):
+        self.__lock = threading.Lock()
+        self.__parsertd = None # 最近的那个 parser 线程
+
+    def lock(self):
+        return self.__lock.acquire()
+    def unlock(self):
+        return self.__lock.release()
+
+    def latest_td(self):
+        return self.__parsertd
+    def push_td(self, td):
+        '''把新线程压入'''
+        self.__parsertd = td
+    def clear_td(self):
+        self.__parsertd = None
+
+    def is_alive(self):
+        '''判断最近的线程是否正在运行'''
+        if self.__parsertd:
+            return self.__parsertd.is_alive()
+        return False
+
+    def is_done(self):
+        '''判断最近的线程的补全结果是否已经产出'''
+        if self.__parsertd:
+            return self.__parsertd.done
+        return False
+
+    def push_and_start_td(self, td):
+        self.push_td(td)
+        td.start()
+
+class cc_thread(threading.Thread):
+    # 保证 VIMCCCIndex 完整性的锁，否则可能段错误
+    indexlock = threading.Lock()
+
+    '''代码补全搜索线程'''
+    def __init__(self, arg, vimprog = 'vim'):
+        threading.Thread.__init__(self)
+        self.arg = arg      # 传给 clang 补全的参数，字典
+        self.result = []    # 补全结果
+        self.done = False   # 标识主要工作已经完成
+        self.vimprog = vimprog
+
+    @property
+    def row(self):
+        return self.arg['row']
+    @property
+    def col(self):
+        return self.arg['col']
+    @property
+    def base(self):
+        return self.arg['base']
+
+    def run(self):
+        try:
+            # 开始干活
+            fil = self.arg['file']
+            row = self.arg['row']
+            col = self.arg['col']
+            us_files = self.arg['us_files']
+            base = self.arg['base']
+            ic = self.arg['ic']
+            flags = self.arg['flags']
+            servername = self.arg['servername']
+            if False:
+                # just for test
+                self.result = ['f', 'ff', 'fff']
+            else:
+                # 必须加锁，因为 clang 的解析不是线程安全的(大概)
+                cc_thread.indexlock.acquire()
+                try:
+                    self.result = VIMCCCIndex.GetVimCodeCompleteResults(
+                            fil, row, col, us_files, base, ic, flags)
+                except:
+                    # 异常后需要解锁并且传递异常
+                    cc_thread.indexlock.release()
+                    raise
+                cc_thread.indexlock.release()
+
+            if not self.result: # 有结果才继续
+                return
+
+            # 完成后
+            self.done = True
+            brk = False
+            g_SyncData.lock()
+            if not g_SyncData.latest_td() is self:
+                brk = True
+            g_SyncData.unlock()
+            if brk:
+                return
+
+            # 发送消息到服务器
+            vimcs_eval_expr(servername, 'VIMCCCThreadHandler()', self.vimprog)
+
+        except:
+            # 把异常信息显示给用户
+            sio = StringIO.StringIO()
+            print >> sio, "Exception in user code:"
+            print >> sio, '-' * 60
+            traceback.print_exc(file=sio)
+            print >> sio, '-' * 60
+            errmsg = sio.getvalue()
+            sio.close()
+            vimcs_eval_expr(servername, "VIMCCCExceptHandler('%s')"
+                                        % errmsg.replace("'", "''"),
+                            self.vimprog)
+
+PYTHON_EOF
+endfunction
+"}}}
+" 这个函数是从后台线程调用的，现在假设这个调用和vim前台调用是串行的，无竟态的
+" NOTE: 这个函数被python后台线程调用的时候，python后台线程还没有退出
+function! VIMCCCThreadHandler() "{{{2
+    if mode() !=# 'i' && mode() !=# 'R'
+        echoerr 'error mode'
+        return -1
+    endif
+    let nRow = line('.')
+    let nCol = VIMCCCSearchStartColumn(0)
+    let sBase = getline('.')[nCol-1 : col('.')-2]
+    let td_row = 0
+    let td_col = 0
+    let td_base = ''
+    let brk = 0
+    py g_SyncData.lock()
+    " 如果最近线程还没有完成，返回
+    py if not g_SyncData.is_done(): vim.command('let brk = 1')
+python << PYTHON_EOF
+if g_SyncData.latest_td():
+    vim.command("let td_row = %d" % g_SyncData.latest_td().row)
+    vim.command("let td_col = %d" % g_SyncData.latest_td().col)
+    vim.command("let td_base = '%s'" %
+                    g_SyncData.latest_td().base.replace("'", "''"))
+PYTHON_EOF
+    py g_SyncData.unlock()
+    if brk
+        echomsg 'cc_thread is not done'
+        return 1
+    endif
+
+    let save_ic = &ignorecase
+    let &ignorecase = g:VIMCCC_IgnoreCase
+    if !(td_row == nRow && td_col == nCol && sBase =~ '^'.td_base)
+        " 这个结果不适合于当前位置，直接返回
+        let &ignorecase = save_ic
+        return 0
+    endif
+    let &ignorecase = save_ic
+
+    " TODO 可能需要进一步过滤这种情况的补全结果: sBase = 'abc', td_base = 'ab'
+
+    let sKeys = ""
+    " FIXME \<C-r>=Fun()\<Cr> 这样执行函数在命令行会显示，能避免吗？
+    let sKeys .= "\<C-r>=VIMCCCAsyncCCPre()\<Cr>"
+    let sKeys .= "\<C-x>\<C-o>"
+    let sKeys .= "\<C-r>=VIMCCCAsyncCCPost()\<Cr>"
+    call feedkeys(sKeys, "n")
+    return 0
+endfunction
+"}}}
+function! VIMCCCExceptHandler(msg) "{{{2
+    if empty(a:msg)
+        return
+    endif
+    echohl ErrorMsg
+    for sLine in split(a:msg, '\n')
+        echomsg sLine
+    endfor
+    echomsg '!!!Catch an exception!!!'
+    echohl None
+endfunction
+"}}}
+" VIMCCCThreadHandler() 调用，执行一些前置动作
+function! VIMCCCAsyncCCPre() "{{{2
+    call s:SetOpts()
+    return ''
+endfunction
+"}}}
+" VIMCCCThreadHandler() 调用，执行一些后续动作
+function! VIMCCCAsyncCCPost() "{{{2
+    call feedkeys(s:RestoreOpts(), "n")
+    return ''
 endfunction
 "}}}
 " 强制启动
 function! s:VIMCCCInitForcibly() "{{{2
     let bak = g:VIMCCC_Enable
     let g:VIMCCC_Enable = 1
-    call g:InitVIMClangCodeCompletion()
+    call VIMClangCodeCompletionInit()
     let g:VIMCCC_Enable = bak
 endfunction
 "}}}
-" 可选参数存在且非零，不 '冷启动'(异步新建不存在的当前文件对应的翻译单元)
-function! g:InitVIMClangCodeCompletion(...) "{{{2
+" 首次启动
+function! s:FirstInit() "{{{2
+" ============================================================================
     " MayComplete to '.'
     call s:InitVariable('g:VIMCCC_MayCompleteDot', 1)
 
@@ -940,18 +1390,19 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     " 跳转至符号实现处的默认快捷键
     call s:InitVariable('g:VIMCCC_GotoImplementationKey', '<C-]>')
 
-    " 用于外部控制
-    call s:InitVariable('g:VIMCCC_Enable', 0)
-    if !g:VIMCCC_Enable
-        return
-    endif
+    " 异步自动弹出补全菜单
+    call s:InitVariable('g:VIMCCC_AutoPopupMenu', 1)
 
-    if s:bFirstInit
-        command! -nargs=0 -bar VIMCCCQuickFix 
-                    \call <SID>VIMCCCUpdateClangQuickFix(expand('%:p'))
+    " 触发自动弹出补全菜单需要输入的字符数
+    call s:InitVariable('g:VIMCCC_TriggerCharCount', 2)
 
-        command! -nargs=+ VIMCCCSetArgs call <SID>VIMCCCSetArgsCmd(<f-args>)
-    endif
+" ============================================================================
+    command! -nargs=0 -bar VIMCCCQuickFix
+            \ call <SID>VIMCCCUpdateClangQuickFix(expand('%:p'))
+
+    command! -nargs=+ VIMCCCSetArgs call <SID>VIMCCCSetArgsCmd(<f-args>)
+    command! -nargs=+ VIMCCCAppendArgs call <SID>VIMCCCAppendArgsCmd(<f-args>)
+    command! -nargs=0 VIMCCCPrintArgs call <SID>VIMCCCPrintArgsCmd(<f-args>)
 
     let g:VIMCCC_CodeCompleteFlags = 0
     if g:VIMCCC_CompleteMacros
@@ -962,6 +1413,45 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     endif
 
     call s:InitPythonInterfaces()
+
+    " 这是异步接口
+    call s:InitPyIf()
+    " 全局结构
+    py g_SyncData = cc_sync_data()
+endfunction
+"}}}
+" 可选参数存在且非零，不 '冷启动'(异步新建不存在的当前文件对应的翻译单元)
+function! VIMClangCodeCompletionInit(...) "{{{2
+    if s:bFirstInit
+        call s:FirstInit()
+    endif
+    let s:bFirstInit = 0
+
+    " 是否使用，可用于外部控制
+    call s:InitVariable('g:VIMCCC_Enable', 0)
+    if !g:VIMCCC_Enable
+        return
+    endif
+
+    let bAsync = g:VIMCCC_AutoPopupMenu
+
+    " 特性检查
+    if bAsync && (empty(v:servername) || !has('clientserver'))
+        echohl WarningMsg
+        echom '-------------------- VIMCCC --------------------'
+        if empty(v:servername)
+            echom "Please start vim as server, eg. vim --servername {name}"
+            echom "Auto popup menu feature will be disabled this time"
+        else
+            echom 'Auto popup menu feature required vim compiled vim with '
+                    \ . '+clientserver'
+            echom 'The feature will be disabled this time'
+        endif
+        echom "You can run ':let g:VIMCCC_AutoPopupMenu = 0' to diable this "
+                \ . "message"
+        echohl None
+        let bAsync = 0
+    endif
 
     setlocal omnifunc=VIMClangCodeCompletion
 
@@ -977,35 +1467,50 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     call g:InitVLCalltips()
 
     if g:VIMCCC_MayCompleteDot
-        inoremap <silent> <buffer> . 
+        if bAsync
+            inoremap <silent> <buffer> . .
+                    \<C-r>=<SID>CompleteByCharAsync('.')<CR>
+        else
+            inoremap <silent> <buffer> . 
                     \<C-r>=<SID>SetOpts()<CR>
                     \<C-r>=<SID>CompleteByChar('.')<CR>
                     \<C-r>=<SID>RestoreOpts()<CR>
+        endif
     endif
 
     if g:VIMCCC_MayCompleteArrow
-        inoremap <silent> <buffer> > 
-                    \<C-r>=<SID>SetOpts()<CR>
-                    \<C-r>=<SID>CompleteByChar('>')<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
+        if bAsync
+            inoremap <silent> <buffer> > >
+                        \<C-r>=<SID>CompleteByCharAsync('>')<CR>
+        else
+            inoremap <silent> <buffer> > 
+                        \<C-r>=<SID>SetOpts()<CR>
+                        \<C-r>=<SID>CompleteByChar('>')<CR>
+                        \<C-r>=<SID>RestoreOpts()<CR>
+        endif
     endif
 
     if g:VIMCCC_MayCompleteColon
-        inoremap <silent> <buffer> : 
-                    \<C-r>=<SID>SetOpts()<CR>
-                    \<C-r>=<SID>CompleteByChar(':')<CR>
-                    \<C-r>=<SID>RestoreOpts()<CR>
+        if bAsync
+            inoremap <silent> <buffer> : :
+                        \<C-r>=<SID>CompleteByCharAsync(':')<CR>
+        else
+            inoremap <silent> <buffer> : 
+                        \<C-r>=<SID>SetOpts()<CR>
+                        \<C-r>=<SID>CompleteByChar(':')<CR>
+                        \<C-r>=<SID>RestoreOpts()<CR>
+        endif
     endif
 
     if g:VIMCCC_ItemSelectionMode > 4
         inoremap <silent> <buffer> <C-n> 
                     \<C-r>=<SID>CheckIfSetOpts()<CR>
-                    \<C-r>=<SID>LaunchVIMClangCodeCompletion()<CR>
+                    \<C-r>=<SID>LaunchCodeCompletion()<CR>
                     \<C-r>=<SID>RestoreOpts()<CR>
     else
         "inoremap <silent> <buffer> <C-n> 
                     "\<C-r>=<SID>SetOpts()<CR>
-                    "\<C-r>=<SID>LaunchVIMClangCodeCompletion()<CR>
+                    "\<C-r>=<SID>LaunchCodeCompletion()<CR>
                     "\<C-r>=<SID>RestoreOpts()<CR>
     endif
 
@@ -1024,6 +1529,26 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
     exec 'nnoremap <silent> <buffer> ' . g:VIMCCC_GotoImplementationKey 
                 \. ' :call <SID>VIMCCCSmartJump()<CR>'
 
+    if bAsync
+        " 真正的异步补全实现
+        " 输入字符必须是 [A-Za-z_0-9] 才能触发
+        if s:has_InsertCharPre
+            augroup VIMCCC_AUGROUP
+                autocmd! InsertEnter <buffer> call <SID>InitAucmPrevStat()
+                autocmd! InsertCharPre <buffer> call VIMCCCAsyncComplete(1)
+                autocmd! InsertLeave <buffer>
+                        \ call <SID>Autocmd_InsertLeaveHandler()
+            augroup END
+        else
+            augroup VIMCCC_AUGROUP
+                autocmd! CursorMovedI <buffer> call VIMCCCAsyncComplete(0)
+                autocmd! InsertLeave <buffer>
+                        \ call <SID>Autocmd_InsertLeaveHandler()
+                " NOTE: 事件顺序是先 InsertEnter 再 CursorMovedI
+                autocmd! InsertEnter <buffer> call <SID>InitAucmPrevStat()
+            augroup END
+        endif
+    endif
 
     if a:0 > 0 && a:1
         " 可控制不 '冷启动'
@@ -1032,7 +1557,118 @@ function! g:InitVIMClangCodeCompletion(...) "{{{2
         py VIMCCCIndex.AsyncUpdateTranslationUnit(vim.eval("expand('%:p')"))
     endif
 
-    let s:bFirstInit = 0
+    " 调试用
+    "inoremap <silent> <buffer> <A-n> <C-r>=VIMCCCLaunchCCThread()<Cr>
+endfunction
+"}}}
+function! s:Autocmd_InsertLeaveHandler() "{{{2
+    call s:ResetAucmPrevStat()
+    " 清线程
+    py g_SyncData.lock()
+    py g_SyncData.clear_td()
+    py g_SyncData.unlock()
+endfunction
+"}}}
+" 启动一个新的补全线程
+function! VIMCCCLaunchCCThread(nRow, nCol, sBase) "{{{2
+    if v:servername ==# ''
+        echoerr 'servername is null, can not start cc thread'
+        return ''
+    endif
+
+    let sAppend = a:0 > 0 ? a:1 : ''
+
+    let sFileName = expand('%:p')
+    let sFileName = s:ToClangFileName(sFileName)
+    let nRow = a:nRow
+    let nCol = a:nCol
+    let sBase = a:sBase
+    let sVimProg = v:progname
+    if has('win32') || has('win64')
+        " Windows 下暂时这样获取
+        let sVimProg = $VIMRUNTIME . '\' . sVimProg
+    endif
+    " 上锁然后开始线程
+    py g_SyncData.lock()
+    py g_SyncData.push_and_start_td(cc_thread(
+            \   {'file': vim.eval('sFileName'),
+            \    'row': int(vim.eval('nRow')),
+            \    'col': int(vim.eval('nCol')),
+            \    'us_files': [GetCurUnsavedFile()],
+            \    'base': vim.eval("sBase"),
+            \    'ic': vim.eval("g:VIMCCC_IgnoreCase") != '0',
+            \    'flags': int(vim.eval("g:VIMCCC_CodeCompleteFlags")),
+            \    'servername': vim.eval('v:servername')},
+            \   vim.eval("sVimProg")))
+    py g_SyncData.unlock()
+
+    return ''
+endfunction
+"}}}
+" 搜索补全起始列
+" 以下7种情形
+"   xxx yyy|
+"       ^
+"   xxx.yyy|
+"       ^
+"   xxx.   |
+"       ^
+"   xxx->yyy|
+"        ^
+"   xxx->  |
+"        ^
+"   xxx::yyy|
+"        ^
+"   xxx::   |
+"        ^
+function! VIMCCCSearchStartColumn(bInCC) "{{{2
+    let nRow = line('.')
+    let nCol = col('.')
+    "let lPos = searchpos('\<\|\.\|->\|::', 'cbn', nRow)
+    " NOTE: 光标下的字符应该不算在内
+    let lPos = searchpos('\<\|\.\|->\|::', 'bn', nRow)
+    let nCol2 = lPos[1] " 搜索到的字符串的起始列号
+
+    if lPos == [0, 0]
+        " 这里已经处理了光标放到第一列并且第一列的字符是空白的情况
+        let nStartCol = nCol
+    else
+        let sLine = getline('.')
+
+        if sLine[nCol2 - 1] ==# '.'
+            " xxx.   |
+            "    ^
+            let nStartCol = nCol2 + 1
+        elseif sLine[nCol2 -1 : nCol2] ==# '->'
+                \ || sLine[nCol2 - 1: nCol2] ==# '::'
+            " xxx->   |
+            "    ^
+            let nStartCol = nCol2 + 2
+        else
+            " xxx yyy|
+            "     ^
+            " xxx.yyy|
+            "     ^
+            " xxx->yyy|
+            "      ^
+            " 前一个字符可能是 '\W'. eg. xxx yyy(|
+            if sLine[nCol-2] =~# '\W'
+                " 不补全
+                return -1
+            endif
+
+            if a:bInCC
+                " BUG: 返回 5 后，下次调用此函数是，居然 col('.') 返回 6
+                "      亦即补全函数对返回值的解析有错误
+                let nStartCol = nCol2 - 1
+            else
+                " 不在补全函数里面调用的话，返回正确值...
+                let nStartCol = nCol2
+            endif
+        endif
+    endif
+
+    return nStartCol
 endfunction
 "}}}
 function! s:RequestCalltips(...) "{{{2
@@ -1130,8 +1766,33 @@ function! VIMCCCSetArgs(lArgs) "{{{2
                 \[GetCurUnsavedFile()], True, True)
 endfunction
 "}}}
+function! VIMCCCGetArgs() "{{{2
+    py vim.command('let lArgs = %s' % ToVimEval(VIMCCCIndex.GetParseArgs()))
+    return lArgs
+endfunction
+"}}}
+function! VIMCCCAppendArgs(lArgs) "{{{2
+    if type(a:lArgs) == type('')
+        let lArgs = split(a:lArgs)
+    else
+        let lArgs = a:lArgs
+    endif
+
+    let lArgs += VIMCCCGetArgs()
+    call VIMCCCSetArgs(lArgs)
+endfunction
+"}}}
 function! s:VIMCCCSetArgsCmd(...) "{{{2
     call VIMCCCSetArgs(a:000)
+endfunction
+"}}}
+function! s:VIMCCCAppendArgsCmd(...) "{{{2
+    call VIMCCCAppendArgs(a:000)
+endfunction
+"}}}
+function! s:VIMCCCPrintArgsCmd() "{{{2
+    let lArgs = VIMCCCGetArgs()
+    echo lArgs
 endfunction
 "}}}
 " 统一处理，主要处理 .h -> .hpp 的问题
@@ -1165,29 +1826,7 @@ endfunction
 function! VIMClangCodeCompletion(findstart, base) "{{{2
     if a:findstart
         "call vlutils#TimerStart() " 计时
-
-        let nRow = line('.')
-        let lPos = searchpos('\<\|\.\|->\|::', 'cb', nRow)
-
-        let nCol = col('.')
-
-        if lPos == [0, 0]
-            let nStartCol = nCol
-        else
-            let sLine = getline('.')
-            if sLine[nCol - 1] ==# '.'
-                let nStartCol = nCol + 1
-            elseif sLine[nCol -1 : nCol] ==# '->' 
-                        \|| sLine[nCol - 1: nCol] ==# '::'
-                let nStartCol = nCol + 2
-            else
-                " BUG: 返回 5 后，下次调用此函数是，居然 col('.') 返回 6
-                "let nStartCol = nCol
-                let nStartCol = nCol - 1
-            endif
-        endif
-
-        return nStartCol
+        return VIMCCCSearchStartColumn(1)
     endif
 
     "===========================================================================
@@ -1198,22 +1837,43 @@ function! VIMClangCodeCompletion(findstart, base) "{{{2
     let sBase = a:base
 
     let sFileName = expand('%:p')
+    let sFileName = s:ToClangFileName(sFileName)
     let nRow = line('.')
     let nCol = col('.') "列
 
-    let sFileName = s:ToClangFileName(sFileName)
-    py lResults = VIMCCCIndex.GetVimCodeCompleteResults(
-                \vim.eval("sFileName"), 
-                \int(vim.eval("nRow")),
-                \int(vim.eval("nCol")),
-                \[GetCurUnsavedFile()],
-                \vim.eval("sBase"),
-                \vim.eval("g:VIMCCC_IgnoreCase") != '0',
-                \int(vim.eval("g:VIMCCC_CodeCompleteFlags")))
-    "call vlutils#TimerEndEcho()
+    let bAsync = 0
+    py g_SyncData.lock()
+    py if g_SyncData.latest_td(): vim.command("let bAsync = 1")
+    py g_SyncData.unlock()
+
+    if bAsync
+        " 异步触发
+        let brk = 0
+        py g_SyncData.lock()
+        py if not g_SyncData.is_done(): vim.command("let brk = 1")
+        py lResults = []
+        py if g_SyncData.latest_td(): lResults = g_SyncData.latest_td().result
+        py g_SyncData.clear_td()
+        py g_SyncData.unlock()
+        " 线程未完成，返回，等待
+        if brk
+            return []
+        endif
+        " NOTE: 触发器已经提前检查了是否需要触发，所以无须再检查是否继续了
+    else
+        py lResults = VIMCCCIndex.GetVimCodeCompleteResults(
+            \ vim.eval("sFileName"), 
+            \ int(vim.eval("nRow")),
+            \ int(vim.eval("nCol")),
+            \ [GetCurUnsavedFile()],
+            \ vim.eval("sBase"),
+            \ vim.eval("g:VIMCCC_IgnoreCase") != '0',
+            \ int(vim.eval("g:VIMCCC_CodeCompleteFlags")))
+        "call vlutils#TimerEndEcho()
+    endif
+
     py vim.command("let lResults = %s" % lResults)
     "call vlutils#TimerEndEcho()
-
     " 调试用
     let b:lResults = lResults
 
@@ -1228,7 +1888,8 @@ endfunction
 function! s:VIMCCCUpdateClangQuickFix(sFileName) "{{{2
     let sFileName = a:sFileName
 
-    "py t = UpdateQuickFixThread(vim.eval("sFileName"), [GetCurUnsavedFile()], True)
+    "py t = UpdateQuickFixThread(vim.eval("sFileName"),
+                "\ [GetCurUnsavedFile()], True)
     "py t.start()
     "return
 
@@ -1258,7 +1919,8 @@ function! s:VIMCCCGotoDeclaration() "{{{2
     let nCol = col('.')
     let sFileName = s:ToClangFileName(sFileName)
     py vim.command("let dLocation = %s" 
-                \% VIMCCCIndex.GetSymbolDeclarationLocation(vim.eval("sFileName"), 
+                \% VIMCCCIndex.GetSymbolDeclarationLocation(
+                \       vim.eval("sFileName"), 
                 \       int(vim.eval("nRow")), int(vim.eval("nCol")), 
                 \       [GetCurUnsavedFile(UF_Related)], True))
 
@@ -1394,6 +2056,8 @@ UF_Related = 1
 UF_RelatedPrepend = 2
 
 def GetCurUnsavedFile(nFlags = UF_None):
+    '''
+    nFlags:     控制一些特殊补全场合，例如在头文件补全'''
     sFileName = vim.eval("expand('%:p')")
     sClangFileName = vim.eval("s:ToClangFileName('%s')" % sFileName)
 
@@ -1602,7 +2266,7 @@ endfunction
 
 " vim:fdm=marker:fen:expandtab:smarttab:fdl=1:
 doc/VimLite.txt	[[[1
-788
+818
 *VimLite.txt*           A C/C++ IDE inspired by CodeLite
 
                    _   _______ _   _____   _________________~
@@ -1840,7 +2504,10 @@ mouse. >
 4.2. Commands                           *VimLite-ProjectManager-Commands*
 
     VLWorkspaceOpen [workspace_file]    Open a workspace file or default
-                                        workspace.
+                                        workspace. If without specify a
+                                        workspace file and VimLite had
+                                        started, the command will open the
+                                        current workspace.
 
     VLWBuildActiveProject               Build active projcet.
 
@@ -1989,9 +2656,21 @@ in VLWorkspace buffer window, popup the menu, select "Parse Workspace (Quick)".
     VLWParseCurrentFile                 Parse current editing file.
                                         NOTE: You ought to save current file
                                         before run this command.
+                                        DEPRECATED~
 
     VLWDeepParseCurrentFile             Parse current editing file and the
                                         files it includes.
+                                        NOTE: You ought to save current file
+                                        before run this command.
+                                        DEPRECATED~
+
+    VLWAsyncParseCurrentFile            Parse current editing file
+                                        asynchronously.
+                                        NOTE: You ought to save current file
+                                        before run this command.
+
+    VLWDeepAsyncParseCurrentFile        Parse current editing file and the
+                                        files it includes asynchronously.
                                         NOTE: You ought to save current file
                                         before run this command.
 
@@ -2048,13 +2727,17 @@ clang, otherwise VIMCCC will not work correctly. VIMCCC currently work with
 libclang 3.0.
 
 
-There are only two commands of VIMCCC.
+There are several commands for VIMCCC.
 
     VIMCCCQuickFix                      Retrieve clang diagnostics to quickfix,
                                         if the diagnostics are not empty, open
                                         the quickfix window.
 
     VIMCCCSetArgs {arg1} [arg2] ...     Set clang compiler options
+
+    VIMCCCAppendArgs {arg1} [arg2] ...  Append clang compiler options
+
+    VIMCCCPrintArgs                     Print clang compiler options
 
     VLWTagsSetttings                    Open 'Tags Setting' dialog. This also
                                         can set the search paths for clang.
@@ -2323,6 +3006,17 @@ declaration of symbols, and then goto the implementation, as liblang
 limitation.
 >
     let g:VIMCCC_GotoImplementationKey = '<C-]>'
+
+Auto popup code completion menu, this is an awesome feature.
+So you do not need to press <C-x><C-o> to trigger an code completion, just
+typing.
+>
+    let g:VIMCCC_AutoPopupMenu = 1
+
+When g:VIMCCC_AutoPopupMenu is not 0, this defines the minimum chars to
+trigger an code completion.
+>
+    let g:VIMCCC_TriggerCharCount = 2
 
 ------------------------------------------------------------------------------
 7.5. Debugger Options                   *VimLite-Options-Debugger*
@@ -5541,7 +6235,7 @@ endfunc
 "}}}
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/omnicpp/complete.vim	[[[1
-1064
+1068
 " Description:  Omni completion script for resolve namespace
 " Maintainer:   fanhe <fanhed@163.com>
 " Create:       2011 May 14
@@ -6316,8 +7010,12 @@ function! omnicpp#complete#Complete(findstart, base, ...) "{{{2
         let s:bIsScopeOperation = 0
         "call vlutils#TimerStart() "计时用
 
-        let nStartIdx = col('.') - 1
-        let sLine = getline('.')[: nStartIdx-1]
+        if mode() ==# 'i'
+            let sLine = getline('.')[: col('.') - 2]
+        else
+            " 非插入模式下，光标所在的字符算在内，为了符号跳转
+            let sLine = getline('.')[: col('.') - 1]
+        endif
 
         " 跳过光标在注释和字符串中的补全请求
         if omnicpp#utils#IsCursorInCommentOrString()
@@ -8591,9 +9289,11 @@ function s:error(msg)
     echohl None
 endfunction
 autoload/videm/wsp.py	[[[1
-1943
+1991
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
+
+'''工作区的 python 例程，和对应的 vim 脚本是互相依赖的'''
 
 import sys
 import os
@@ -8689,7 +9389,7 @@ class StartEdit:
             % (self.bufnr, self.bak_ma))
 
 
-class VimLiteWorkspace():
+class VimLiteWorkspace:
     '''VimLite 工作空间对象，主要用于操作缓冲区和窗口
     
     所有操作假定已经在工作空间缓冲区'''
@@ -8735,6 +9435,8 @@ class VimLiteWorkspace():
             '-Sep2-', 
             'Batch Builds', 
             '-Sep3-', 
+            'Parse Workspace (Full, Async)', 
+            'Parse Workspace (Quick, Async)', 
             'Parse Workspace (Full)', 
             'Parse Workspace (Quick)', 
             '-Sep4-', 
@@ -8807,18 +9509,22 @@ class VimLiteWorkspace():
                 'Rename...', 
                 'Remove' ]
 
+        # 当前工作区选择构建设置名字，缓存，用于快速访问
+        # self.RefreshStatusLine() 可以刷新此缓存
+        self.cache_confName = ''
+
         if fileName:
             self.OpenWorkspace(fileName)
 
-        #创建窗口
-        vim.command("call s:CreateVLWorkspaceWin()")
+        # 创建窗口
+        self.CreateWindow()
+        # 设置键位绑定。当前光标必须在需要设置键位绑定的缓冲区中
         vim.command("call s:SetupKeyMappings()")
-        self.buffer = vim.current.buffer
-        self.window = vim.current.window
-        self.bufNum = int(vim.eval("bufnr('%')"))
         
         self.InstallPopupMenu()
 
+        # 创建窗口后需要执行的一些动作
+        self.SetupStatusLine()
         self.RefreshStatusLine()
         self.RefreshBuffer()
         self.HlActiveProject()
@@ -8827,6 +9533,20 @@ class VimLiteWorkspace():
         self.ctime_predefineMacros = {} # <项目名，缓存时间>
 
         self.debug = None
+
+    def CreateWindow(self):
+        # 创建窗口
+        vim.command("call s:CreateVLWorkspaceWin()")
+        self.buffer = vim.current.buffer
+        self.bufNum = self.buffer.number
+        # 这个属性需要动态获取
+        #self.window = vim.current.window
+
+    @property
+    def window(self):
+        '''如果之前获取 self.window 的属性的时候，光标都是在工作区的窗口的话，
+        这样做就不会有问题了'''
+        return vim.current.window
 
     def OpenWorkspace(self, fileName):
         if fileName:
@@ -8840,6 +9560,8 @@ class VimLiteWorkspace():
         vim.command('redraw | echo ""') # 清理输出...
         self.VLWIns.CloseWorkspace()
         self.tagsManager.CloseDatabase()
+        # 还原配置
+        VLWRestoreConfigToGlobal()
 
     def ReloadWorkspace(self):
         fileName = self.VLWIns.fileName
@@ -8872,6 +9594,13 @@ class VimLiteWorkspace():
                 Globals.C_SOURCE_EXT.add(i)
             for i in self.VLWSettings.cppSrcExts:
                 Globals.CPP_SOURCE_EXT.add(i)
+            # == DEBUG --
+            #self.VLWSettings.enableLocalConfig = True
+            #self.VLWSettings.localConfig['Base']['g:VLWorkspaceUseVIMCCC'] = 1
+            # -- DEBUG ==
+            # 根据载入的工作区配置刷新全局的配置
+            if self.VLWSettings.enableLocalConfig:
+                VLWSetCurrentConfig(self.VLWSettings.localConfig, force=True)
 
     def SaveWspSettings(self):
         if self.VLWSettings.Save():
@@ -8968,12 +9697,17 @@ class VimLiteWorkspace():
         # 重置偏移量
         self.VLWIns.SetWorkspaceLineNum(1)
 
+    def SetupStatusLine(self):
+        vim.command('setlocal statusline=%!VLWStatusLine()')
+
     def RefreshStatusLine(self):
-        string = self.VLWIns.GetName() + '[' + \
-            self.VLWIns.GetBuildMatrix().GetSelectedConfigurationName() \
-            + ']'
-        vim.command("call setwinvar(bufwinnr(%d), '&statusline', '%s')" 
-            % (self.bufNum, ToVimStr(string)))
+        #string = self.VLWIns.GetName() + '[' + \
+            #self.VLWIns.GetBuildMatrix().GetSelectedConfigName() \
+            #+ ']'
+        #vim.command("call setwinvar(bufwinnr(%d), '&statusline', '%s')" 
+            #% (self.bufNum, ToVimStr(string)))
+        self.cache_confName = \
+                self.VLWIns.GetBuildMatrix().GetSelectedConfigName()
 
     def InitOmnicppTypesVar(self):
         vim.command("let g:dOCppTypes = {}")
@@ -9744,7 +10478,10 @@ class VimLiteWorkspace():
         extraMacros.extend(self.GetProjectPredefineMacros(actProjName))
         return extraMacros
 
-    def ParseWorkspace(self, full = False):
+    def ParseWorkspace(self, async = True, full = False):
+        '''
+        async:  是否异步
+        full:   是否解析工作区的所有文件'''
         vim.command("redraw")
         vim.command("echo 'Preparing...'")
 
@@ -9789,7 +10526,11 @@ class VimLiteWorkspace():
 
         parseFiles = list(set(parseFiles))
         parseFiles.sort()
-        self.ParseFiles(parseFiles, extraMacros=extraMacros)
+        if async:
+            vim.command("redraw | echo 'Start asynchronous parsing...'")
+            self.AsyncParseFiles(parseFiles, extraMacros=extraMacros)
+        else:
+            self.ParseFiles(parseFiles, extraMacros=extraMacros)
 
     def ParseFiles(self, files, indicate = True, extraMacros = []):
         ds = Globals.DirSaver()
@@ -9821,7 +10562,7 @@ class VimLiteWorkspace():
         except:
             pass
 
-    def AsyncParseFiles(self, files, extraMacros = []):
+    def AsyncParseFiles(self, files, extraMacros = [], filterNotNeed = True):
         def RemoveTmp(arg):
             os.close(arg[0])
             os.remove(arg[1])
@@ -9831,7 +10572,8 @@ class VimLiteWorkspace():
         tmpfd, tmpf = tempfile.mkstemp() # 在异步进程完成后才删除，使用回调机制
         with open(tmpf, 'wb') as f:
             f.write('\n'.join(macros))
-        self.tagsManager.AsyncParseFiles(files, [tmpf], RemoveTmp, [tmpfd, tmpf])
+        self.tagsManager.AsyncParseFiles(files, [tmpf], RemoveTmp,
+                                         [tmpfd, tmpf], filterNotNeed)
 
     def GetTagsSearchPaths(self):
         '''获取 tags 包含文件的搜索路径'''
@@ -10208,10 +10950,14 @@ class VimLiteWorkspace():
                 self.RefreshBuffer()
             elif choice == 'Reload Workspace':
                 self.ReloadWorkspace()
+            elif choice == 'Parse Workspace (Full, Async)':
+                self.ParseWorkspace(async=True, full=True)
+            elif choice == 'Parse Workspace (Quick, Async)':
+                self.ParseWorkspace(async=True, full=False)
             elif choice == 'Parse Workspace (Full)':
-                self.ParseWorkspace(True)
+                self.ParseWorkspace(async=False, full=True)
             elif choice == 'Parse Workspace (Quick)':
-                self.ParseWorkspace(False)
+                self.ParseWorkspace(async=False, full=False)
             elif choice == 'Workspace Build Configuration...':
                 vim.command("call s:WspBuildConfigManager()")
             elif choice == 'Workspace Batch Build Settings...':
@@ -10536,7 +11282,7 @@ class VimLiteWorkspace():
     #===========================================================================
 
 autoload/videm/wsp.vim	[[[1
-5590
+5797
 " Vim global plugin for handle workspace
 " Author:   fanhe <fanhed@163.com>
 " License:  This file is placed in the public domain.
@@ -10573,8 +11319,12 @@ let s:sfile = expand('<sfile>:p')
 "noremap <unique> <script> <Plug>TypecorrAdd  <SID>Add
 
 " 初始化变量仅在变量没有定义时才赋值，var 必须是合法的变量名
-function! s:InitVariable(var, value) "{{{2
-    if !exists(a:var)
+function! s:InitVariable(var, value, ...) "{{{2
+    let force = a:0 > 0 ? a:1 : 0
+    if force || !exists(a:var)
+        if exists(a:var)
+            unlet {a:var}
+        endif
         let {a:var} = a:value
     endif
 endfunction
@@ -10611,9 +11361,9 @@ call s:InitVariable('g:VLWorkspaceHighlightSourceFile', 1)
 call s:InitVariable('g:VLWorkspaceActiveProjectHlGroup', 'SpecialKey')
 
 " 0 -> none, 1 -> cscope, 2 -> global tags
-call s:InitVariable('g:VLWorkspaceSymbolDatabase', 1)
+" 见下面的 python 代码
+"call s:InitVariable('g:VLWorkspaceSymbolDatabase', 1)
 " Cscope tags database
-call s:InitVariable('g:VLWorkspaceEnableCscope', 1)
 call s:InitVariable('g:VLWorkspaceCscopeProgram', &cscopeprg)
 call s:InitVariable('g:VLWorkspaceCscopeContainExternalHeader', 1)
 call s:InitVariable('g:VLWorkspaceCreateCscopeInvertedIndex', 0)
@@ -10622,27 +11372,15 @@ call s:InitVariable('g:VLWorkspaceCscpoeFilesFile', '_cscope.files')
 call s:InitVariable('g:VLWorkspaceCscpoeOutFile', '_cscope.out')
 
 " Global tags database
-call s:InitVariable('g:VLWorkspaceEnableGtags', 0)
-call s:InitVariable('g:VLWorkspaceGtagsGlobalProgram', 'global')
+"call s:InitVariable('g:VLWorkspaceGtagsGlobalProgram', 'global')
 call s:InitVariable('g:VLWorkspaceGtagsProgram', 'gtags')
 call s:InitVariable('g:VLWorkspaceGtagsCscopeProgram', 'gtags-cscope')
 call s:InitVariable('g:VLWorkspaceGtagsFilesFile', '_gtags.files')
 call s:InitVariable('g:VLWorkspaceUpdateGtagsAfterSave', 1)
 
-" 暂时如此实现吧
-if g:VLWorkspaceSymbolDatabase == 1
-    let g:VLWorkspaceEnableCscope = 1
-    let g:VLWorkspaceEnableGtags = 0
-elseif g:VLWorkspaceSymbolDatabase == 2
-    let g:VLWorkspaceEnableCscope = 0
-    let g:VLWorkspaceEnableGtags = 1
-else
-    let g:VLWorkspaceEnableCscope = 0
-    let g:VLWorkspaceEnableGtags = 0
-endif
+" vim 的自定义命令可带 '-' 和 '_' 字符
+call s:InitVariable('g:VLWorkspaceHadVimCommandPatch', 0)
 
-" 使用 clang 补全, 否则使用 OmniCpp
-call s:InitVariable("g:VLWorkspaceUseVIMCCC", 0)
 " 保存文件时自动解析文件, 仅对属于工作空间的文件有效
 call s:InitVariable("g:VLWorkspaceParseFileAfterSave", 1)
 " 自动解析保存的文件时, 仅解析头文件
@@ -10695,6 +11433,97 @@ call s:InitVariable("g:VLWorkspaceWspFileSuffix", "vlworkspace")
 " 项目文件后缀名
 call s:InitVariable("g:VLWorkspacePrjFileSuffix", "vlproject")
 
+" ============================================================================
+" 全部可配置的信息 {{{2
+python << PYTHON_EOF
+import vim
+# python 的字典结构更容易写...
+VLWConfigTemplate = {
+    'Base': {
+        # 使用 clang 补全, 否则使用 OmniCpp"
+        'g:VLWorkspaceUseVIMCCC'    : 0,
+        # 0 -> none, 1 -> cscope, 2 -> global tags. 可用字符串标识，更具可读性
+        'g:VLWorkspaceSymbolDatabase'   : 'cscope',
+    },
+
+    'VIMCCC': {
+    },
+
+    'OmniCpp': {
+    },
+
+    'Debugger': {
+    }
+}
+
+__VLWNeedRestartConfig = set([
+    'g:VLWorkspaceUseVIMCCC',
+    'g:VLWorkspaceSymbolDatabase',
+])
+
+# 全局的配置，只初始化一次，见下
+VLWGlobalConfig = {}
+
+# ----------------------------------------------------------------------------
+def VLWSetCurrentConfig(config, force=True):
+    '''把python的配置字典转为vim的配置变量'''
+    for name, conf in config.iteritems():
+        i = 0
+        if force:
+            i = 1
+        for ______k, ______v in conf.iteritems():
+            # 配置信息的值类型只有整数和字符串两种
+            if isinstance(______v, str):
+                # 安全地转为 vim 的字符串
+                vim.command("call s:InitVariable('%s', '%s', %d)"
+                                % (______k, ______v.replace("'", "''"), i))
+            else:
+                vim.command("call s:InitVariable('%s', %s, %d)"
+                                % (______k, str(______v), i))
+
+def VLWRestoreConfigToGlobal():
+    '''隐藏掉全局变量 VLWGlobalConfig'''
+    global VLWGlobalConfig
+    VLWSetCurrentConfig(VLWGlobalConfig, force=True)
+
+def VLWSaveCurrentConfig(config):
+    '''根据 VLWConfigTemplate 的规则保存当前工作区的配置到 config'''
+    global VLWConfigTemplate
+    config.clear() # 无论如何都要清空 config
+    for name, conf in VLWConfigTemplate.iteritems():
+        config[name] = {}
+        for k, v in conf.iteritems():
+            if isinstance(v, str):
+                config[name][k] = vim.eval(k)
+            else: # 整数类型
+                config[name][k] = int(vim.eval(k))
+# ----------------------------------------------------------------------------
+
+# 根据模板初始化配置变量
+VLWSetCurrentConfig(VLWConfigTemplate, force=False)
+
+# 保存当前全局配置到 VLWGlobalConfig
+VLWSaveCurrentConfig(VLWGlobalConfig)
+PYTHON_EOF
+"}}}
+" ============================================================================
+
+function! s:IsEnableCscope() "{{{2
+    if type(g:VLWorkspaceSymbolDatabase) == type('')
+        return g:VLWorkspaceSymbolDatabase ==? 'cscope'
+    else
+        return g:VLWorkspaceSymbolDatabase == 1
+    endif
+endfunction
+"}}}
+function! s:IsEnableGtags() "{{{2
+    if type(g:VLWorkspaceSymbolDatabase) == type('')
+        return g:VLWorkspaceSymbolDatabase ==? 'gtags'
+    else
+        return g:VLWorkspaceSymbolDatabase == 2
+    endif
+endfunction
+"}}}
 " 标识是否第一次初始化
 let s:bHadInited = 0
 
@@ -10730,7 +11559,7 @@ function! s:GetSFuncRef(sFuncName) " 获取局部于脚本的函数的引用 {{{
 endfunction
 
 function! s:echow(msg) "显示警告信息 {{{2
-    echohl WarningMsg | echo a:msg | echohl None
+    echohl WarningMsg | echomsg a:msg | echohl None
 endfunction
 
 function! s:exec(cmd) "忽略所有事件运行 cmd {{{2
@@ -10845,10 +11674,10 @@ endfunction
 "    应该设置一个需要刷新选项的标识
 " 3. 只有进入插入模式时，才开始更新翻译单元的线程
 function! s:InitVIMCCCFacilities() "{{{2
-    let g:VIMCCC_Enable = 1 " 保证初始化成功
-    call g:InitVIMClangCodeCompletion(1) " 先初始化默认的 clang index
+    "let g:VIMCCC_Enable = 1 " 保证初始化成功。新版本不需要设置这个也能初始化了
+    call VIMClangCodeCompletionInit(1) " 先初始化默认的 clang index
     py OrigVIMCCCIndex = VIMCCCIndex
-    let g:VIMCCC_Enable = 0 " 再禁用 VIMCCC
+    "let g:VIMCCC_Enable = 0 " 再禁用 VIMCCC
     autocmd! FileType c,cpp call g:InitVIMClangCodeCompletionExt()
 
 python << PYTHON_EOF
@@ -10941,7 +11770,7 @@ PYTHON_EOF
 
     py del project
 
-    call g:InitVIMClangCodeCompletion()
+    call VIMClangCodeCompletionInit()
     let g:VIMCCC_Enable = bak
 endfunction
 "}}}
@@ -10973,6 +11802,44 @@ endfunction
 " 缓冲区与窗口操作
 "===============================================================================
 "{{{1
+" 各种检查，返回 0 表示失败，否则返回 1
+function s:SanityCheck() "{{{2
+    " gtags 的版本至少需要 5.7.6
+    if s:IsEnableGtags()
+        let minver = 5.8
+        let cmd = printf("%s --version", g:VLWorkspaceGtagsProgram)
+        let output = system(cmd)
+        let sVersion = get(split(get(split(output, '\n'), 0, '')), -1)
+        if empty(output) || empty(sVersion)
+            call s:echow('failed to run gtags')
+            return 0
+        endif
+        " 取前面两位
+        let ver = str2float(sVersion)
+        if ver < minver
+            let sErr = printf("Required gtags %.1f or later, "
+                        \     . "please update it. ", minver)
+            let sErr .= "Or you should set g:VLWorkspaceSymbolDatabase"
+                    \    . " to 1 or 0 to disable gtags."
+            call s:echow(sErr)
+            return 0
+        endif
+    endif
+
+    " 这个特性在有些环境比较难实现
+    "if g:VLWorkspaceUseVIMCCC && empty(v:servername)
+        "call s:echow("Please start vim as server")
+        "call s:echow("eg. vim --servername {name}")
+        "return 0
+    "endif
+
+    return 1
+endfunction
+"}}}
+function! VLWStatusLine() "{{{2
+    return printf('%s[%s]', GetWspName(), GetWspConfName())
+endfunction
+"}}}2
 function! videm#wsp#InitWorkspace(sWspFile) "{{{2
     call s:InitVLWorkspace(a:sWspFile)
 endfunction
@@ -10980,68 +11847,45 @@ endfunction
 function! s:InitVLWorkspace(file) " 初始化 {{{2
     let sFile = a:file
 
+    if !s:SanityCheck()
+        " 检查不通过
+        echohl ErrorMsg
+        echomsg "SanityCheck failed! Please fix it up."
+        echohl None
+        call getchar()
+        return
+    endif
+
     let bNeedConvertWspFileFormat = 0
-    if filereadable(sFile)
+    if !empty(sFile)
         if fnamemodify(sFile, ":e") ==? 'workspace'
             let bNeedConvertWspFileFormat = 1
         elseif fnamemodify(sFile, ":e") !=? g:VLWorkspaceWspFileSuffix
             call s:echow("Is it a valid workspace file?")
             return
         endif
+
+        if !filereadable(sFile)
+            call s:echow("Can not read the file: " . sFile)
+            return
+        endif
+    endif
+
+    " 如果之前已经启动过，而现在 sFile 为空的话，直接打开原来的缓冲区即可
+    if sFile ==# '' && g:VLWorkspaceHasStarted
+        py ws.CreateWindow()
+        py ws.SetupStatusLine()
+        py ws.HlActiveProject()
+        return
+    endif
+
+    " 如果之前启动过，无论如何都要先关了旧的
+    if g:VLWorkspaceHasStarted
+        py ws.CloseWorkspace()
     endif
 
     " 开始
     let g:VLWorkspaceHasStarted = 1
-
-    " 文件类型自动命令
-    if g:VLWorkspaceUseVIMCCC
-        " 使用 VIMCCC，算法复杂，分治处理
-        call s:InitVIMCCCFacilities()
-    else
-        autocmd! FileType c,cpp call omnicpp#complete#Init()
-    endif
-
-    " 安装命令
-    call s:InstallCommands()
-
-    if g:VLWorkspaceEnableMenuBarMenu
-        " 添加菜单栏菜单
-        call s:InstallMenuBarMenu()
-    endif
-
-    if g:VLWorkspaceEnableToolBarMenu
-        " 添加工具栏菜单
-        call s:InstallToolBarMenu()
-    endif
-
-    augroup VLWorkspace
-        " 先清空
-        au!
-
-        au Syntax dbgvar nnoremap <buffer> 
-                    \<CR> :exec "Cfoldvar " . line(".")<CR>
-        au Syntax dbgvar nnoremap <buffer> 
-                    \<2-LeftMouse> :exec "Cfoldvar " . line(".")<CR>
-        au Syntax dbgvar nnoremap <buffer> 
-                    \dd :exec "Cdelvar" matchstr(getline('.'),
-                    \   '^[^a-zA-Z_]\{3} \zsvar\d\+')<CR>
-                    "\   '^\(\[[-+]\]\| \* \)\s*\zsvar\d\+')<CR> " FIXME: BUG
-
-        au Syntax dbgvar nnoremap <silent> <buffer> 
-                    \p :call search('^'.repeat(' ',
-                    \   len(matchstr(getline('.'), '^.\{-1,}[-+*]'))-2-2)
-                    \.'.[-+*]', 'bcW')<CR>
-
-        au BufReadPost * call <SID>Autocmd_WorkspaceEditorOptions()
-        au BufEnter    * call <SID>Autocmd_LocateCurrentFile()
-        au VimLeave    * call <SID>Autocmd_Quit()
-    augroup END
-
-    if !g:VLWorkspaceUseVIMCCC && g:VLWorkspaceParseFileAfterSave
-        augroup VLWorkspace
-            au BufWritePost * call <SID>Autocmd_ParseCurrentFile()
-        augroup END
-    endif
 
     " 初始化 vimdialog
     call vimdialog#Init()
@@ -11072,19 +11916,69 @@ function! s:InitVLWorkspace(file) " 初始化 {{{2
         endif
     endif
 
-    " 初始化全局变量
+    " 打开工作区文件，初始化全局变量
     py ws = VimLiteWorkspace(vim.eval('sFile'))
 
-    if g:VLWorkspaceEnableCscope
+    " 文件类型自动命令
+    if g:VLWorkspaceUseVIMCCC
+        " 使用 VIMCCC，算法复杂，分治处理
+        call s:InitVIMCCCFacilities()
+    else
+        autocmd! FileType c,cpp call omnicpp#complete#Init()
+    endif
+
+    " 安装命令
+    call s:InstallCommands()
+
+    if g:VLWorkspaceEnableMenuBarMenu
+        " 添加菜单栏菜单
+        call s:InstallMenuBarMenu()
+    endif
+
+    if g:VLWorkspaceEnableToolBarMenu
+        " 添加工具栏菜单
+        call s:InstallToolBarMenu()
+    endif
+
+    augroup VLWorkspace
+        " 先清空
+        autocmd!
+
+        autocmd Syntax dbgvar nnoremap <buffer> 
+                    \<CR> :exec "Cfoldvar " . line(".")<CR>
+        autocmd Syntax dbgvar nnoremap <buffer> 
+                    \<2-LeftMouse> :exec "Cfoldvar " . line(".")<CR>
+        autocmd Syntax dbgvar nnoremap <buffer> 
+                    \dd :exec "Cdelvar" matchstr(getline('.'),
+                    \   '^[^a-zA-Z_]\{3} \zsvar\d\+')<CR>
+                    "\   '^\(\[[-+]\]\| \* \)\s*\zsvar\d\+')<CR> " FIXME: BUG
+
+        autocmd Syntax dbgvar nnoremap <silent> <buffer> 
+                    \p :call search('^'.repeat(' ',
+                    \   len(matchstr(getline('.'), '^.\{-1,}[-+*]'))-2-2)
+                    \.'.[-+*]', 'bcW')<CR>
+
+        autocmd BufReadPost * call <SID>Autocmd_WorkspaceEditorOptions()
+        autocmd BufEnter    * call <SID>Autocmd_LocateCurrentFile()
+        autocmd VimLeave    * call <SID>Autocmd_Quit()
+    augroup END
+
+    if !g:VLWorkspaceUseVIMCCC && g:VLWorkspaceParseFileAfterSave
+        augroup VLWorkspace
+            autocmd BufWritePost * call <SID>AsyncParseCurrentFile(1, 1)
+        augroup END
+    endif
+
+    if s:IsEnableCscope()
         "call s:InitVLWCscopeDatabase()
         call s:ConnectCscopeDatabase()
     endif
 
-    if g:VLWorkspaceEnableGtags
+    if s:IsEnableGtags()
         call s:ConnectGtagsDatabase()
         if g:VLWorkspaceUpdateGtagsAfterSave
             augroup VLWorkspace
-                au BufWritePost * call <SID>Autocmd_UpdateGtagsDatabase(
+                autocmd BufWritePost * call <SID>Autocmd_UpdateGtagsDatabase(
                             \                                   expand('%:p'))
             augroup END
         endif
@@ -11109,23 +12003,30 @@ function! s:InitVLWorkspace(file) " 初始化 {{{2
 
     let s:bHadInited = 1
 endfunction
-
-function! GetWspName()
+"}}}
+function! GetWspName() "{{{2
     py vim.command("return %s" % ToVimEval(ws.VLWIns.name))
 endfunction
-
-function! s:Autocmd_ParseCurrentFile()
-    if !exists("s:Autocmd_ParseCurrentFile_FirstEnter")
-        let s:Autocmd_ParseCurrentFile_FirstEnter = 1
+"}}}
+function! GetWspConfName() "{{{2
+    py vim.command("return %s" % ToVimEval(ws.cache_confName))
+endfunction
+"}}}
+" 这个函数做的工作比较自动化
+function! s:AsyncParseCurrentFile(bFilterNotNeed, bIncHdr) "{{{2
+    if !exists("s:AsyncParseCurrentFile_FirstEnter")
+        let s:AsyncParseCurrentFile_FirstEnter = 1
 python << PYTHON_EOF
 import threading
 class ParseCurrentFileThread(threading.Thread):
     '''同时只允许单个线程工作'''
     lock = threading.Lock()
 
-    def __init__(self, fileName):
+    def __init__(self, fileName, filterNotNeed = True, incHdr = True):
         threading.Thread.__init__(self)
         self.fileName = fileName
+        self.filterNotNeed = filterNotNeed
+        self.incHdr = incHdr
 
     def run(self):
         ParseCurrentFileThread.lock.acquire()
@@ -11136,56 +12037,43 @@ class ParseCurrentFileThread(threading.Thread):
                 searchPaths += ws.GetProjectIncludePaths(project.GetName())
                 extraMacros = ws.GetWorkspacePredefineMacros()
                 # 这里必须使用这个函数，因为 sqlite3 的连接实例不能跨线程
-                ws.AsyncParseFiles([self.fileName] 
-                                        + IncludeParser.GetIncludeFiles(
+                if self.incHdr:
+                    ws.AsyncParseFiles([self.fileName] 
+                                            + IncludeParser.GetIncludeFiles(
                                                     self.fileName, searchPaths),
-                                   extraMacros)
+                                       extraMacros, self.filterNotNeed)
+                else: # 不包括 self.fileName 包含的头文件
+                    ws.AsyncParseFiles([self.fileName],
+                                       extraMacros, self.filterNotNeed)
         except:
             print 'ParseCurrentFileThread() failed'
         ParseCurrentFileThread.lock.release()
 PYTHON_EOF
     endif
 
+    let bFilterNotNeed = a:bFilterNotNeed
+    let bIncHdr = a:bIncHdr
     let sFile = expand('%:p')
     " 不是工作区的文件的话就返回
     py if not ws.VLWIns.IsWorkspaceFile(vim.eval("sFile")):
                 \vim.command("return")
 
-    py ParseCurrentFileThread(vim.eval("sFile")).start()
-"    if !exists('s:CACHE_INCLUDES')
-"        let s:CACHE_INCLUDES = {}
-"    endif
-"
-"    let fileName = expand('%:p')
-"    let isWspFile = 0
-"    py if ws.VLWIns.IsWorkspaceFile(vim.eval("fileName")): 
-"                \vim.command("let isWspFile = 1")
-"    if isWspFile
-"        let li = s:GetCurBufIncList()
-"        if has_key(s:CACHE_INCLUDES, fileName)
-"            if s:CACHE_INCLUDES[fileName] ==# li
-"                " 包含的头文件没有修改
-"                if g:VLWorkspaceNotParseSourceAfterSave 
-"                            \&& index(['c', 'cpp', 'cxx', 'c++', 'cc'], 
-"                            \expand('%:p:e')) != -1
-"                    "不解析当前源文件
-"                    return
-"                endif
-"
-"                call s:AsyncParseCurrentFile()
-"            else
-"                "包含的头文件已经修改, 深度解析
-"                let s:CACHE_INCLUDES[fileName] = li
-"                call s:AsyncParseCurrentFile(1)
-"            endif
-"        else
-"            let s:CACHE_INCLUDES[fileName] = li
-"            call s:AsyncParseCurrentFile(1)
-"        endif
-"    endif
+    if bFilterNotNeed
+        if bIncHdr
+            py ParseCurrentFileThread(vim.eval("sFile"), True, True).start()
+        else
+            py ParseCurrentFileThread(vim.eval("sFile"), True, False).start()
+        endif
+    else
+        if bIncHdr
+            py ParseCurrentFileThread(vim.eval("sFile"), False, True).start()
+        else
+            py ParseCurrentFileThread(vim.eval("sFile"), False, False).start()
+        endif
+    endif
 endfunction
-
-function! s:GetCurBufIncList()
+"}}}
+function! s:GetCurBufIncList() "{{{2
     let origCursor = getpos('.')
     let results = []
 
@@ -11213,8 +12101,7 @@ function! s:GetCurBufIncList()
     call setpos('.', origCursor)
     return results
 endfunction
-
-
+"}}}
 function! s:CreateVLWorkspaceWin() "创建窗口 {{{2
     "create the workspace window
     let splitMethod = g:VLWorkspaceWinPos ==? "left" ? "topleft " : "botright "
@@ -11423,7 +12310,7 @@ function! s:InstallCommands() "{{{2
     endif
     " 初始化可用的命令
 
-    if g:VLWorkspaceEnableCscope " 禁用的话直接禁用掉命令
+    if s:IsEnableCscope() " 禁用的话直接禁用掉命令
         "command! -nargs=? VLWInitCscopeDatabase 
                     "\               call <SID>InitVLWCscopeDatabase(<f-args>)
         command! -nargs=0 VLWInitCscopeDatabase 
@@ -11432,9 +12319,9 @@ function! s:InstallCommands() "{{{2
                     \               call <SID>UpdateVLWCscopeDatabase(1)
     endif
 
-    if g:VLWorkspaceEnableGtags " 禁用的话直接禁用掉命令
+    if s:IsEnableGtags() " 禁用的话直接禁用掉命令
         command! -nargs=0 VLWInitGtagsDatabase
-                    \               call <SID>InitVLWGtagsDatabase()
+                    \               call <SID>InitVLWGtagsDatabase(0)
         command! -nargs=0 VLWUpdateGtagsDatabase
                     \               call <SID>UpdateVLWGtagsDatabase()
     endif
@@ -11450,9 +12337,9 @@ function! s:InstallCommands() "{{{2
 
     command! -nargs=* -complete=file VLWParseFiles  
                 \                               call <SID>ParseFiles(<f-args>)
-    command! -nargs=0 -bar VLWParseCurrentFile      
+    command! -nargs=0 -bar VLWParseCurrentFile
                 \                               call <SID>ParseCurrentFile(0)
-    command! -nargs=0 -bar VLWDeepParseCurrentFile  
+    command! -nargs=0 -bar VLWDeepParseCurrentFile
                 \                               call <SID>ParseCurrentFile(1)
 
     command! -nargs=? -bar VLWDbgStart          call <SID>DbgStart(<f-args>)
@@ -11480,6 +12367,13 @@ function! s:InstallCommands() "{{{2
     command! -nargs=? -bar VLWFindFilesNoCase   call <SID>FindFiles(<q-args>, 1)
 
     command! -nargs=? -bar VLWOpenIncludeFile   call <SID>OpenIncludeFile()
+
+    " 异步解析当前文件，并且会强制解析，无论是否修改过
+    command! -nargs=0 -bar VLWAsyncParseCurrentFile
+                \                       call <SID>AsyncParseCurrentFile(0, 0)
+    " 同 VLWAsyncParseCurrentFile，除了这个会包括头文件外
+    command! -nargs=0 -bar VLWDeepAsyncParseCurrentFile
+                \                       call <SID>AsyncParseCurrentFile(0, 1)
 endfunction
 "}}}
 function! s:InstallMenuBarMenu() "{{{2
@@ -11585,41 +12479,15 @@ function! s:ParseCurrentFile(...) "可选参数为是否解析包含的头文件
         py ws.ParseFiles(vim.eval('files'), False)
     endif
 endfunction
-
-
-function! s:AsyncParseCurrentFile(...) "可选参数为是否解析包含的头文件 {{{2
-    let deep = 0
-    if a:0 > 0
-        let deep = a:1
-    endif
-    let curFile = expand("%:p")
-    let files = [curFile]
-    if deep
-        py l_project = ws.VLWIns.GetProjectByFileName(vim.eval('curFile'))
-        py l_searchPaths = ws.GetTagsSearchPaths()
-        py if l_project: l_searchPaths += ws.GetProjectIncludePaths(
-                    \l_project.GetName())
-        py ws.AsyncParseFiles(vim.eval('files') 
-                    \+ IncludeParser.GetIncludeFiles(vim.eval('curFile'),
-                    \   l_searchPaths))
-        py del l_searchPaths
-        py del l_project
-    else
-        py ws.AsyncParseFiles(vim.eval('files'))
-    endif
-endfunction
-
-
+"}}}
 function! s:ParseFiles(files) "{{{2
     py ws.ParseFiles(vim.eval("a:files"))
 endfunction
-
-
-function! s:AsyncParseFiles(files) "{{{2
+"}}}
+function! s:AsyncParseFiles(files, ...) "{{{2
     py ws.AsyncParseFiles(vim.eval("a:files"))
 endfunction
-
-
+"}}}
 "}}}1
 "===============================================================================
 "===============================================================================
@@ -11961,6 +12829,19 @@ function! s:DbgSetupKeyMappings() "{{{2
                 \':<C-u>exec "Cdbgvar" vlutils#GetVisualSelection()<CR>'
     exec 'xnoremap <silent>' g:VLWDbgPrintVarKey 
                 \':<C-u>exec "Cprint" vlutils#GetVisualSelection()<CR>'
+
+    " vim 的命令支持特殊字符的话
+    if g:VLWorkspaceHadVimCommandPatch
+        command! -bar -nargs=* -complete=file Ccore-file
+                    \   :C core-file <args>
+        command! -bar -nargs=* -complete=file Cadd-symbol-file
+                    \   :C add-system-file <args>
+    else
+        command! -bar -nargs=* -complete=file CCoreFile
+                    \   :C core-file <args>
+        command! -bar -nargs=* -complete=file CAddSymbolFile
+                    \   :C add-symbol-file <args>
+    endif
 endfunction
 "}}}
 function! s:DbgHadStarted() "{{{2
@@ -12793,7 +13674,7 @@ function! s:InitVLWCscopeDatabase(...) "{{{2
 
     " 如果传进来的第一个参数非零，强制全部初始化并刷新全部
 
-    if !g:VLWorkspaceHasStarted || !g:VLWorkspaceEnableCscope
+    if !g:VLWorkspaceHasStarted || !s:IsEnableCscope()
         return
     endif
 
@@ -12915,7 +13796,7 @@ function! s:UpdateVLWCscopeDatabase(...) "{{{2
     " 默认仅仅更新 .out 文件，如果有参数传进来且为 1，也更新 .files 文件
     " 仅在已经存在能用的 .files 文件时才会更新
 
-    if !g:VLWorkspaceHasStarted || !g:VLWorkspaceEnableCscope
+    if !g:VLWorkspaceHasStarted || !s:IsEnableCscope()
         return
     endif
 
@@ -13001,7 +13882,7 @@ function! s:ConnectCscopeDatabase(...) "{{{2
 endfunction
 "}}}
 " ========== GNU Global Tags =========
-function! s:InitVLWGtagsDatabase() "{{{2
+function! s:InitVLWGtagsDatabase(bIncremental) "{{{2
     " 求简单，调用这个函数就表示强制新建数据库
     py l_ds = Globals.DirSaver()
     py if os.path.isdir(ws.VLWIns.dirName): os.chdir(ws.VLWIns.dirName)
@@ -13028,7 +13909,11 @@ function! s:InitVLWGtagsDatabase() "{{{2
 
     exec 'silent! cs kill '. sGlbOutFile
     let sCmd = printf('%s -f %s', 
-                \shellescape(sGtagsProgram), shellescape(sGlbFilesFile))
+                \     shellescape(sGtagsProgram), shellescape(sGlbFilesFile))
+    if a:bIncremental && filereadable(sGlbOutFile)
+        " 增量更新
+        let sCmd .= ' -i'
+    endif
     "call system(sCmd)
     py vim.command('let retval = %d' % System(vim.eval('sCmd'))[0])
     if retval
@@ -13046,7 +13931,7 @@ endfunction
 function! s:UpdateVLWGtagsDatabase() "{{{2
     " 仅在已经初始化过了才可以更新
     if exists('s:bHadConnGtagsDb') && s:bHadConnGtagsDb
-        call s:InitVLWGtagsDatabase()
+        call s:InitVLWGtagsDatabase(1)
     endif
 endfunction
 "}}}
@@ -13063,16 +13948,23 @@ function! s:ConnectGtagsDatabase(...) "{{{2
     endif
 endfunction
 "}}}
+" 假定 sFile 是绝对路径的文件名
 function! s:Autocmd_UpdateGtagsDatabase(sFile) "{{{2
     py if not ws.VLWIns.IsWorkspaceFile(vim.eval("a:sFile")):
                 \vim.command('return')
 
     if exists('s:bHadConnGtagsDb') && s:bHadConnGtagsDb
-        let sDir = fnamemodify(a:sFile, ':p:h')
-        let sCmd = printf("silent !cd %s && %s -u &", 
-                    \     shellescape(sDir), 
-                    \     shellescape(g:VLWorkspaceGtagsGlobalProgram))
-        exec sCmd
+        let sGlbFilesFile = GetWspName() . g:VLWorkspaceGtagsFilesFile
+        py vim.command("let sWspDir = %s" % ToVimEval(ws.VLWIns.dirName))
+        let sGlbFilesFile = g:vlutils#os.path.join(sWspDir, sGlbFilesFile)
+        let sCmd = printf("cd %s && %s -f %s --single-update %s &", 
+                    \     shellescape(sWspDir),
+                    \     shellescape(g:VLWorkspaceGtagsProgram),
+                    \     shellescape(sGlbFilesFile),
+                    \     shellescape(a:sFile))
+        "echo sCmd
+        "exec sCmd
+        call system(sCmd)
         "echom 'enter s:Autocmd_UpdateGtagsDatabase()'
     endif
 endfunction
@@ -13482,7 +14374,7 @@ function! s:SaveTagsSettingsCbk(dlg, data) "{{{2
     " 保存
     py ins.Save()
     py del ins
-    " 重新初始化 Omnicpp 类型替换字典
+    " 重新初始化 OmniCpp 类型替换字典
     py ws.InitOmnicppTypesVar()
 endfunction
 
@@ -14903,6 +15795,8 @@ let s:ID_WspSettingsIncPathFlag = 15
 let s:ID_WspSettingsEditorOptions = 16
 let s:ID_WspSettingsCSourceExtensions = 17
 let s:ID_WspSettingsCppSourceExtensions = 18
+let s:ID_WspSettingsEnableLocalConfig = 19
+let s:ID_WspSettingsLocalConfig = 20
 
 
 function! s:WspSettings() "{{{2
@@ -14968,12 +15862,26 @@ function! s:SaveWspSettingsCbk(dlg, data) "{{{2
         elseif ctl.GetId() == s:ID_WspSettingsCppSourceExtensions
             py ws.VLWSettings.cppSrcExts = 
                         \SplitSmclStr(vim.eval("ctl.GetValue()"))
+        elseif ctl.GetId() == s:ID_WspSettingsEnableLocalConfig
+            py ws.VLWSettings.enableLocalConfig = int(vim.eval("ctl.GetValue()"))
+        elseif ctl.GetId() == s:ID_WspSettingsLocalConfig
+            let sTempFile = tempname()
+            " ctl.values 是列表
+            call writefile(ctl.values, sTempFile)
+            exec 'source' fnameescape(sTempFile)
+            call delete(sTempFile)
+            py VLWSaveCurrentConfig(ws.VLWSettings.localConfig)
         endif
     endfor
     " 保存
     py ws.SaveWspSettings()
     " Extension Options 关系到项目 Makefile
     py ws.VLWIns.TouchAllProjectFiles()
+    " 对于工作区设置，先还原，再设置
+    py VLWRestoreConfigToGlobal()
+    " NOTE: 基本上不支持正在运行的时候设置变量，需要重启，现在还没实现...
+    py if ws.VLWSettings.enableLocalConfig:
+            \ VLWSetCurrentConfig(ws.VLWSettings.localConfig, force=True)
 endfunction
 
 function! s:AddSearchPathCbk(ctl, data) "{{{2
@@ -15003,11 +15911,29 @@ def GetWspSettingsHelpText():
 ==============================================================================
 ##### Some Extra Help Information #####
 
+== Editor Options ==
 'Editor Options' will be run as vim script, but if the option value is a
 single line script, it will be run by ':execute' which will be faster.
 But ':execute' cannot be followed by a comment directly, so do not write a
 comment while writing a single line script.
 '''
+    s += '''\
+
+== Wrokspace Local Configurations ==
+current support configuration variables:
+'''
+    global VLWConfigTemplate
+    for name, conf in VLWConfigTemplate.iteritems():
+        for k, v in conf.iteritems():
+            s += '  %s' % k
+            if k in __VLWNeedRestartConfig:
+                s += '*'
+            s += '\n'
+
+    s += '''
+Variables which with trailing '*' need to restart VimLite to take effect.
+'''
+
     return s
 PYTHON_EOF
     py vim.command("return %s" % ToVimEval(GetWspSettingsHelpText()))
@@ -15052,6 +15978,33 @@ function! s:CreateWspSettingsDialog() "{{{2
     py vim.command("let editorOptions = %s" 
                 \% ToVimEval(ws.VLWSettings.GetEditorOptions()))
     call ctl.SetValue(editorOptions)
+    call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "vim")
+    call dlg.AddControl(ctl)
+    call dlg.AddBlankLine()
+
+"===============================================================================
+    " 3. Local Config
+    let ctl = g:VCStaticText.New("Workspace Local Configurations")
+    call ctl.SetHighlight("Special")
+    call dlg.AddControl(ctl)
+    call dlg.AddBlankLine()
+
+    let ctl = g:VCCheckItem.New('Enable Local Configurations:')
+    call ctl.SetId(s:ID_WspSettingsEnableLocalConfig)
+    call ctl.SetIndent(4)
+    py if ws.VLWSettings.enableLocalConfig: vim.command("call ctl.SetValue(1)")
+    call dlg.AddControl(ctl)
+    let sep = g:VCSeparator.New('~')
+    call sep.SetIndent(4)
+    call dlg.AddControl(sep)
+
+    let ctl = g:VCMultiText.New("Workspace Local Configurations"
+            \ . " (Please read the Extra Help info):")
+    call ctl.SetId(s:ID_WspSettingsLocalConfig)
+    call ctl.SetIndent(4)
+    py vim.command("let localConfig = %s"
+            \       % ToVimEval(ws.VLWSettings.GetLocalConfigScript()))
+    call ctl.SetValue(localConfig)
     call ctl.ConnectButtonCallback(s:GetSFuncRef("s:EditTextBtnCbk"), "vim")
     call dlg.AddControl(ctl)
     call dlg.AddBlankLine()
@@ -16128,7 +17081,7 @@ endfunction
 
 " vim:fdm=marker:fen:et:sts=4:fdl=1:
 autoload/vimdialog.vim	[[[1
-3233
+3237
 " Vim interactive dialog and control library.
 " Author: 	fanhe <fanhed@163.com>
 " License:	This file is placed in the public domain.
@@ -16789,6 +17742,10 @@ function! g:VCMultiText.SetValue(value) "{{{2
 	endif
 
 	call call(g:VCSingleText.SetValue, [value], self)
+endfunction
+
+function! g:VCMultiText.GetTextList() "{{{2
+    return self.values
 endfunction
 
 function! g:VCMultiText.Action() "{{{2

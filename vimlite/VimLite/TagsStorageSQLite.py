@@ -13,6 +13,22 @@ import subprocess
 import platform
 import sqlite3
 
+# 这两个变量暂时只对本模块生效
+CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
+CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc', ''])
+
+# 由于无后缀名的文件会视为 c++ 的头文件，所以需要添加一个检查，以下无后缀文件
+# 肯定不是 c++ 头文件。不区分大小写
+____li = [
+    'Makefile',
+    'Kconfig',
+    'README',
+    'configure',
+    'ChangeLog',
+    'INSTALL',
+]
+CPP_HEADER_EXCLUDE = set([i.lower() for i in ____li])
+
 def Escape(string, chars):
     result = ''
     for char in string:
@@ -194,7 +210,7 @@ class TagsStorageSQLite(ITagsStorage):
             # mod on 2011-01-07
             # 不同源文件文件之间会存在相同的符号
             sql = "CREATE UNIQUE INDEX IF NOT EXISTS TAGS_UNIQ on TAGS("\
-                    "file, kind, path, signature);"
+                    "file, line, kind, path, signature);"
             self.db.execute(sql)
 
             sql = "CREATE INDEX IF NOT EXISTS KIND_IDX on TAGS(kind);"
@@ -1336,10 +1352,6 @@ def AppendCtagsOpt(opt):
     CTAGS_OPTS += ' ' + opt
     CTAGS_OPTS_LIST += [opt]
 
-
-CPP_SOURCE_EXT = set(['c', 'cpp', 'cxx', 'c++', 'cc'])
-CPP_HEADER_EXT = set(['h', 'hpp', 'hxx', 'hh', 'inl', 'inc', ''])
-
 def IsCppSourceFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
     if ext in CPP_SOURCE_EXT:
@@ -1349,6 +1361,10 @@ def IsCppSourceFile(fileName):
 
 def IsCppHeaderFile(fileName):
     ext = os.path.splitext(fileName)[1][1:]
+
+    if not ext and os.path.basename(fileName).lower() in CPP_HEADER_EXCLUDE:
+            return False
+
     if ext in CPP_HEADER_EXT:
         return True
     else:
@@ -1456,7 +1472,7 @@ def CppTagsDbParseFilesAndStore(dbFile, files, macrosFiles = []):
 def ParseFile(fileName, macrosFiles = []):
     return ParseFiles([fileName], macrosFiles)
 
-def ParseFilesAndStore(storage, files, macrosFiles = [], filterNonNeed = True, 
+def ParseFilesAndStore(storage, files, macrosFiles = [], filterNotNeed = True, 
                        indicator = None, useCppTagsDb = False):
     # 确保打开了一个数据库
     if not storage.OpenDatabase():
@@ -1467,7 +1483,7 @@ def ParseFilesAndStore(storage, files, macrosFiles = [], filterNonNeed = True,
                 if IsCppSourceFile(f) or IsCppHeaderFile(f)]
 
     # 过滤不需要的. 通过比较时间戳
-    if filterNonNeed:
+    if filterNotNeed:
         filesMap = storage.GetFilesMap(tmpFiles)
         mapLen = len(tmpFiles)
         idx = 0
@@ -1573,7 +1589,7 @@ def test():
     #storage.RecreateDatabase()
     #t1 = time.time()
     #ParseFilesAndStore(storage, files,
-                       #filterNonNeed = False, useCppTagsDb = True)
+                       #filterNotNeed = False, useCppTagsDb = True)
     #t2 = time.time()
     #print "%f" % (t2 - t1)
 
@@ -1581,7 +1597,7 @@ def test():
     storage.RecreateDatabase()
     t1 = time.time()
     ParseFilesAndStore(storage, files, macrosFiles,
-                       filterNonNeed = False, useCppTagsDb = False)
+                       filterNotNeed = False, useCppTagsDb = False)
     t2 = time.time()
     print "%f" % (t2 - t1)
 

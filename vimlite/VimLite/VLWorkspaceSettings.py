@@ -55,6 +55,20 @@ class VLWorkspaceSettings:
         self.cSrcExts = []
         self.cppSrcExts = []
 
+        # 2013-01-23: 工作区配置信息，每个工作区可有自己的配置，覆盖全局配置
+        self.enableLocalConfig = False  # 是否使用工作区自己的配置
+        # 工作区配置信息。配置信息包括几大类
+        # 'Base'    : 基本配置
+        # 'VIMCCC'  : VIMCCC 的配置
+        # 'OmniCpp' : OmniCpp 的配置
+        # 'Debugger': 调试器的配置
+        self.localConfig = {
+            'Base'      : {},
+            'VIMCCC'    : {},
+            'OmniCpp'   : {},
+            'Debugger'  : {},
+        }
+
         # 如果指定了 fileName, 从文件载入, 不论成功与否
         self.Load()
 
@@ -143,6 +157,17 @@ class VLWorkspaceSettings:
     def GetCurIncPathFlagWord(self):
         return self.INC_PATH_FLAG_WORDS[self.incPathFlag]
 
+    def GetLocalConfigScript(self):
+        '''把 localConfig 字典转为 vim 脚本形式的文本。主要用于设置时提取'''
+        li = []
+        for name, conf in self.localConfig.iteritems():
+            for k, v in conf.iteritems():
+                if isinstance(v, str):
+                    li.append("let %s = '%s'" % (k, v.replace("'", "''")))
+                else:
+                    li.append('let %s = %d' % (k, v))
+        return '\n'.join(li)
+
     def SetIncPathFlag(self, flag):
         if isinstance(flag, str):
             if flag in self.INC_PATH_FLAG_WORDS:
@@ -181,6 +206,8 @@ class VLWorkspaceSettings:
                 self.editorOptions = obj.editorOptions
                 self.cSrcExts = obj.cSrcExts
                 self.cppSrcExts = obj.cppSrcExts
+                self.enableLocalConfig = obj.enableLocalConfig
+                self.localConfig = obj.localConfig
             except:
                 pass
             del obj

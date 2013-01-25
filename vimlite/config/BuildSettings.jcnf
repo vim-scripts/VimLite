@@ -2,7 +2,7 @@
     "activeBuilder": "GNU makefile for g++/gcc", 
     "builders": [
         {
-            "command": "make -j 2 -f", 
+            "command": "make -f", 
             "name": "GNU makefile for g++/gcc"
         }
     ], 
